@@ -4,11 +4,17 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
-### 0.1.0-alpha.4 — 2026-11-06 프리뷰 작업
+### 0.1.0-alpha.5 — 2026-11-06 프리뷰 작업
+
+- 정지 포인터의 VLC 가운데 클릭을 감지하기 위해 현재 프로세스의 캡처 시작·종료 WinEvent만 관찰. GUI 스레드에서는 이벤트 번호·창만 기록하고, 100ms 확인 시 전경 창·캡처 창·포인터가 플레이어 소유인지 검사해 창/전체화면 재생바를 깨움. 전역 마우스 훅·Raw Input 등록·세션 유휴 시각은 사용하지 않음.
+- 비활성 창·다른 창·팝업/모달의 이벤트 번호도 소비해 늦은 재처리를 방지. 기존 5개 추적 회귀는 이벤트 번호 변화·순환을 다루며, 새 실제 Win32 알림·수명 검사 2개는 RED 2건 뒤 선택 실행 4/4 통과(초기화·정리 포함). 최종 전체 재생바·CTest·네이티브·패키지·CI 검증은 [alpha.5 기록](docs/releases/0.1.0-alpha.5.md)의 대기 상태를 따름.
+- CUDA 배포 구성, 기본 Turbo·선택 Kotoba와 번역 Q4 프로필, 10초 최소·60초 선행 정책은 유지. `v0.1.0-alpha.4`와 기존 ZIP·체크섬을 보존.
+
+### 0.1.0-alpha.4 — 2026-11-06 프리뷰
 
 - `-IncludeCuda`로 `windows-x64-cuda` ZIP에 음성 인식·번역 CUDA 12.4를 함께 준비. 동일 NVIDIA DLL 3개는 `runtime/cuda`로 공유하고 엔진별 GGML은 격리. 드라이버 변경 없이 CPU/Vulkan 경로 유지.
 - 기존 `windows-x64` 코어는 CUDA 생략을 유지. 수동 릴리스 워크플로의 `include_cuda` 기본값은 `true`; 구성별 manifest·해시와 새로 푼 패키지 검증을 구분.
-- 영상 우클릭·가운데 클릭 뒤 재생바가 영상 뒤로 가려지는 입력·겹침 순서 수정. 네 가지 회귀 및 Windows 파일 화면의 창/전체화면 복원 확인. 10초 최소·60초 선행 자막 정책 유지.
+- 재생바 입력·겹침 순서를 보완하고 네 가지 회귀 및 Windows 파일 화면의 창/전체화면 복원을 확인. 최종 VLC 검사에서는 이미 포커스된 영상의 정지 포인터·유휴 후 가운데 클릭 실패가 2회 남아 모든 클릭 복구 완료로 취급하지 않음. 10초 최소·60초 선행 정책 유지.
 - 번역 디코딩·Q6·일반 자막 지시 196개 요청 비교에서 확실한 의미 개선이 없어 Hy-MT2-7B Q4와 기존 설정 유지. 선택 일본어 Kotoba-Whisper v2.0 Q5 설치기·해시·Apache-2.0 원문 추가. 배포 기본 Turbo Q5는 유지하며 정확도와 실행 검증을 구분.
 - 최종 ZIP 크기·CI·네이티브 실행·공개 완료는 [alpha.4 기록](docs/releases/0.1.0-alpha.4.md)의 확인 상태와 공개 검증 자산을 따름.
 
@@ -44,12 +50,18 @@
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
 
-### 0.1.0-alpha.4 — preview work, 2026-11-06
+### 0.1.0-alpha.5 — preview work, 2026-11-06
+
+- Observe capture-start/end WinEvents scoped to the current process for stationary VLC middle clicks. The GUI observer records only an event serial/window; a 100 ms poll checks foreground, capture-window and pointer ownership before waking windowed/fullscreen controls. No global mouse hook, Raw Input registration or session-idle timestamp is used.
+- Consume background, foreign-window and popup/modal serials without stale replay. Retain five serial-change/wrap tracker regressions. Two new real Win32 notification/lifetime tests first failed, then passed a selected four-case run including setup/cleanup. Final full transport, CTest, native, package and CI verification remain pending in the [alpha.5 record](docs/releases/0.1.0-alpha.5.md).
+- Keep CUDA flavors, default Turbo/optional Kotoba, Q4 translation profiles and the ten-second minimum/sixty-second lookahead. Preserve `v0.1.0-alpha.4` and its archives/checksums.
+
+### 0.1.0-alpha.4 — preview, 2026-11-06
 
 - Add `-IncludeCuda` for a `windows-x64-cuda` ZIP with both ASR and translation CUDA 12.4. Share three identical NVIDIA DLLs under `runtime/cuda`, keeping engine-specific GGML isolated. Preserve CPU/Vulkan paths without driver changes.
 - Keep the CUDA-free `windows-x64` core. The manual release workflow's `include_cuda` input defaults to `true`; distinguish each flavor's manifest, hashes and extracted-package verification.
-- Fix transport stacking after right/middle clicks. Four regression rows and native Windows windowed/fullscreen file checks confirm restoration; preserve ten-second minimum and sixty-second lookahead.
-- Compare 196 decoding, Q6 and general subtitle-style requests without a clear semantic gain, retaining Hy-MT2-7B Q4 and current settings. Fast/quality weights remain optional. Shipped default ASR stays Turbo Q5; additional-candidate results await final review.
+- Improve transport input/stacking with four regressions and native windowed/fullscreen file restoration checks. Final VLC testing still reproduced two stationary middle-click misses after idle on already-focused video, so this is not complete click recovery. Preserve ten-second minimum and sixty-second lookahead.
+- Compare 196 decoding, Q6 and general subtitle-style requests without a clear semantic gain, retaining Hy-MT2-7B Q4 and current settings. Add optional Kotoba-Whisper v2.0 Q5 installation and native CUDA compatibility evidence; multilingual Turbo Q5 remains the default. Execution does not establish accuracy.
 - Final ZIP size, CI, native execution and publication follow the [alpha.4 record](docs/releases/0.1.0-alpha.4.md) and published validation assets.
 
 ### 0.1.0-alpha.3 — preview work, 2026-11-06

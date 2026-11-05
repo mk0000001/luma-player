@@ -4,6 +4,8 @@
 #include <QPointer>
 #include <QPoint>
 #include <QTimer>
+#include "input_activity.h"
+#include "native_capture_observer.h"
 class QWidget;
 namespace luma {
 class FullscreenControls final:public QObject {
@@ -24,9 +26,12 @@ private:
     QTimer timer_;
     QElapsedTimer idle_;
     QPoint pointer_;
+    InputActivityTracker nativeInput_;
+    NativeCaptureObserver captureInput_;
     bool active_=false,wanted_=true,syncPending_=false,lastVisible_=false,raisePending_=false;
     int lastReserved_=0;
     bool interactionInProgress()const;
+    bool nativeInputActivity();
     void poll();
     void reveal();
     void syncGeometry();
