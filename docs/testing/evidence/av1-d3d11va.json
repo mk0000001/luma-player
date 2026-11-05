@@ -1,0 +1,14 @@
+{
+    "audioCodec": "opus",
+    "chapter": 0,
+    "chapters": 0,
+    "decodedAudio": 0,
+    "decodedVideo": 0,
+    "displayedPictures": 0,
+    "durationMs": 10508,
+    "hardwareDecoder": "d3d11va",
+    "playedAudioBuffers": 0,
+    "positionMs": 767,
+    "title": -1,
+    "videoCodec": "Alliance for Open Media AV1"
+}

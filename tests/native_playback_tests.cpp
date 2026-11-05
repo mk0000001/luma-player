@@ -3,6 +3,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFile>
+#include <QElapsedTimer>
 #include "media/playback.h"
 #include "core/disc.h"
 #include "subtitles/subtitle_job.h"
@@ -20,8 +21,11 @@ private slots:
         const auto disc=qEnvironmentVariable("LUMA_NATIVE_DISC");if(disc.isEmpty())QSKIP("Physical disc test requires LUMA_NATIVE_DISC.");
         QWidget video;video.setWindowTitle("LumaPlayer · physical disc verification");video.resize(960,540);video.show();
         PlaybackEngine engine(PlaybackEngine::Kind::Disc,qEnvironmentVariable("LUMA_TEST_RUNTIME"));QVERIFY2(engine.available(),qPrintable(engine.lastError()));QVERIFY(engine.open(disc,video.winId()));
+        QSignalSpy messages(&engine,&PlaybackEngine::logMessage);
         QTRY_VERIFY_WITH_TIMEOUT(engine.state().titles.size()>=3,30000);
         QTRY_VERIFY_WITH_TIMEOUT(engine.state().currentTitle==0 && engine.state().playing && !engine.state().videoCodec.isEmpty(),45000);
+        const auto overlayReady=[&messages]{for(const auto &message:messages)if(message[0].toString().contains("Initializing overlay"))return true;return false;};
+        QTRY_VERIFY_WITH_TIMEOUT(overlayReady(),45000);QTest::qWait(300);report("disc-menu-ready",engine.state());
         engine.navigate(discActionCode(DiscAction::Activate));
         QTRY_VERIFY_WITH_TIMEOUT(engine.state().durationMs>3600000,20000);report("disc-started",engine.state());
         QTRY_VERIFY_WITH_TIMEOUT(engine.state().decodedVideo>30 && engine.state().decodedAudio>30,15000);
@@ -30,7 +34,7 @@ private slots:
         engine.seek(60000);QTRY_VERIFY_WITH_TIMEOUT(qAbs(engine.state().positionMs-60000)<2500,10000);
         engine.pauseToggle();QTRY_VERIFY_WITH_TIMEOUT(engine.state().playing,5000);engine.setChapter(2);QTRY_COMPARE_WITH_TIMEOUT(engine.state().currentChapter,2,12000);report("disc-chapter",engine.state());
         engine.navigate(discActionCode(DiscAction::Popup));QTest::qWait(700);QVERIFY(!engine.state().failed);
-        engine.setTitle(0);QTRY_COMPARE_WITH_TIMEOUT(engine.state().currentTitle,0,12000);report("disc-menu",engine.state());engine.stop();
+        engine.setTitle(0);QTRY_COMPARE_WITH_TIMEOUT(engine.state().currentTitle,0,12000);report("disc-menu",engine.state());QElapsedTimer stopTime;stopTime.start();engine.stop();QVERIFY2(stopTime.elapsed()<10000,"Embedded video shutdown blocked for more than ten seconds");
     }
     void av1FileAndTransport(){
         const auto file=qEnvironmentVariable("LUMA_NATIVE_AV1");if(file.isEmpty())QSKIP("Native AV1 test requires LUMA_NATIVE_AV1.");

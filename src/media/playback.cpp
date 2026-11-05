@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QLibrary>
 #include <QTimer>
+#include <QThread>
+#include <QEventLoop>
 #include <QUrl>
 #include <QRegularExpression>
 #include <vlc/vlc.h>
@@ -35,6 +37,8 @@ struct PlaybackEngine::Impl {
     bool managedSubtitle=false;
     int managedMpvSubtitle=-1;
     std::atomic<quint64> generation{0};
+    std::atomic_bool stopping{false};
+    bool destroying=false;
     libvlc_instance_t *vlc=nullptr;
     libvlc_media_player_t *player=nullptr;
     libvlc_media_t *media=nullptr;
@@ -101,7 +105,7 @@ struct PlaybackEngine::Impl {
         const QString msg=QString::fromUtf8(buffer);
         const auto generation=self->generation.load();
         QMetaObject::invokeMethod(self->owner,[o=self->owner,msg,generation]{
-            if(generation!=o->d->generation.load())return;emit o->logMessage(msg);
+            if(generation!=o->d->generation.load() || o->d->stopping.load())return;emit o->logMessage(msg);
             if(msg.contains("Your input can't be opened") || msg.startsWith("VLC is unable to open"))o->d->fail(msg);
         },Qt::QueuedConnection);
     }
@@ -169,8 +173,8 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
     d->ready=true; d->timer.setInterval(200); connect(&d->timer,&QTimer::timeout,this,&PlaybackEngine::poll); d->timer.start();
 }
 PlaybackEngine::~PlaybackEngine(){
-    d->timer.stop();
-    if(d->player){d->libvlc_media_player_stop(d->player);d->libvlc_media_player_release(d->player);}
+    d->destroying=true;d->timer.stop();stop();
+    if(d->player)d->libvlc_media_player_release(d->player);
     if(d->media)d->libvlc_media_release(d->media);
     if(d->vlc){d->libvlc_log_unset(d->vlc);d->libvlc_release(d->vlc);}
     if(d->mpv)d->mpv_terminate_destroy(d->mpv);
@@ -204,7 +208,18 @@ bool PlaybackEngine::open(const QString &source,WId surface){
     }
     emit logMessage(QString("Opening with %1").arg(name()));return true;
 }
-void PlaybackEngine::stop(){if(!available())return;if(d->player)d->libvlc_media_player_stop(d->player);if(d->mpv)d->command({"stop"});d->state.playing=false;}
+void PlaybackEngine::stop(){
+    if(!available() || d->stopping.exchange(true))return;
+    d->timer.stop();d->state.playing=false;d->state.durationMs=0;
+    if(d->player){
+        // Embedded Win32 video teardown can synchronously message the host HWND.
+        // Keep its owner thread pumping while libVLC's blocking stop joins output threads.
+        auto *worker=QThread::create([player=d->player,stop=d->libvlc_media_player_stop]{stop(player);});
+        QEventLoop loop;connect(worker,&QThread::finished,&loop,&QEventLoop::quit);worker->start();
+        loop.exec(QEventLoop::ExcludeUserInputEvents);worker->wait();delete worker;
+    }
+    if(d->mpv)d->command({"stop"});d->stopping.store(false);if(!d->destroying)d->timer.start();
+}
 void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player)d->libvlc_media_player_pause(d->player);else d->command({"cycle","pause"});}
 void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player)d->libvlc_media_player_set_time(d->player,ms);else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
 void PlaybackEngine::setVolume(int v){if(!available())return;v=std::clamp(v,0,100);if(d->player)d->libvlc_audio_set_volume(d->player,v);else d->mpv_set_property_string(d->mpv,"volume",QByteArray::number(v).constData());}
@@ -227,6 +242,7 @@ bool PlaybackEngine::loadSubtitle(const QString &path,bool managed){
     const bool ok=d->command({"sub-add",path.toUtf8(),"select"})>=0;if(ok){d->managedSubtitle=managed;if(managed)d->managedMpvSubtitle=int(d->number("sid"));}return ok;
 }
 void PlaybackEngine::poll(){
+    if(d->stopping.load())return;
     if(d->player){
         d->state.positionMs=std::max<qint64>(0,d->libvlc_media_player_get_time(d->player));
         d->state.durationMs=std::max<qint64>(0,d->libvlc_media_player_get_length(d->player));

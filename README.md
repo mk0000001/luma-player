@@ -4,6 +4,10 @@
 
 > 개발 중인 첫 프리뷰입니다. 팟플레이어 전체 기능과 모든 DRM·Dolby Vision 출력의 완전 지원을 의미하지 않습니다. 구현 상태와 실물 검증 결과를 분리해 공개합니다.
 
+**2026-11-05 실물 검증:** 츠키 디스크의 메뉴 → 본편, 영상·PCM 음성 출력, 29개 챕터, 일시정지·탐색·메뉴 복귀를 확인했습니다. AV1 하드웨어 재생과 로컬 AI 자막도 실제 실행으로 검증했습니다. [검증 기록과 수치](docs/testing/2026-11-05-windows.md).
+
+![LumaPlayer Windows 프리뷰](docs/images/luma-player-windows.jpg)
+
 ## 실행
 
 [GitHub Releases](https://github.com/mk0000001/luma-player/releases)에서 Windows x64 ZIP을 받아 전체 폴더를 풀고 `LumaPlayer.exe`를 실행하세요. 실행 파일만 분리하면 재생 엔진을 찾을 수 없습니다. 첫 프리뷰에는 로컬 음성인식 모델을 함께 제공합니다.
@@ -55,6 +59,7 @@ Linux의 초기 영상 임베딩 경로는 X11/XWayland입니다. 네이티브 W
 - [변경 기록](CHANGELOG.md)
 - [아키텍처 설계](docs/superpowers/specs/2026-11-05-luma-player-design.md)
 - [기술 조사](docs/research/engine-decisions.md)
+- [구현 결정과 제한](docs/DECISIONS.md)
 - [라이선스와 의존성 소스](THIRD_PARTY_NOTICES.md)
 
 GPL-3.0-or-later. 프로젝트 이름과 UI는 독립적으로 작성했으며 팟플레이어의 코드나 자산을 포함하지 않습니다.

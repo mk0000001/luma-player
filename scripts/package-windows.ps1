@@ -7,6 +7,7 @@ $package = Join-Path $projectRoot "dist\LumaPlayer-$Version-windows-x64"
 if (Test-Path -LiteralPath $package) { throw 'Package destination exists; use a fresh output directory.' }
 New-Item -ItemType Directory -Path $package -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'build\LumaPlayer.exe'),(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'CHANGELOG.md'),(Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md') -Destination $package
+Copy-Item -LiteralPath (Join-Path $projectRoot 'docs') -Destination (Join-Path $package 'docs') -Recurse
 & (Join-Path $projectRoot '.deps\qt\bin\windeployqt.exe') --release --no-translations --no-opengl-sw --no-system-d3d-compiler (Join-Path $package 'LumaPlayer.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
 & (Join-Path $PSScriptRoot 'stage-runtime.ps1') -Destination $package

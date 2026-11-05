@@ -1,0 +1,23 @@
+{
+    "aiCueCount": 0,
+    "audioCodec": "bpcm",
+    "audioTrackCount": 2,
+    "chapter": 0,
+    "chapterCount": 1,
+    "decodedAudio": 13280,
+    "decodedVideo": 1571,
+    "discRuntime": true,
+    "displayedPictures": 758,
+    "durationMs": 0,
+    "engine": "libVLC · Blu-ray",
+    "failed": false,
+    "fileRuntime": true,
+    "hardwareDecoder": "",
+    "playedAudioBuffers": 6639,
+    "playing": true,
+    "playingSamples": 169,
+    "positionMs": 0,
+    "title": 0,
+    "version": "0.1.0-alpha.1",
+    "videoCodec": "h264"
+}

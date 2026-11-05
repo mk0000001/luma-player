@@ -15,7 +15,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot '.deps\mpv\libmpv-2.dll') -Destin
 $whisper = Join-Path $projectRoot '.deps\whisper\Release'
 Copy-Item -Path "$whisper\*.dll","$whisper\whisper-cli.exe" -Destination (Join-Path $runtime 'whisper') -Force
 $ffmpeg = Join-Path $projectRoot '.deps\ffmpeg-full\ffmpeg-9.0.2-full_build'
-Copy-Item -LiteralPath (Join-Path $ffmpeg 'bin\ffmpeg.exe'),(Join-Path $ffmpeg 'LICENSE') -Destination (Join-Path $runtime 'tools') -Force
+Copy-Item -LiteralPath (Join-Path $ffmpeg 'bin\ffmpeg.exe'),(Join-Path $ffmpeg 'LICENSE'),(Join-Path $ffmpeg 'README.txt') -Destination (Join-Path $runtime 'tools') -Force
 foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error-0.dll') {
     Copy-Item -LiteralPath (Join-Path $vlc $name) -Destination (Join-Path $runtime 'tools' $name) -Force
 }

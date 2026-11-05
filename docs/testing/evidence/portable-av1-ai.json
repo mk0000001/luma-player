@@ -1,0 +1,23 @@
+{
+    "aiCueCount": 3,
+    "audioCodec": "opus",
+    "audioTrackCount": 1,
+    "chapter": 0,
+    "chapterCount": 0,
+    "decodedAudio": 0,
+    "decodedVideo": 0,
+    "discRuntime": true,
+    "displayedPictures": 0,
+    "durationMs": 10508,
+    "engine": "libmpv · GPU Next",
+    "failed": false,
+    "fileRuntime": true,
+    "hardwareDecoder": "d3d11va",
+    "playedAudioBuffers": 0,
+    "playing": false,
+    "playingSamples": 52,
+    "positionMs": 10500,
+    "title": -1,
+    "version": "0.1.0-alpha.1",
+    "videoCodec": "Alliance for Open Media AV1"
+}
