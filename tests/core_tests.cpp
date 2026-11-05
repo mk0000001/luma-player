@@ -58,7 +58,7 @@ private slots:
     void cancelledCaptionChunkCanRetry() {
         CaptionCoverage coverage;QCOMPARE(coverage.begin(5000,90000).value(),5000);QVERIFY(!coverage.begin(5000,90000));
         coverage.cancel();QCOMPARE(coverage.begin(5000,90000).value(),5000);coverage.complete();
-        QVERIFY(!coverage.begin(5000,90000));coverage.reset();QCOMPARE(coverage.begin(5000,90000).value(),5000);
+        QVERIFY(coverage.readyForPlayback(5000,90000));QCOMPARE(coverage.begin(5000,90000).value(),20000);coverage.reset();QCOMPARE(coverage.begin(5000,90000).value(),5000);
     }
     void captionBufferTracksCoverageInsteadOfText(){
         CaptionCoverage coverage;QVERIFY(!coverage.readyForPlayback(1250,90000));
@@ -86,6 +86,41 @@ private slots:
         // The old range supplies the preroll; do not recognize its captions twice.
         QCOMPARE(coverage.begin(16000,90000,2000).value(),qint64(15000));coverage.complete();
         QVERIFY(coverage.readyForPlayback(14900,90000));QCOMPARE(coverage.bufferedAhead(16000,90000),qint64(14000));
+    }
+    void backwardSeekNeverRecognizesCachedForwardCaptionsTwice(){
+        CaptionCoverage coverage;QCOMPARE(coverage.begin(98000,200000).value(),qint64(98000));coverage.complete();
+        QCOMPARE(coverage.begin(95000,200000,2000).value(),qint64(93000));
+        QCOMPARE(coverage.pendingDuration(),qint64(5000));coverage.complete();
+        QCOMPARE(coverage.bufferedAhead(95000,200000),qint64(18000));
+        QCOMPARE(coverage.begin(95000,200000,2000).value(),qint64(113000));
+    }
+    void captionCoverageKeepsPrefetchingAfterPlaybackIsReady(){
+        CaptionCoverage coverage;QCOMPARE(coverage.begin(0,120000).value(),qint64(0));coverage.complete();
+        QVERIFY(coverage.readyForPlayback(0,120000));
+        for(const qint64 start:{15000,30000,45000}){const auto next=coverage.begin(0,120000);QVERIFY2(next.has_value(),"Reaching the ten-second minimum must not stop sixty-second prefetch");QCOMPARE(*next,start);coverage.complete();}
+        QCOMPARE(coverage.bufferedAhead(0,120000),qint64(60000));QVERIFY(!coverage.begin(0,120000));
+        QCOMPARE(coverage.begin(5000,120000).value(),qint64(60000));coverage.complete();
+        QVERIFY(coverage.bufferedAhead(5000,120000)>=60000);
+    }
+    void longCaptionsUseShortConsecutivePagesWithoutDroppingText(){
+        const auto pages=captionPages({{1000,2000,"ABCDEFGHIJ"}},4,200);
+        QCOMPARE(pages.size(),3);QCOMPARE(pages[0].text,QString("ABCD"));QCOMPARE(pages[1].text,QString("EFGH"));QCOMPARE(pages[2].text,QString("IJ"));
+        QCOMPARE(pages[0].startMs,qint64(1000));QCOMPARE(pages[0].endMs,qint64(1400));QCOMPARE(pages[1].startMs,qint64(1400));QCOMPARE(pages[1].endMs,qint64(1800));QCOMPARE(pages[2].startMs,qint64(1800));QCOMPARE(pages[2].endMs,qint64(2000));
+    }
+    void captionPagesPreferWholeSentencesAndWords(){
+        const auto japanese=captionPages({{0,12000,QString::fromUtf8("あいうえお。かきくけこ。")}},16,900);
+        QCOMPARE(japanese.size(),2);QCOMPARE(japanese[0].text,QString::fromUtf8("あいうえお。"));QCOMPARE(japanese[1].text,QString::fromUtf8("かきくけこ。"));QCOMPARE(japanese[0].endMs,qint64(6000));QCOMPARE(japanese[1].startMs,qint64(6000));
+        const auto words=captionPages({{0,9000,"Keep every word in this very long sentence."}},14,900);QStringList text;
+        for(const auto &page:words)text.append(page.text);QCOMPARE(text.join(' '),QString("Keep every word in this very long sentence."));
+    }
+    void captionPagesPreserveEmojiAndCombiningCharacters(){
+        const auto pages=captionPages({{0,7000,QString::fromUtf8("A👩‍💻BがC")}},3,100);
+        QCOMPARE(pages.size(),3);QCOMPARE(pages[0].text,QString::fromUtf8("A👩‍💻"));QCOMPARE(pages[1].text,QString::fromUtf8("Bが"));QCOMPARE(pages[2].text,QString("C"));
+        QCOMPARE(pages[0].endMs,qint64(3000));QCOMPARE(pages[1].endMs,qint64(6000));QCOMPARE(pages[2].endMs,qint64(7000));
+    }
+    void veryShortCaptionDoesNotBecomeUnreadableFlashes(){
+        const auto pages=captionPages({{500,1500,"ABCDEFGHIJ"}},4,900);QCOMPARE(pages.size(),1);QCOMPARE(pages[0].text,QString("ABCDEFGHIJ"));QCOMPARE(pages[0].startMs,qint64(500));QCOMPARE(pages[0].endMs,qint64(1500));
+        QVERIFY(captionPages({{100,100,"Invalid"},{0,1000,""}}).isEmpty());
     }
 };
 QTEST_GUILESS_MAIN(CoreTests)

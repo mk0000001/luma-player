@@ -71,4 +71,3 @@ private:
     void audioPrepared();
 };
 }
-Q_DECLARE_METATYPE(QVector<luma::SubtitleCue>)

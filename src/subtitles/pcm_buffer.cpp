@@ -27,7 +27,7 @@ void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
         auto command=extractionCommand(runtime_,r,cache_->filePath("audio.pcm"));
         const auto length=command.arguments.indexOf("-t");if(length>=0){command.arguments.removeAt(length);command.arguments.removeAt(length);}
         const auto codec=command.arguments.indexOf("-c:a");command.arguments.insert(codec+2,"s16le");command.arguments.insert(codec+2,"-f");
-        const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst","30"}+command.arguments.mid(seek);
+        const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number((CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs)/1000)}+command.arguments.mid(seek);
         error_.clear();reader_.setProgram(command.program);reader_.setArguments(command.arguments);reader_.start();
     }
     start_=r.startMs;duration_=std::clamp<qint64>(r.durationMs,1,60000);wav_=wav;pending_=true;poll_.start();check();
