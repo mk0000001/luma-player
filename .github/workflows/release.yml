@@ -1,0 +1,60 @@
+name: Versioned Windows release draft
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '검증할 기존 버전 태그 / Existing version tag'
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      LUMA_RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - name: Verify version matches immutable tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          if ($env:LUMA_RELEASE_TAG -ne "v$version") { throw 'Tag does not match VERSION' }
+          if ((git cat-file -t $env:LUMA_RELEASE_TAG) -ne 'tag') { throw 'An annotated version tag is required' }
+          if ((git rev-parse "$($env:LUMA_RELEASE_TAG)^{commit}") -ne (git rev-parse HEAD)) { throw 'Tag commit differs from checked-out source' }
+          if (!(Test-Path -LiteralPath "docs/releases/$version.md")) { throw 'Release notes missing' }
+      - name: Fetch verified dependencies and local model
+        shell: pwsh
+        run: ./scripts/bootstrap-windows.ps1
+      - name: Compile and test
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Build local recognition and reading engines
+        shell: pwsh
+        run: ./scripts/build-local-ai.ps1
+      - name: Fetch optional translation runtime without weights
+        shell: pwsh
+        run: ./scripts/bootstrap-translation.ps1 -SkipModel -SkipOpenVino
+      - name: Verify packaging and installer safeguards
+        shell: pwsh
+        run: |
+          ./tests/package_tests.ps1
+          ./tests/translation_installer_tests.ps1
+      - name: Package portable player
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim())
+      - name: Create reviewable draft without replacing previous versions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          $zip = (Get-ChildItem -LiteralPath dist -Filter '*.zip').FullName
+          $releaseArgs = @('release','create',$env:LUMA_RELEASE_TAG,$zip,"$zip.sha256",'--draft','--verify-tag','--title',"LumaPlayer $version Windows 미리보기 / Windows preview",'--notes-file',"docs/releases/$version.md")
+          if ($version.Contains('-')) { $releaseArgs += '--prerelease' }
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing releases are never overwritten.' }

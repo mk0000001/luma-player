@@ -9,6 +9,7 @@
 *.pdb
 *.ilk
 *.srt
+!/assets/preview-captions.srt
 *.vtt
 *.wav
 *.pcm

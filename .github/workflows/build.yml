@@ -1,0 +1,75 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch verified native dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-windows.ps1 -SkipAiModel
+      - name: Verify installer and packaging safeguards
+        shell: pwsh
+        run: |
+          ./tests/translation_installer_tests.ps1
+          ./tests/package_tests.ps1
+      - name: Compile and test
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Compile local recognition and reading engines
+        shell: pwsh
+        run: ./scripts/build-local-ai.ps1
+      - name: Fetch optional translation runtime
+        shell: pwsh
+        run: ./scripts/bootstrap-translation.ps1 -SkipModel -SkipOpenVino
+      - name: Stage native runtime
+        shell: pwsh
+        run: ./scripts/stage-runtime.ps1 -SkipTranslationModel
+      - name: Verify bundled libraries
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd/.deps/qt/bin;$env:PATH"
+          $env:LUMA_TEST_RUNTIME = "$pwd/build/runtime"
+          $env:LUMA_READING_RUNTIME = "$pwd/build/runtime"
+          $env:LUMA_FONT_RUNTIME = "$pwd/build/runtime"
+          ctest --test-dir build --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-test-results
+          path: |
+            build/Testing/Temporary/
+            build/*-test-results.txt
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libvlc-dev vlc-plugin-base vlc-plugin-video-output libmpv-dev ffmpeg
+      - name: Configure and compile
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-test-results
+          path: |
+            build/Testing/Temporary/
+            build/*-test-results.txt

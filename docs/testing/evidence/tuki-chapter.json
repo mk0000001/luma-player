@@ -1,0 +1,14 @@
+{
+    "audioCodec": "bpcm",
+    "chapter": 2,
+    "chapters": 29,
+    "decodedAudio": 12136,
+    "decodedVideo": 1405,
+    "displayedPictures": 655,
+    "durationMs": 6294288,
+    "hardwareDecoder": "",
+    "playedAudioBuffers": 6067,
+    "positionMs": 59102,
+    "title": 1,
+    "videoCodec": "h264"
+}

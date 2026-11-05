@@ -1,4 +1,10 @@
-# LumaPlayer design
+# 초기 LumaPlayer 설계 / Initial LumaPlayer design
+
+## 한국어
+
+이 파일은 첫 설계의 원문을 보존한 개발 기록입니다. Windows 우선·Linux 후속의 네이티브 C++20/Qt 앱이며, libVLC의 Blu-ray 메뉴와 libmpv의 파일 재생을 분리하고 로컬 AI 자막을 제공합니다. 실제 디스크의 화면·음성·탐색 진행을 합격 기준으로 삼고 범용 DRM·인증 Dolby Vision·팟플레이어 전체 대응을 구현한 것으로 표시하지 않습니다. 최신 범위와 실측 결과는 [alpha.2 기록](../../releases/0.1.0-alpha.2.md)과 [기능표](../../FEATURES.md)를 따릅니다.
+
+## English — original design
 
 ## Intent and acceptance
 

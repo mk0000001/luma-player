@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/luma">
+    <file>luma-mark.svg</file>
+    <file>luma-wordmark.svg</file>
+    <file>luma-wordmark-light.svg</file>
+  </qresource>
+</RCC>

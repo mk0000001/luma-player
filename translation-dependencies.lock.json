@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "llamaCppCommit": "7d516e25ead4653169236b3f90d13f7bd8629724",
+  "llamaCppRelease": "b12125",
+  "windows": [
+    {
+      "id": "llama-cpp-vulkan",
+      "archive": "llama-b12125-bin-win-vulkan-x64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12125/llama-b12125-bin-win-vulkan-x64.zip",
+      "sha256": "29db801266e784d17fbc9dd7ff9b6a350d2b665bdc5658216f37d91c09918f07",
+      "bytes": 37683656,
+      "target": "vulkan",
+      "marker": "llama-server.exe",
+      "license": "MIT; Apache-2.0 WITH LLVM-exception (libomp)"
+    },
+    {
+      "id": "llama-cpp-openvino",
+      "archive": "llama-b12125-bin-win-openvino-2026.4.1-x64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12125/llama-b12125-bin-win-openvino-2026.4.1-x64.zip",
+      "sha256": "aae803f5efd7d64932eb6667fc3bbc3c7c9080c42d62489219f5d368cae2a38b",
+      "bytes": 104724293,
+      "target": "openvino",
+      "marker": "llama-server.exe",
+      "optional": true,
+      "openvinoVersion": "2026.4.1",
+      "license": "MIT; Apache-2.0; Intel OpenVINO Distribution License and bundled third-party notices"
+    }
+  ],
+  "model": {
+    "id": "Qwen/Qwen3-4B-GGUF",
+    "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
+    "file": "Qwen3-4B-Q4_K_M.gguf",
+    "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
+    "sha256": "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
+    "bytes": 2497280256,
+    "license": "Apache-2.0",
+    "optionalAtRuntime": true
+  },
+  "licenses": [
+    {
+      "file": "llama.cpp-MIT.txt",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/LICENSE",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "file": "Qwen3-4B-Apache-2.0.txt",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/LICENSE",
+      "sha256": "5de36594c10839788a8c589443a8ef9d8b8d17c65a1b5807206ae037fc36c6bd"
+    },
+    {
+      "file": "LLVM-OpenMP.txt",
+      "sourceArchive": "llama-b12125-bin-win-vulkan-x64.zip",
+      "sourceFile": "LICENSE-LLVM-OpenMP",
+      "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4"
+    },
+    {
+      "file": "llama-upstream/licenses/LICENSE-jsonhpp",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/licenses/LICENSE-jsonhpp",
+      "sha256": "c0d068392ea65358b798b8c165103560f06e9e3b38c4ab4e2d8810a7b931af86"
+    },
+    {
+      "file": "llama-upstream/vendor/cpp-httplib/LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/vendor/cpp-httplib/LICENSE",
+      "sha256": "4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b"
+    },
+    {
+      "file": "llama-upstream/vendor/hash/rotate-bits/LICENSE.md",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/vendor/hash/rotate-bits/LICENSE.md",
+      "sha256": "ca0b44aec101afb6b46f4c39b23369fa06a64fb9c0add37c2689d702156fee55"
+    },
+    {
+      "file": "llama-upstream/vendor/hash/sha256/LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/vendor/hash/sha256/LICENSE",
+      "sha256": "b81d0022ca6367918c67b57e9647d3513ee58809fd4b0ef0b3492f1356bced25"
+    },
+    {
+      "file": "llama-upstream/vendor/hash/xxhash/LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/vendor/hash/xxhash/LICENSE",
+      "sha256": "6ffedbc0f7878612d2b23589f1ff2ab15633e1df7963a5d9fc750ec5500c7e7a"
+    },
+    {
+      "file": "llama-upstream/tools/ui/src/lib/vendors/big-integer/LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/tools/ui/src/lib/vendors/big-integer/LICENSE",
+      "sha256": "e9b0e94f628e00b5ed98046cfa041696ff89eebbbdd54108ee350625bc6d0363"
+    },
+    {
+      "file": "llama-upstream/tools/ui/src/lib/vendors/nerdamer-prime/LICENSE",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/7d516e25ead4653169236b3f90d13f7bd8629724/tools/ui/src/lib/vendors/nerdamer-prime/LICENSE",
+      "sha256": "c9f52548869a0a2e63a7100055c54cebf36b9327c8fc2da7cf9ca8dddc2f1cca"
+    }
+  ]
+}
