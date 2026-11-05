@@ -1,0 +1,2 @@
+#pragma once
+#define LUMA_VERSION "@LUMA_VERSION@"

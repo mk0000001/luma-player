@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "luma_version.h"
 #include <QApplication>
 #include <QBoxLayout>
 #include <QGridLayout>
@@ -55,11 +56,11 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         if(!engine->available())appendLog(engine->lastError());
     }
     connect(&job_,&SubtitleJob::progress,aiStatus_,&QLabel::setText);
-    connect(&job_,&SubtitleJob::failed,this,[this](const QString &message){aiStatus_->setText(message);QSignalBlocker b(aiEnabled_);aiEnabled_->setChecked(false);appendLog(message);});
+    connect(&job_,&SubtitleJob::failed,this,[this](const QString &message){coverage_.cancel();aiStatus_->setText(message);QSignalBlocker b(aiEnabled_);aiEnabled_->setChecked(false);appendLog(message);});
     connect(&job_,&SubtitleJob::ready,this,[this](quint64 generation,QVector<SubtitleCue> cues){
         if(generation!=job_.generation() || !active_)return;
-        generatedCues_+=cues;const QString path=subtitleCache_.filePath("captions.srt");QFile f(path);
-        if(f.open(QIODevice::WriteOnly|QIODevice::Truncate)){f.write(writeSrt(generatedCues_).toUtf8());f.close();active_->loadSubtitle(path);}
+        coverage_.complete();generatedCues_+=cues;const QString path=subtitleCache_.filePath("captions.srt");QFile f(path);
+        if(f.open(QIODevice::WriteOnly|QIODevice::Truncate)){f.write(writeSrt(generatedCues_).toUtf8());f.close();active_->loadSubtitle(path,true);}
         aiStatus_->setText(QString("자막 %1개 생성 · 기기에서 처리됨").arg(generatedCues_.size()));
     });
     auto *aiTimer=new QTimer(this);aiTimer->setInterval(1000);connect(aiTimer,&QTimer::timeout,this,&MainWindow::scheduleSubtitles);aiTimer->start();
@@ -96,7 +97,7 @@ void MainWindow::buildUi(){
     auto *files=button("로컬 미디어");nav->addWidget(files);nav->addSpacing(18);nav->addWidget(label("연결된 디스크","section"));discLabel_=label("디스크 확인 중…");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label("","muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
     auto *rescan=button("새로 확인");nav->addWidget(rescan);nav->addStretch();nav->addWidget(label("WINDOWS FIRST\nOPEN SOURCE","section"));body->addWidget(sidebar_);
     auto *center=new QWidget;auto *centerLayout=new QVBoxLayout(center);centerLayout->setContentsMargins(0,0,0,0);centerLayout->setSpacing(0);
-    surface_=new QWidget;surface_->setObjectName("videoSurface");surface_->setAttribute(Qt::WA_NativeWindow);surface_->setMinimumSize(500,280);
+    surface_=new QWidget;surface_->setObjectName("videoSurface");surface_->setAttribute(Qt::WA_NativeWindow);surface_->setFocusPolicy(Qt::StrongFocus);surface_->setMinimumSize(500,280);
     auto *videoLayout=new QVBoxLayout(surface_);welcome_=new QWidget;welcome_->setObjectName("welcome");auto *welcomeLayout=new QVBoxLayout(welcome_);welcomeLayout->addStretch();auto *hero=label("◯  LUMA","hero");hero->setAlignment(Qt::AlignCenter);welcomeLayout->addWidget(hero);auto *intro=label("당신의 화면에, 오롯이.","muted");intro->setAlignment(Qt::AlignCenter);welcomeLayout->addWidget(intro);welcomeLayout->addSpacing(20);auto *hint=label("미디어 파일을 놓거나 Blu-ray를 재생하세요.","muted");hint->setAlignment(Qt::AlignCenter);welcomeLayout->addWidget(hint);welcomeLayout->addStretch();videoLayout->addWidget(welcome_);centerLayout->addWidget(surface_,1);
     auto *transport=new QWidget;auto *transportLayout=new QVBoxLayout(transport);transportLayout->setContentsMargins(22,15,22,16);auto *titleRow=new QHBoxLayout;nowTitle_=label("재생할 미디어를 선택하세요","nowTitle");titleRow->addWidget(nowTitle_,1);codec_=label("","muted");titleRow->addWidget(codec_);transportLayout->addLayout(titleRow);
     auto *timeRow=new QHBoxLayout;seek_=new QSlider(Qt::Horizontal);seek_->setRange(0,10000);timeRow->addWidget(seek_,1);clock_=label("00:00 / 00:00","muted");clock_->setMinimumWidth(132);timeRow->addWidget(clock_);transportLayout->addLayout(timeRow);
@@ -111,18 +112,20 @@ void MainWindow::buildUi(){
     auto *diagnosticTab=new QWidget;auto *diagnosticLayout=new QVBoxLayout(diagnosticTab);diagnosticLayout->setContentsMargins(10,10,10,10);diagnosticLayout->addWidget(label("PLAYBACK LOG","section"));log_=new QPlainTextEdit;log_->setReadOnly(true);log_->setMaximumBlockCount(500);diagnosticLayout->addWidget(log_);tabs->addTab(diagnosticTab,"진단");
     connect(open,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"미디어 열기",{},"미디어 (*.mkv *.mp4 *.webm *.mov *.avi *.m2ts *.ts *.flac *.mp3 *.wav);;모든 파일 (*)");if(!path.isEmpty())openSource(path);});connect(files,&QPushButton::clicked,open,&QPushButton::click);
     connect(rescan,&QPushButton::clicked,this,&MainWindow::discoverDisc);connect(discButton_,&QPushButton::clicked,this,[this]{if(discPath_.isEmpty())discoverDisc();if(!discPath_.isEmpty())openSource(discPath_);else status_->setText("연결된 Blu-ray를 찾지 못했습니다.");});
-    connect(play_,&QPushButton::clicked,this,[this]{if(active_)active_->pauseToggle();});connect(back,&QPushButton::clicked,this,[this]{if(active_){job_.cancel();active_->seek(active_->state().positionMs-10000);}});connect(forward,&QPushButton::clicked,this,[this]{if(active_){job_.cancel();active_->seek(active_->state().positionMs+10000);}});
-    connect(previous,&QPushButton::clicked,this,[this]{if(active_)active_->setChapter(std::max(0,active_->state().currentChapter-1));});connect(next,&QPushButton::clicked,this,[this]{if(active_)active_->setChapter(active_->state().currentChapter+1);});
-    connect(seek_,&QSlider::sliderReleased,this,[this]{if(active_){job_.cancel();active_->seek(active_->state().durationMs*seek_->value()/10000);}});connect(volume_,&QSlider::valueChanged,this,[this](int v){if(active_)active_->setVolume(v);});connect(rate_,&QComboBox::activated,this,[this]{if(active_)active_->setRate(rate_->currentData().toDouble());});
-    connect(full,&QPushButton::clicked,this,&MainWindow::toggleFullScreen);connect(topMenu,&QPushButton::clicked,this,[this]{if(active_)active_->setTitle(0);});connect(popup,&QPushButton::clicked,this,[this]{if(active_)active_->navigate(6);});
-    connect(titles_,&QComboBox::activated,this,[this]{if(active_)active_->setTitle(titles_->currentData().toInt());});connect(audio_,&QComboBox::activated,this,[this]{if(active_)active_->setAudio(audio_->currentData().toInt());});connect(subs_,&QComboBox::activated,this,[this]{if(active_)active_->setSubtitle(subs_->currentData().toInt());});connect(chapters_,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){if(active_)active_->setChapter(item->data(Qt::UserRole).toInt());});
+    connect(play_,&QPushButton::clicked,this,[this]{if(active_)active_->pauseToggle();});connect(back,&QPushButton::clicked,this,[this]{if(active_){cancelSubtitleWork();active_->seek(active_->state().positionMs-10000);}});connect(forward,&QPushButton::clicked,this,[this]{if(active_){cancelSubtitleWork();active_->seek(active_->state().positionMs+10000);}});
+    connect(previous,&QPushButton::clicked,this,[this]{if(active_){cancelSubtitleWork();active_->setChapter(std::max(0,active_->state().currentChapter-1));}});connect(next,&QPushButton::clicked,this,[this]{if(active_){cancelSubtitleWork();active_->setChapter(active_->state().currentChapter+1);}});
+    connect(seek_,&QSlider::sliderReleased,this,[this]{if(active_){cancelSubtitleWork();active_->seek(active_->state().durationMs*seek_->value()/10000);}});connect(volume_,&QSlider::valueChanged,this,[this](int v){if(active_)active_->setVolume(v);});connect(rate_,&QComboBox::activated,this,[this]{if(active_)active_->setRate(rate_->currentData().toDouble());});
+    connect(full,&QPushButton::clicked,this,&MainWindow::toggleFullScreen);connect(topMenu,&QPushButton::clicked,this,[this]{if(active_)active_->setTitle(0);});connect(popup,&QPushButton::clicked,this,[this]{if(active_)active_->navigate(discActionCode(DiscAction::Popup));});
+    connect(titles_,&QComboBox::activated,this,[this]{if(active_)active_->setTitle(titles_->currentData().toInt());});connect(audio_,&QComboBox::activated,this,[this]{if(active_){resetSubtitleSession();active_->setAudio(audio_->currentData().toInt());}});connect(subs_,&QComboBox::activated,this,[this]{if(active_)active_->setSubtitle(subs_->currentData().toInt());});connect(chapters_,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){if(active_){cancelSubtitleWork();active_->setChapter(item->data(Qt::UserRole).toInt());}});
     connect(external,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"자막 열기",{},"자막 (*.srt *.ass *.ssa *.vtt *.sup)");if(active_ && !path.isEmpty())active_->loadSubtitle(path);});
-    connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){model_=path;QSettings().setValue("ai/model",path);aiStatus_->setText("모델 선택됨");}});
-    connect(aiEnabled_,&QCheckBox::toggled,this,[this](bool enabled){if(enabled)scheduleSubtitles();else{job_.cancel();aiStatus_->setText("꺼짐");}});
+    connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession();model_=path;QSettings().setValue("ai/model",path);aiStatus_->setText("모델 선택됨");}});
+    connect(aiEnabled_,&QCheckBox::toggled,this,[this](bool enabled){if(enabled){const auto path=subtitleCache_.filePath("captions.srt");if(active_ && !generatedCues_.isEmpty())active_->loadSubtitle(path,true);scheduleSubtitles();}else{cancelSubtitleWork();if(active_)active_->clearManagedSubtitles();aiStatus_->setText("꺼짐");}});
     connect(save,&QPushButton::clicked,this,[this]{if(generatedCues_.isEmpty()){aiStatus_->setText("먼저 자막을 생성하세요.");return;}const auto path=QFileDialog::getSaveFileName(this,"자막 저장","captions.srt","SRT (*.srt)");if(!path.isEmpty()){QFile f(path);if(f.open(QIODevice::WriteOnly))f.write(writeSrt(generatedCues_).toUtf8());}});
     auto shortcut=[this](const QKeySequence &key,auto action){auto *s=new QShortcut(key,this);s->setContext(Qt::ApplicationShortcut);connect(s,&QShortcut::activated,this,action);};
     shortcut(QKeySequence("Ctrl+O"),[open]{open->click();});shortcut(QKeySequence("Ctrl+D"),[this]{discButton_->click();});shortcut(QKeySequence("Space"),[this]{if(active_)active_->pauseToggle();});shortcut(QKeySequence("F11"),[this]{toggleFullScreen();});shortcut(QKeySequence("Escape"),[this]{if(full_)toggleFullScreen();});
-    const QList<QPair<QString,int>> arrows={{"Up",1},{"Down",2},{"Left",3},{"Right",4},{"Return",0}};for(const auto &key:arrows)shortcut(QKeySequence(key.first),[this,mode=key.second]{if(active_==discEngine_.get())active_->navigate(mode);});
+    const QList<QPair<QString,DiscAction>> arrows={{"Up",DiscAction::Up},{"Down",DiscAction::Down},{"Left",DiscAction::Left},{"Right",DiscAction::Right},{"Return",DiscAction::Activate}};
+    for(const auto &key:arrows){auto *s=new QShortcut(QKeySequence(key.first),surface_);s->setContext(Qt::WidgetWithChildrenShortcut);s->setEnabled(false);discShortcuts_.append(s);connect(s,&QShortcut::activated,this,[this,action=key.second]{if(active_==discEngine_.get())active_->navigate(discActionCode(action));});}
+    connect(language_,&QComboBox::activated,this,[this]{resetSubtitleSession();});
     shortcut(QKeySequence("Shift+Left"),[back]{back->click();});shortcut(QKeySequence("Shift+Right"),[forward]{forward->click();});
 }
 void MainWindow::discoverDisc(){
@@ -138,28 +141,33 @@ void MainWindow::discoverDisc(){
 void MainWindow::openSource(const QString &source){
     resetSubtitleSession();if(active_)active_->stop();source_=source;lastTitle_=-1;decodedSamples_=0;
     active_=isDiscSource(source)?discEngine_.get():fileEngine_.get();nowTitle_->setText(isDiscSource(source)?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
-    welcome_->hide();status_->setText("미디어를 여는 중…");if(active_->open(source,surface_->winId())){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());}else{status_->setText(active_->lastError());welcome_->show();}
+    for(auto *shortcut:discShortcuts_)shortcut->setEnabled(active_==discEngine_.get());surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setText("미디어를 여는 중…");if(active_->open(source,surface_->winId())){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());}else{status_->setText(active_->lastError());welcome_->show();}
 }
+void MainWindow::enableAutomaticSubtitles(const QString &language){const int index=language_->findData(language);if(index>=0){language_->setCurrentIndex(index);aiEnabled_->setChecked(true);}}
 void MainWindow::refresh(){
     if(!active_)return;const auto &s=active_->state();if(s.playing)++decodedSamples_;
     if(s.currentTitle!=lastTitle_ && active_==discEngine_.get()){resetSubtitleSession();lastTitle_=s.currentTitle;}
     play_->setText(s.playing?"Ⅱ":"▶");clock_->setText(formatTime(s.positionMs)+" / "+formatTime(s.durationMs));if(!seek_->isSliderDown()){QSignalBlocker b(seek_);seek_->setValue(s.durationMs>0?int(s.positionMs*10000/s.durationMs):0);}
     codec_->setText(QStringList{active_->name(),s.videoCodec,s.hardwareDecoder}.filter(QRegularExpression(".+")).join(" · "));
     if(!s.failed)status_->setText(s.playing?"재생 중":"일시정지 / 준비 중");syncCombo(titles_,s.titles);syncCombo(audio_,s.audioTracks);syncCombo(subs_,s.subtitleTracks);
+    const auto select=[](QComboBox *box,int id){const int index=box->findData(id);if(index>=0 && index!=box->currentIndex()){QSignalBlocker guard(box);box->setCurrentIndex(index);}};select(titles_,s.currentTitle);select(audio_,s.currentAudio);select(subs_,s.currentSubtitle);
     if(chapters_->count()!=s.chapters.size()){chapters_->clear();for(const auto &c:s.chapters){auto *item=new QListWidgetItem(c.label.isEmpty()?QString("Chapter %1").arg(c.id+1):c.label);item->setData(Qt::UserRole,c.id);chapters_->addItem(item);}}
 }
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 void MainWindow::toggleFullScreen(){full_=!full_;sidebar_->setVisible(!full_);panel_->setVisible(!full_);header_->setVisible(!full_);if(full_)showFullScreen();else showNormal();}
-void MainWindow::resetSubtitleSession(){job_.cancel();generatedCues_.clear();completedChunks_.clear();}
+void MainWindow::cancelSubtitleWork(){job_.cancel();coverage_.cancel();}
+void MainWindow::resetSubtitleSession(){cancelSubtitleWork();if(active_)active_->clearManagedSubtitles();generatedCues_.clear();coverage_.reset();}
 void MainWindow::scheduleSubtitles(){
     if(!aiEnabled_->isChecked() || !active_ || job_.busy())return;const auto &s=active_->state();if(s.durationMs<1000 || s.failed)return;
-    qint64 chunk=s.positionMs/30000*30000;if(completedChunks_.contains(chunk))chunk+=30000;if(completedChunks_.contains(chunk) || chunk>=s.durationMs)return;
-    RecognitionRequest r;r.source=source_;r.disc=active_==discEngine_.get();r.title=std::max(1,s.currentTitle);r.language=language_->currentData().toString();r.startMs=chunk;r.durationMs=std::min<qint64>(30000,s.durationMs-chunk);
-    completedChunks_.insert(chunk);job_.start(r,model_);
+    if(s.currentAudio<0)return;const auto chunk=coverage_.begin(s.positionMs,s.durationMs);if(!chunk)return;
+    RecognitionRequest r;r.source=source_;r.disc=active_==discEngine_.get();r.title=std::max(1,s.currentTitle);r.language=language_->currentData().toString();r.startMs=*chunk;r.durationMs=std::min<qint64>(30000,s.durationMs-*chunk);r.audioTrackId=s.currentAudio;
+    if(r.disc)r.playlist=matchDiscPlaylist(discInfo_,s.durationMs);
+    int audioIndex=0;for(const auto &track:s.audioTracks){if(track.id<0)continue;if(track.id==s.currentAudio){r.audioIndex=audioIndex;break;}++audioIndex;}
+    job_.start(r,model_);
 }
 QJsonObject MainWindow::diagnostics()const{
-    QJsonObject result{{"version","0.1.0-alpha.1"},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()}};
-    if(active_){const auto &s=active_->state();result.insert("engine",active_->name());result.insert("positionMs",s.positionMs);result.insert("durationMs",s.durationMs);result.insert("playing",s.playing);result.insert("failed",s.failed);result.insert("title",s.currentTitle);result.insert("chapter",s.currentChapter);result.insert("chapterCount",s.chapters.size());result.insert("audioTrackCount",s.audioTracks.size());result.insert("videoCodec",s.videoCodec);result.insert("hardwareDecoder",s.hardwareDecoder);}
+    QJsonObject result{{"version",LUMA_VERSION},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()}};
+    if(active_){const auto &s=active_->state();result.insert("engine",active_->name());result.insert("positionMs",s.positionMs);result.insert("durationMs",s.durationMs);result.insert("playing",s.playing);result.insert("failed",s.failed);result.insert("title",s.currentTitle);result.insert("chapter",s.currentChapter);result.insert("chapterCount",s.chapters.size());result.insert("audioTrackCount",s.audioTracks.size());result.insert("videoCodec",s.videoCodec);result.insert("hardwareDecoder",s.hardwareDecoder);result.insert("audioCodec",s.audioCodec);result.insert("decodedVideo",s.decodedVideo);result.insert("decodedAudio",s.decodedAudio);result.insert("displayedPictures",s.displayedPictures);result.insert("playedAudioBuffers",s.playedAudioBuffers);}
     return result;
 }
 void MainWindow::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasUrls())event->acceptProposedAction();}

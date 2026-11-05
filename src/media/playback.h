@@ -9,10 +9,13 @@ struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     bool playing=false, failed=false;
     int currentTitle=-1,currentChapter=-1;
+    int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
     QVector<MediaItem> audioTracks, subtitleTracks, chapters, titles;
 };
 bool isDiscSource(const QString &source);
+enum class DiscAction { Activate,Up,Down,Left,Right,Popup };
+int discActionCode(DiscAction action);
 class PlaybackEngine : public QObject {
     Q_OBJECT
 public:
@@ -33,7 +36,8 @@ public:
     void setChapter(int id);
     void setTitle(int id);
     void navigate(int mode);
-    bool loadSubtitle(const QString &path);
+    bool loadSubtitle(const QString &path,bool managed=false);
+    void clearManagedSubtitles();
     const PlaybackState &state() const;
 signals:
     void updated();

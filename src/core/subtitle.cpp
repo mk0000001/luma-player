@@ -2,6 +2,15 @@
 #include <QRegularExpression>
 #include <algorithm>
 namespace luma {
+std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs){
+    if(pending_ || positionMs<0 || durationMs<=0)return {};
+    auto chunk=positionMs/30000*30000;if(completed_.contains(chunk))chunk+=30000;
+    if(chunk>=durationMs || completed_.contains(chunk))return {};
+    pending_=chunk;return chunk;
+}
+void CaptionCoverage::complete(){if(pending_)completed_.insert(*pending_);pending_.reset();}
+void CaptionCoverage::cancel(){pending_.reset();}
+void CaptionCoverage::reset(){completed_.clear();pending_.reset();}
 QVector<SubtitleCue> parseSrt(const QString &input) {
     QString text = input; text.remove(QChar(0xfeff)); text.replace("\r\n","\n"); text.replace('\r','\n');
     static const QRegularExpression timing(R"(^(\d{1,3}):([0-5]\d):([0-5]\d)[,.](\d{3})\s+-->\s+(\d{1,3}):([0-5]\d):([0-5]\d)[,.](\d{3})\s*$)");

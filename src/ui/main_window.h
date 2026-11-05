@@ -7,6 +7,7 @@
 #include "media/playback.h"
 #include "subtitles/subtitle_job.h"
 class QLabel; class QPushButton; class QComboBox; class QSlider; class QListWidget; class QPlainTextEdit; class QCheckBox;
+class QShortcut;
 namespace luma {
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -14,6 +15,7 @@ public:
     explicit MainWindow(QWidget *parent=nullptr);
     ~MainWindow() override;
     void openSource(const QString &source);
+    void enableAutomaticSubtitles(const QString &language);
     QJsonObject diagnostics() const;
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -32,7 +34,8 @@ private:
     SubtitleJob job_;
     QTemporaryDir subtitleCache_;
     QVector<SubtitleCue> generatedCues_;
-    QSet<qint64> completedChunks_;
+    CaptionCoverage coverage_;
+    QList<QShortcut*> discShortcuts_;
     DiscInfo discInfo_;
     QString source_,model_,discPath_;
     bool full_=false;
@@ -45,5 +48,6 @@ private:
     void toggleFullScreen();
     void scheduleSubtitles();
     void resetSubtitleSession();
+    void cancelSubtitleWork();
 };
 }

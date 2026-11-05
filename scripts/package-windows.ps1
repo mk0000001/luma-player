@@ -2,6 +2,7 @@ param([string]$Version='0.1.0-alpha.1')
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') { throw 'Invalid semantic version' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
+if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -ne $Version) { throw 'Package version differs from VERSION' }
 $package = Join-Path $projectRoot "dist\LumaPlayer-$Version-windows-x64"
 if (Test-Path -LiteralPath $package) { throw 'Package destination exists; use a fresh output directory.' }
 New-Item -ItemType Directory -Path $package -Force | Out-Null

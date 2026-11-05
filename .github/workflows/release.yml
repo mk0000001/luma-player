@@ -1,0 +1,38 @@
+name: Versioned Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify version matches immutable tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag does not match VERSION' }
+          if (!(Test-Path -LiteralPath "docs/releases/$version.md")) { throw 'Release notes missing' }
+      - name: Fetch verified dependencies and local model
+        shell: pwsh
+        run: ./scripts/bootstrap-windows.ps1
+      - name: Compile and test
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Package portable player
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim())
+      - name: Publish release without replacing previous versions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          $zip = (Get-ChildItem -LiteralPath dist -Filter '*.zip').FullName
+          $releaseArgs = @('release','create',$env:GITHUB_REF_NAME,$zip,"$zip.sha256",'--verify-tag','--title',"LumaPlayer $version",'--notes-file',"docs/releases/$version.md")
+          if ($version.Contains('-')) { $releaseArgs += '--prerelease' }
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing releases are never overwritten.' }

@@ -1,0 +1,55 @@
+name: Build and test
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch verified native dependencies
+        shell: pwsh
+        run: ./scripts/bootstrap-windows.ps1 -SkipAiModel
+      - name: Compile and test
+        shell: pwsh
+        run: ./scripts/build-windows.ps1
+      - name: Stage native runtime
+        shell: pwsh
+        run: ./scripts/stage-runtime.ps1
+      - name: Verify bundled libraries
+        shell: pwsh
+        run: |
+          $env:PATH = "$pwd/.deps/qt/bin;$env:PATH"
+          $env:LUMA_TEST_RUNTIME = "$pwd/build/runtime"
+          ctest --test-dir build --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-test-results
+          path: build/Testing/Temporary/
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libvlc-dev libmpv-dev ffmpeg
+      - name: Configure and compile
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-test-results
+          path: build/Testing/Temporary/

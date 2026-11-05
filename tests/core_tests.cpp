@@ -35,6 +35,11 @@ private slots:
         b.truncate(65); QCOMPARE(parsePlaylist(b,"broken").durationMs,0);
         put32(b,8,0xfffffff0); QCOMPARE(parsePlaylist(b,"offset").durationMs,0);
     }
+    void ambiguousDiscTitlesDoNotProduceWrongCaptions(){
+        DiscInfo d;d.titles={{"00002",6294288,{"00002"}},{"00003",6296832,{"00006"}}};
+        QCOMPARE(matchDiscPlaylist(d,6294288),QString("00002"));QCOMPARE(matchDiscPlaylist(d,6296832),QString("00003"));QVERIFY(matchDiscPlaylist(d,123).isEmpty());
+        d.titles.append({"00004",6294288,{"00007"}});QVERIFY(matchDiscPlaylist(d,6294288).isEmpty());
+    }
     void unicodeMultilineSrt() {
         const auto cues = parseSrt(QString::fromUtf8("\xEF\xBB\xBF" "1\r\n00:00:01,200 --> 00:00:03,400\r\nこんにちは\r\n안녕하세요\r\n\r\n2\r\n00:00:04.000 --> 00:00:05.000\r\nHello\r\n"));
         QCOMPARE(cues.size(),2); QCOMPARE(cues[0].startMs,1200); QCOMPARE(cues[0].text,QString::fromUtf8("こんにちは\n안녕하세요"));
@@ -44,6 +49,11 @@ private slots:
         SubtitleTimeline t; const auto old = t.reset(); const auto fresh = t.reset();
         QVERIFY(!t.attach(old,{{0,2000,"stale"}})); QVERIFY(t.attach(fresh,{{1000,3000,"one"},{2000,4000,"two"}}));
         QCOMPARE(t.at(2500),QString("one\ntwo")); QCOMPARE(t.at(4000),QString()); QCOMPARE(t.at(1000),QString("one"));
+    }
+    void cancelledCaptionChunkCanRetry() {
+        CaptionCoverage coverage;QCOMPARE(coverage.begin(5000,90000).value(),0);QVERIFY(!coverage.begin(5000,90000));
+        coverage.cancel();QCOMPARE(coverage.begin(5000,90000).value(),0);coverage.complete();
+        QCOMPARE(coverage.begin(5000,90000).value(),30000);coverage.cancel();coverage.reset();QCOMPARE(coverage.begin(5000,90000).value(),0);
     }
 };
 QTEST_GUILESS_MAIN(CoreTests)

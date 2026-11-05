@@ -11,10 +11,14 @@
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <atomic>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
 namespace luma {
+int discActionCode(DiscAction action){
+    switch(action){case DiscAction::Activate:return libvlc_navigate_activate;case DiscAction::Up:return libvlc_navigate_up;case DiscAction::Down:return libvlc_navigate_down;case DiscAction::Left:return libvlc_navigate_left;case DiscAction::Right:return libvlc_navigate_right;case DiscAction::Popup:return libvlc_navigate_popup;}return -1;
+}
 bool isDiscSource(const QString &source) {
     return source.startsWith("bluray://",Qt::CaseInsensitive) ||
         QRegularExpression("^[A-Za-z]:[/\\\\]?$").match(source).hasMatch() ||
@@ -28,6 +32,9 @@ struct PlaybackEngine::Impl {
     PlaybackState state;
     QTimer timer;
     bool ready=false, errorSent=false;
+    bool managedSubtitle=false;
+    int managedMpvSubtitle=-1;
+    std::atomic<quint64> generation{0};
     libvlc_instance_t *vlc=nullptr;
     libvlc_media_player_t *player=nullptr;
     libvlc_media_t *media=nullptr;
@@ -50,6 +57,7 @@ struct PlaybackEngine::Impl {
     VF(libvlc_media_player_set_title); VF(libvlc_media_player_navigate);
     VF(libvlc_video_set_key_input); VF(libvlc_video_set_mouse_input); VF(libvlc_media_player_add_slave);
     VF(libvlc_media_tracks_get); VF(libvlc_media_tracks_release);
+    VF(libvlc_media_get_stats); VF(libvlc_audio_get_track); VF(libvlc_video_get_spu);
 #ifdef Q_OS_WIN
     VF(libvlc_media_player_set_hwnd);
 #elif defined(Q_OS_LINUX)
@@ -71,11 +79,12 @@ struct PlaybackEngine::Impl {
     }
     template<class T> bool resolve(T &f,const char *name) { f=reinterpret_cast<T>(lib.resolve(name)); if(!f) error=QString("Media runtime symbol missing: %1").arg(name); return f!=nullptr; }
     void fail(const QString &text) { error=text; state.failed=true; if(!errorSent){errorSent=true; emit owner->errorOccurred(text);} }
-    void command(const QList<QByteArray> &args) {
-        if(!mpv) return;
+    int command(const QList<QByteArray> &args) {
+        if(!mpv) return MPV_ERROR_UNINITIALIZED;
         QVector<const char *> pointers; for(const auto &s:args) pointers.append(s.constData()); pointers.append(nullptr);
         const int code=mpv_command(mpv,pointers.data());
         if(code<0) emit owner->logMessage(QString("mpv: %1").arg(QString::fromUtf8(mpv_error_string(code))));
+        return code;
     }
     QString prop(const char *key) { char *s=mpv_get_property_string(mpv,key); if(!s)return {}; const auto result=QString::fromUtf8(s); mpv_free(s); return result; }
     double number(const char *key) { double value=0; mpv_get_property(mpv,key,MPV_FORMAT_DOUBLE,&value); return value; }
@@ -90,7 +99,11 @@ struct PlaybackEngine::Impl {
         char buffer[2048]; vsnprintf(buffer,sizeof(buffer),fmt,args);
         auto *self=static_cast<Impl *>(opaque);
         const QString msg=QString::fromUtf8(buffer);
-        QMetaObject::invokeMethod(self->owner,[o=self->owner,msg]{ emit o->logMessage(msg); },Qt::QueuedConnection);
+        const auto generation=self->generation.load();
+        QMetaObject::invokeMethod(self->owner,[o=self->owner,msg,generation]{
+            if(generation!=o->d->generation.load())return;emit o->logMessage(msg);
+            if(msg.contains("Your input can't be opened") || msg.startsWith("VLC is unable to open"))o->d->fail(msg);
+        },Qt::QueuedConnection);
     }
 };
 PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *parent):QObject(parent),d(std::make_unique<Impl>(this,kind)) {
@@ -122,6 +135,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
         LOAD(libvlc_media_player_set_title); LOAD(libvlc_media_player_navigate);
         LOAD(libvlc_video_set_key_input); LOAD(libvlc_video_set_mouse_input); LOAD(libvlc_media_player_add_slave);
         LOAD(libvlc_media_tracks_get); LOAD(libvlc_media_tracks_release);
+        LOAD(libvlc_media_get_stats); LOAD(libvlc_audio_get_track); LOAD(libvlc_video_get_spu);
 #ifdef Q_OS_WIN
         LOAD(libvlc_media_player_set_hwnd);
 #elif defined(Q_OS_LINUX)
@@ -167,10 +181,10 @@ QString PlaybackEngine::name()const{return d->kind==Kind::Disc?"libVLC · Blu-ra
 const PlaybackState &PlaybackEngine::state()const{return d->state;}
 bool PlaybackEngine::open(const QString &source,WId surface){
     if(!available()){d->fail(d->error);return false;}
-    stop(); d->state={}; d->errorSent=false;
+    stop();++d->generation;d->state={};d->errorSent=false;d->managedSubtitle=false;d->managedMpvSubtitle=-1;
     if(d->kind==Kind::Disc){
         QString url=source;
-        if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray:///"+path; }
+        if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
 #ifdef Q_OS_WIN
         d->libvlc_media_player_set_hwnd(d->player,reinterpret_cast<void *>(surface));
 #elif defined(Q_OS_LINUX)
@@ -196,14 +210,21 @@ void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(
 void PlaybackEngine::setVolume(int v){if(!available())return;v=std::clamp(v,0,100);if(d->player)d->libvlc_audio_set_volume(d->player,v);else d->mpv_set_property_string(d->mpv,"volume",QByteArray::number(v).constData());}
 void PlaybackEngine::setRate(double r){if(!available())return;r=std::clamp(r,0.25,4.0);if(d->player)d->libvlc_media_player_set_rate(d->player,float(r));else d->mpv_set_property_string(d->mpv,"speed",QByteArray::number(r).constData());}
 void PlaybackEngine::setAudio(int id){if(!available())return;if(d->player)d->libvlc_audio_set_track(d->player,id);else d->mpv_set_property_string(d->mpv,"aid",QByteArray::number(id).constData());}
-void PlaybackEngine::setSubtitle(int id){if(!available())return;if(d->player)d->libvlc_video_set_spu(d->player,id);else d->mpv_set_property_string(d->mpv,"sid",id<0?"no":QByteArray::number(id).constData());}
+void PlaybackEngine::setSubtitle(int id){if(!available())return;d->managedSubtitle=false;if(d->player)d->libvlc_video_set_spu(d->player,id);else d->mpv_set_property_string(d->mpv,"sid",id<0?"no":QByteArray::number(id).constData());}
 void PlaybackEngine::setChapter(int id){if(!available())return;if(d->player)d->libvlc_media_player_set_chapter(d->player,id);else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
 void PlaybackEngine::setTitle(int id){if(d->player)d->libvlc_media_player_set_title(d->player,id);}
-void PlaybackEngine::navigate(int mode){if(d->player && mode>=0 && mode<=6)d->libvlc_media_player_navigate(d->player,mode);}
-bool PlaybackEngine::loadSubtitle(const QString &path){
+void PlaybackEngine::navigate(int mode){if(d->player && mode>=libvlc_navigate_activate && mode<=libvlc_navigate_popup)d->libvlc_media_player_navigate(d->player,mode);}
+void PlaybackEngine::clearManagedSubtitles(){
+    if(!d->managedSubtitle)return;
+    if(d->player)d->libvlc_video_set_spu(d->player,-1);
+    if(d->mpv){d->mpv_set_property_string(d->mpv,"sid","no");if(d->managedMpvSubtitle>0)d->command({"sub-remove",QByteArray::number(d->managedMpvSubtitle)});d->managedMpvSubtitle=-1;}
+    d->managedSubtitle=false;
+}
+bool PlaybackEngine::loadSubtitle(const QString &path,bool managed){
     if(!available() || !QFileInfo::exists(path))return false;
-    if(d->player)return d->libvlc_media_player_add_slave(d->player,libvlc_media_slave_type_subtitle,QUrl::fromLocalFile(path).toEncoded().constData(),true)==0;
-    d->command({"sub-add",path.toUtf8(),"select"});return true;
+    if(d->player){const bool ok=d->libvlc_media_player_add_slave(d->player,libvlc_media_slave_type_subtitle,QUrl::fromLocalFile(path).toEncoded().constData(),true)==0;if(ok)d->managedSubtitle=managed;return ok;}
+    if(managed && d->managedMpvSubtitle>0)d->command({"sub-remove",QByteArray::number(d->managedMpvSubtitle)});
+    const bool ok=d->command({"sub-add",path.toUtf8(),"select"})>=0;if(ok){d->managedSubtitle=managed;if(managed)d->managedMpvSubtitle=int(d->number("sid"));}return ok;
 }
 void PlaybackEngine::poll(){
     if(d->player){
@@ -211,6 +232,8 @@ void PlaybackEngine::poll(){
         d->state.durationMs=std::max<qint64>(0,d->libvlc_media_player_get_length(d->player));
         d->state.playing=d->libvlc_media_player_is_playing(d->player)!=0;
         d->state.currentTitle=d->libvlc_media_player_get_title(d->player);d->state.currentChapter=d->libvlc_media_player_get_chapter(d->player);
+        d->state.currentAudio=d->libvlc_audio_get_track(d->player);d->state.currentSubtitle=d->libvlc_video_get_spu(d->player);
+        libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;}
         if(d->libvlc_media_player_get_state(d->player)==libvlc_Error)d->fail("Blu-ray 재생 오류: AACS/BD+ 설정과 진단 로그를 확인하세요.");
         d->state.audioTracks=d->descriptions(d->libvlc_audio_get_track_description(d->player));
         d->state.subtitleTracks=d->descriptions(d->libvlc_video_get_spu_description(d->player));
@@ -235,6 +258,7 @@ void PlaybackEngine::poll(){
         int paused=1,idle=1;d->mpv_get_property(d->mpv,"pause",MPV_FORMAT_FLAG,&paused);d->mpv_get_property(d->mpv,"idle-active",MPV_FORMAT_FLAG,&idle);d->state.playing=!paused && !idle;
         d->state.videoCodec=d->prop("video-codec");d->state.audioCodec=d->prop("audio-codec-name");d->state.hardwareDecoder=d->prop("hwdec-current");
         d->state.currentChapter=int(d->number("chapter"));
+        d->state.currentAudio=int(d->number("aid"));const auto sid=d->prop("sid");d->state.currentSubtitle=sid=="no"?-1:sid.toInt();
         const int trackCount=std::clamp(int(d->number("track-list/count")),0,1000);d->state.audioTracks.clear();d->state.subtitleTracks={{-1,"자막 끄기"}};
         for(int i=0;i<trackCount;++i){const auto prefix=QByteArray("track-list/")+QByteArray::number(i)+"/";const auto type=d->prop((prefix+"type").constData());const int id=int(d->number((prefix+"id").constData()));const auto label=d->prop((prefix+"title").constData())+" "+d->prop((prefix+"lang").constData());if(type=="audio")d->state.audioTracks.append({id,QString("%1 %2").arg(id).arg(label)});if(type=="sub")d->state.subtitleTracks.append({id,QString("%1 %2").arg(id).arg(label)});}
         const int chapters=std::clamp(int(d->number("chapter-list/count")),0,10000);d->state.chapters.clear();

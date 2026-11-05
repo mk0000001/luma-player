@@ -11,7 +11,7 @@ $devcmd = Join-Path $installation 'Common7\Tools\VsDevCmd.bat'
 $qtRoot = Join-Path $projectRoot '.deps\qt'
 $env:PATH = "$qtRoot\bin;$env:PATH"
 $appFlag = if ($CoreOnly) { 'OFF' } else { 'ON' }
-& cmake --fresh -S $projectRoot -B (Join-Path $projectRoot 'build') -G Ninja -DCMAKE_CXX_COMPILER=cl "-DCMAKE_PREFIX_PATH=$qtRoot" "-DCMAKE_BUILD_TYPE=$Configuration" "-DLUMA_BUILD_APP=$appFlag"
+& cmake -S $projectRoot -B (Join-Path $projectRoot 'build') -G Ninja "-DCMAKE_CXX_COMPILER=$((Get-Command cl).Source)" "-DCMAKE_PREFIX_PATH=$qtRoot" "-DCMAKE_BUILD_TYPE=$Configuration" "-DLUMA_BUILD_APP=$appFlag"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & cmake --build (Join-Path $projectRoot 'build') --parallel 6
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

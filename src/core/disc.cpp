@@ -69,4 +69,11 @@ DiscInfo inspectDisc(const QString &root) {
     std::stable_sort(info.titles.begin(),info.titles.end(),[](const auto &a,const auto &b){ return a.durationMs>b.durationMs; });
     return info;
 }
+QString matchDiscPlaylist(const DiscInfo &disc,qint64 durationMs){
+    if(durationMs<=0)return {};QString match;
+    for(const auto &title:disc.titles){if(title.durationMs<=0 || qAbs(title.durationMs-durationMs)>200)continue;
+        if(!match.isEmpty())return {};match=title.playlist;
+    }
+    return match;
+}
 }

@@ -1,10 +1,16 @@
 #include <QtTest>
 #include <QTemporaryDir>
 #include "media/playback.h"
+#include <vlc/vlc.h>
 using namespace luma;
 class MediaTests : public QObject {
     Q_OBJECT
 private slots:
+    void menuCommandsMatchNativeAbi() {
+        QCOMPARE(discActionCode(DiscAction::Activate),int(libvlc_navigate_activate));QCOMPARE(discActionCode(DiscAction::Up),int(libvlc_navigate_up));
+        QCOMPARE(discActionCode(DiscAction::Down),int(libvlc_navigate_down));QCOMPARE(discActionCode(DiscAction::Left),int(libvlc_navigate_left));
+        QCOMPARE(discActionCode(DiscAction::Right),int(libvlc_navigate_right));QCOMPARE(discActionCode(DiscAction::Popup),int(libvlc_navigate_popup));
+    }
     void sourceClassification() {
         QVERIFY(isDiscSource("E:")); QVERIFY(isDiscSource("bluray:///E:/"));
         QVERIFY(!isDiscSource("C:/Videos/日本語 film.mkv")); QVERIFY(!isDiscSource("https://example.org/video.mp4"));
