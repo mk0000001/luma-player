@@ -29,6 +29,8 @@ private slots:
         writeFile(d.filePath("BDMV/index.bdmv"), b); writeFile(d.filePath("BDMV/MovieObject.bdmv"), QByteArray("MOBJ0200"));
         auto url=QUrl::fromLocalFile(d.path());url.setScheme("bluray");const auto fromUrl=inspectDisc(url.toString());
         QVERIFY(fromUrl.valid);QVERIFY(fromUrl.aacs);QCOMPARE(fromUrl.root,inspectDisc(d.path()).root);
+        auto singleSlash=url.toString(QUrl::FullyEncoded);singleSlash.replace("bluray:///","bluray:/");
+        const auto fromSingleSlash=inspectDisc(singleSlash);QVERIFY(fromSingleSlash.valid);QCOMPARE(fromSingleSlash.root,fromUrl.root);
         const auto info = inspectDisc(d.path()); QVERIFY(info.valid); QVERIFY(info.aacs); QCOMPARE(info.menuKind, QString("HDMV"));
     }
     void boundedPlaylist() {

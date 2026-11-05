@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <atomic>
 #include <optional>
+#include <iterator>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -26,7 +27,7 @@ int discActionCode(DiscAction action){
     switch(action){case DiscAction::Activate:return libvlc_navigate_activate;case DiscAction::Up:return libvlc_navigate_up;case DiscAction::Down:return libvlc_navigate_down;case DiscAction::Left:return libvlc_navigate_left;case DiscAction::Right:return libvlc_navigate_right;case DiscAction::Popup:return libvlc_navigate_popup;}return -1;
 }
 bool isDiscSource(const QString &source) {
-    return source.startsWith("bluray://",Qt::CaseInsensitive) ||
+    return QUrl(source).scheme().compare("bluray",Qt::CaseInsensitive)==0 ||
         QRegularExpression("^[A-Za-z]:[/\\\\]?$").match(source).hasMatch() ||
         QFileInfo::exists(QDir(source).filePath("BDMV/index.bdmv"));
 }
@@ -138,6 +139,9 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
     const auto file=runtimeRoot.isEmpty()?(kind==Kind::Disc?"libvlc.so.5":"libmpv.so.2"):QDir(root).filePath("missing-runtime.so");
 #endif
     d->lib.setFileName(file);
+    // Release each native instance normally, but keep runtime code mapped: its
+    // plugins/global TLS may outlive an instance, including failed initialization.
+    d->lib.setLoadHints(QLibrary::PreventUnloadHint);
     if(!d->lib.load()){d->error=QString("%1 runtime을 불러올 수 없습니다: %2").arg(name(),d->lib.errorString());return;}
     bool ok=true;
     if(kind==Kind::Disc){
@@ -166,8 +170,8 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #undef LOAD
         if(!ok)return;
         d->discSoftware=qEnvironmentVariable("LUMA_DISC_DECODER")!="hardware";
-        const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1","--avcodec-hw=none"};
-        d->vlc=d->libvlc_new(d->discSoftware?6:5,options);
+        const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1"};
+        d->vlc=d->libvlc_new(int(std::size(options)),options);
         if(!d->vlc){d->error="libVLC initialization failed";return;}
         d->libvlc_log_set(d->vlc,&Impl::log,d.get());
         d->player=d->libvlc_media_player_new(d->vlc);

@@ -31,5 +31,5 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($SkipTests) { exit 0 }
 & ctest --test-dir $buildRoot --output-on-failure
 $testExit=$LASTEXITCODE
-if($testExit -ne 0 -and (Test-Path -LiteralPath (Join-Path $buildRoot 'ui-test-results.txt'))) { Get-Content -LiteralPath (Join-Path $buildRoot 'ui-test-results.txt') -Tail 80 }
+if($testExit -ne 0) { Get-ChildItem -LiteralPath $buildRoot -Filter '*-test-results.txt' | ForEach-Object { Get-Content -LiteralPath $_.FullName -Tail 90 } }
 exit $testExit

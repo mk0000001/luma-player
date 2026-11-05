@@ -10,7 +10,7 @@
 
 | 검사 | 관측한 결과 | 범위 |
 | --- | --- | --- |
-| 최종 소스 빌드 CTest | **13/13 통과, 43.01초** | `release-source-build-test.txt`. 기본 opt-in 네이티브 슬롯은 건너뛰므로 아래 실물 검사와 구분 |
+| 최종 소스 빌드 CTest | **13/13 통과, 51.57초** | `cross-platform-fix-build-test.txt`. 기본 opt-in 네이티브 슬롯은 건너뛰므로 아래 실물 검사와 구분 |
 | 자막 워커 QtTest | **15/15 통과** | 모델 준비·상주·최신 요청·취소 등 워커 회귀 |
 | 패키징 검사 | **16/16 통과** | `package-final.txt`. 스크립트/패키지 구조 검사이며 최종 배포 ZIP 재실행과는 별개 |
 | 번역 모델 설치기 | **8/8 통과** | `installer-final.txt`. 작은 HTTP 검증 파일의 다운로드·해시 흐름, 실제 약 2.50 GB 모델 재사용, Windows PowerShell 5.1 실행 확인 |
@@ -84,7 +84,13 @@ GPU 보고서의 어댑터는 **요청 이름**입니다. 현재 API로 실제 �
 - Linux CI 컴파일과 Windows 소스 빌드 검사는 Linux 실물 재생·Wayland·HDR 검증이 아닙니다. macOS는 현재 대상이 아닙니다.
 - 배포본은 해당 릴리스에 적힌 소스 커밋·체크섬과 새로 푼 패키지 검사를 기준으로 판단합니다. 공개 태그와 바이너리를 덮어쓰지 않습니다.
 
+### 후속 호환성 교정
+
+Qt6.4가 만드는 단일 슬래시 Blu-ray URI를 지원하고, 지원되지 않는 VLC 전역 옵션을 제거하면서 실물로 검증한 미디어별 소프트웨어 디코더는 유지했습니다. 인스턴스를 해제한 뒤에도 네이티브 런타임 코드 매핑은 보존합니다. 취소 fixture는 60ms를 가정하는 대신 실제 작업 시작을 확인합니다. 후속 Windows 전체 검사는 **13/13·51.57초**, 새 실물 디스크 검사는 **3/3·68.909초** 통과했습니다. 네 번 탐색·챕터·메뉴 전환에서 하드웨어 표면 할당 오류와 하드웨어 디코더 메시지는 모두 0이었습니다. Linux의 최종 판정과 배포 자산 검증은 해당 릴리스 CI에 별도로 기록합니다.
+
 ## English
+
+The follow-up compatibility correction accepts single-slash Blu-ray URIs produced by Qt6.4, removes an unsupported global VLC option while retaining the tested per-media software decoder, and keeps native runtime code mapped while still releasing instances. Cancellation fixtures now acknowledge actual in-flight work instead of assuming a60ms window. The subsequent Windows source suite passed13/13 in51.57s; a fresh native disc run passed3/3 in68.909s with four seeks/chapter/menu transitions, zero hardware-surface allocation errors and no hardware-decoder messages. Linux outcomes and release assets are recorded separately in the final release CI.
 
 This record describes actual `0.1.0-alpha.2` **source-build** tests on Windows, using owned/generated fixtures and the current physical TUKI disc. Only metrics and test identifiers are published; commercial media/menu captures/transcripts, keys, certificates and user paths are excluded.
 
@@ -92,7 +98,7 @@ A source-build pass is distinct from a distributed ZIP pass. The relevant [GitHu
 
 ### Automated and installer checks
 
-- Final source CTest: **13/13 passed in 43.01 seconds**. Native opt-in slots skip by default; actual hardware runs below are separate evidence.
+- Final source CTest: **13/13 passed in 51.57 seconds**. Native opt-in slots skip by default; actual hardware runs below are separate evidence.
 - Subtitle worker: **15/15 passed** for resident/warmup/request/cancellation regressions.
 - Packaging checks: **16/16 passed**; script/structure checks do not establish execution of the final release ZIP.
 - Installer: **8/8 passed**, including a small HTTP fixture's download/hash path, reuse of the actual approximately 2.50 GB model, and Windows PowerShell 5.1. This is not a fresh full-model download test. A valid existing model was size/hash verified and reused.

@@ -48,7 +48,8 @@ DiscTitle parsePlaylist(const QByteArray &b, const QString &name) {
 }
 QString localDiscPath(const QString &source){
     auto path=source;
-    if(source.startsWith("bluray://",Qt::CaseInsensitive)){QUrl url(source);url.setScheme("file");path=url.toLocalFile();}
+    QUrl url(source);
+    if(url.scheme().compare("bluray",Qt::CaseInsensitive)==0){url.setScheme("file");path=url.toLocalFile();}
     if(path.size()==2 && path[0].isLetter() && path[1]==':')path+='/';
     return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
 }

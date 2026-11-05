@@ -22,7 +22,14 @@ int main(int argc,char **argv){
         const auto requestNumber=++request;
         std::cout<<"LUMA_WORKING="<<prefix<<std::endl;
         if(device=="NPU" && payload.find("stall-npu")!=std::string::npos)std::this_thread::sleep_for(std::chrono::seconds(5));
-        bool canceled=false;if(!device.empty() && payload.find("cancel-running")!=std::string::npos)for(int i=0;i<25;++i){std::this_thread::sleep_for(std::chrono::milliseconds(20));if(std::filesystem::exists(prefix+".cancel")){canceled=true;break;}}
+        bool canceled=false;if(payload.find("cancel-running")!=std::string::npos){
+            if(const auto log=std::getenv("LUMA_FIXTURE_ASR_WORKING")){std::ofstream working(log);working<<prefix<<'\n';}
+            // Native workers see a cancellation marker; the CPU CLI is killed by its owner.
+            while(!std::filesystem::exists(prefix+".cancel")){
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            canceled=true;
+        }
         if(canceled){std::cout<<"LUMA_ABORTED="<<prefix<<std::endl;if(!server || !nextRequest())return 0;continue;}
         if(device=="NPU" && payload.find("npu-fails")!=std::string::npos)return 20;
         std::ofstream out(prefix+".srt");out<<"1\n00:00:00,000 --> 00:00:01,000\nFixture transcription request "<<requestNumber<<"\n\n";out.close();

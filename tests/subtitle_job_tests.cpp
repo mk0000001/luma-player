@@ -1,6 +1,7 @@
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QScopeGuard>
 #include "subtitles/subtitle_job.h"
@@ -72,8 +73,11 @@ private slots:
         QSignalSpy errors(&job,&SubtitleJob::failed),results(&job,&SubtitleJob::ready),selection(&job,&SubtitleJob::backendSelected);
         RecognitionRequest request;request.source=source;const auto generation=job.start(request);
         QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,4000);QCOMPARE(errors.count(),0);QCOMPARE(selection.count(),1);QCOMPARE(selection[0][0].toString(),backend);QCOMPARE(job.selectedBackend(),backend);QCOMPARE(results[0][0].toULongLong(),generation);QVERIFY(!job.busy());
-        // A canceled compiler must not complete or poison the next request.
-        request.source="cancel-running.wav";job.start(request);QTest::qWait(60);job.cancel();
+        // Cancel after the fixture acknowledges in-flight inference on every backend.
+        const auto working=dir.filePath("cancel-working");qputenv("LUMA_FIXTURE_ASR_WORKING",QFile::encodeName(working));
+        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_WORKING");});
+        request.source="cancel-running.wav";job.start(request);
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(working).size()>0,3000);QVERIFY(job.busy());QCOMPARE(results.count(),1);job.cancel();
         request.source="accelerated.wav";const auto current=job.start(request);QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,4000);QCOMPARE(results[1][0].toULongLong(),current);
     }
     void persistentWorkerReusesModelBetweenChunks(){
