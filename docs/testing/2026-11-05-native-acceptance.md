@@ -10,7 +10,7 @@
 
 | 검사 | 관측한 결과 | 범위 |
 | --- | --- | --- |
-| 최종 소스 빌드 CTest | **13/13 통과, 51.57초** | `cross-platform-fix-build-test.txt`. 기본 opt-in 네이티브 슬롯은 건너뛰므로 아래 실물 검사와 구분 |
+| 최종 소스 빌드 CTest | **13/13 통과, 54.44초** | `disc-preroll-final-ctest.txt`. 기본 opt-in 네이티브 슬롯은 건너뛰므로 아래 실물 검사와 구분 |
 | 자막 워커 QtTest | **15/15 통과** | 모델 준비·상주·최신 요청·취소 등 워커 회귀 |
 | 패키징 검사 | **16/16 통과** | `package-final.txt`. 스크립트/패키지 구조 검사이며 최종 배포 ZIP 재실행과는 별개 |
 | 번역 모델 설치기 | **8/8 통과** | `installer-final.txt`. 작은 HTTP 검증 파일의 다운로드·해시 흐름, 실제 약 2.50 GB 모델 재사용, Windows PowerShell 5.1 실행 확인 |
@@ -30,6 +30,12 @@
 **2,127ms를 콜드 시작 시간이라고 부르지 않습니다.** 이전 `actual-ui-npu.txt` 실행에서는 최초 41.819초, 재사용 1.787초를 관측했고 그 실행 전체는 4통과/1실패였습니다. 위 최신 실행은 수정 후 6통과/0실패입니다. 서로 다른 캐시 상태·검사 실행의 수치로 보며 첫 설치·드라이버·모델·동시 부하가 같은 결과를 낸다고 보장하지 않습니다.
 
 15초 인식 구간과 재생 전·탐색 후 최소 10초 준비를 사용합니다. 선행 분량이 30초 미만이면 다음 구간을 준비하므로 목표는 **30초 이상, 실제 약 30~45초**이며 수동 일시정지 중 42.6초도 관측했습니다. 30초가 상한은 아닙니다. 상주 모델·최신 요청 우선과 수동 일시정지를 보존합니다. 실패 재시도는 2/4/8초로 제한하며 이후 자막 없이 계속할 수 있고 AI 설정은 유지합니다. ASR의 NPU 성공은 별도 번역 모델의 NPU 성공을 뜻하지 않습니다.
+
+2026-11-06 추가 검사에서는 탐색 요청 709.366초가 708.461초로 정착하고 재개 때 708.373초로 보정되는 경우를 재현했습니다. 요청 지점부터만 읽으면 905ms·88ms의 앞쪽 빈 구간 때문에 재추출·대기가 반복됐습니다. 이제 미확보 디스크 구간은 실제 음성을 최대 2초 앞에서 읽고, 기존 인식 범위는 재사용합니다. 완료한 실제 범위만 합치며 현재 네이티브 시계에도 최소 10초가 준비돼야 재개합니다. 이 수치의 코어 회귀, 가짜 앞쪽 coverage 방지, 이전 범위 재사용을 검사했습니다.
+
+같은 디스크·1127/10000 슬라이더 위치의 최종 네이티브 UI 검사는 **3/3 통과**했습니다. 실제 위치 **708.461초**, 준비 분량 **13.905초**, NPU, 수동 pause 유지 후 재개 **8초 동안 추가 hold/재시도 없음**을 확인했습니다. 자막 준비는 **29.077초**, 전체 검사는 64.462초였습니다. 소유 파일의 warm NPU 인식 시간과 광학 디스크 탐색·읽기를 포함한 이 시간을 구분하며, 장거리 탐색 대기는 후속 최적화 대상입니다.
+
+같은 수정 후 소유 파일의 NPU 준비·트랙 전환·Noto 재검사도 **5/5 통과**했습니다. 컴파일 캐시가 준비된 상태에서 최초 2,054ms, 탐색 1,728ms, 즉시 pause 검사 1,115ms였으며 전체 9.297초였습니다. 이 실행은 앞선 `release-ui.txt`의 6/6 기록과 별도입니다.
 
 ### 실물 디스크의 AI 선행 활성화 회귀
 
@@ -98,18 +104,24 @@ A source-build pass is distinct from a distributed ZIP pass. The relevant [GitHu
 
 ### Automated and installer checks
 
-- Final source CTest: **13/13 passed in 51.57 seconds**. Native opt-in slots skip by default; actual hardware runs below are separate evidence.
+- Final source CTest: **13/13 passed in 54.44 seconds**. Native opt-in slots skip by default; actual hardware runs below are separate evidence.
 - Subtitle worker: **15/15 passed** for resident/warmup/request/cancellation regressions.
 - Packaging checks: **16/16 passed**; script/structure checks do not establish execution of the final release ZIP.
 - Installer: **8/8 passed**, including a small HTTP fixture's download/hash path, reuse of the actual approximately 2.50 GB model, and Windows PowerShell 5.1. This is not a fresh full-model download test. A valid existing model was size/hash verified and reused.
 
 ### NPU caption timing
 
-The latest real-NPU buffer/UI run passed **6/6**. Its OpenVINO compiled cache was already warm: initial preparation **2,127ms**, seek preparation **1,780ms**, immediate-manual-pause check **1,125ms**, with pause preserved after preparation.
+The earlier combined real-NPU buffer/UI run passed **6/6**. Its OpenVINO compiled cache was already warm: initial preparation **2,127ms**, seek preparation **1,780ms**, immediate-manual-pause check **1,125ms**, with pause preserved after preparation.
 
-**The 2.372-second result is not cold start.** The earlier run measured 41.819 seconds initially and 1.787 seconds on reuse, and its overall result was 4 passed/1 failed. The latest corrected run was 5 passed/0 failed. Cache state, driver/model and concurrent load differ; these are observations, not universal latency promises.
+**The 2,127ms result is not cold start.** The earlier run measured 41.819 seconds initially and 1.787 seconds on reuse, and its overall result was 4 passed/1 failed. The latest run above passed 6/6. Cache state, driver/model and concurrent load differ; these are observations, not universal latency promises.
 
 The pipeline uses 15-second chunks and a ten-second minimum buffer. Another chunk is prepared when coverage is below 30 seconds, targeting **at least 30 seconds, typically about 30–45 seconds**; 42.6 seconds was observed while manually paused. Thirty seconds is not a cap. Resident/newest-request scheduling and bounded 2/4/8-second recovery preserve manual pause and leave AI enabled. Confirmed ASR NPU operation means NPU encoder plus CPU decoder, not full-model NPU execution or translation-NPU success.
+
+On 2026-11-06 a requested 709.366-second seek settled at 708.461 seconds and rolled back to 708.373 seconds on resume. Starting recognition only at the requested timestamp left 905ms/88ms gaps and triggered another optical read/hold. Uncovered disc requests now recognize up to two seconds of actual preroll and reuse previous coverage. Completion records only actual recognized ranges; resuming also requires the native clock's position to be covered. Core regressions check these exact corrections, no fabricated earlier coverage, and reuse of previously recognized audio.
+
+The final physical UI regression at slider 1127/10000 passed **3/3**: actual position **708.461 seconds**, **13.905 seconds** ahead, NPU, manual pause preserved and **eight resumed seconds without another hold/retry**. Preparation took **29.077 seconds**; total test time was 64.462 seconds. This includes physical seeking/reading and is distinct from warm owned-file inference timing. Long-seek delay remains an optimization target.
+
+After the same final fix, owned-file NPU readiness/track/font checks passed **5/5** in 9.297 seconds. With an already warm compiled cache, initial preparation took 2,054ms, seeking 1,728ms and the immediate-pause check 1,115ms. This is separate from the earlier combined 6/6 record.
 
 ### Physical navigation regression
 

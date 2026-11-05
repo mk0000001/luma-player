@@ -69,6 +69,24 @@ private slots:
         QCOMPARE(coverage.begin(88000,90000).value(),88000);coverage.complete();QVERIFY(coverage.readyForPlayback(88000,90000));
         QVERIFY(!coverage.readyForPlayback(60000,90000));QVERIFY(!coverage.readyForPlayback(-1,90000));
     }
+    void discSeekPrerollCoversTheActualBackwardClockCorrection(){
+        CaptionCoverage coverage;constexpr qint64 duration=6294288,target=709366;
+        const auto start=coverage.begin(target,duration,2000);QVERIFY(start);QCOMPARE(*start,qint64(707366));
+        QVERIFY(!coverage.readyForPlayback(708461,duration));coverage.complete();
+        QVERIFY(coverage.readyForPlayback(708461,duration));QVERIFY(coverage.readyForPlayback(708373,duration));
+        QCOMPARE(coverage.bufferedAhead(708373,duration),qint64(13993));
+        // Only audio actually read is covered; the preroll must not invent earlier readiness.
+        QCOMPARE(coverage.bufferedAhead(707365,duration),qint64(0));QVERIFY(!coverage.readyForPlayback(707365,duration));
+        QCOMPARE(coverage.begin(720000,duration,2000).value(),qint64(722366));coverage.complete();
+        QCOMPARE(coverage.bufferedAhead(720000,duration),qint64(17366));
+        coverage.reset();QCOMPARE(coverage.begin(500,duration,2000).value(),qint64(0));
+    }
+    void discPrerollReusesPreviouslyRecognizedAudio(){
+        CaptionCoverage coverage;QCOMPARE(coverage.begin(0,90000).value(),qint64(0));coverage.complete();
+        // The old range supplies the preroll; do not recognize its captions twice.
+        QCOMPARE(coverage.begin(16000,90000,2000).value(),qint64(15000));coverage.complete();
+        QVERIFY(coverage.readyForPlayback(14900,90000));QCOMPARE(coverage.bufferedAhead(16000,90000),qint64(14000));
+    }
 };
 QTEST_GUILESS_MAIN(CoreTests)
 #include "core_tests.moc"

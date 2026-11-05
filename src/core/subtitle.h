@@ -10,7 +10,7 @@ class CaptionCoverage {
 public:
     static constexpr qint64 chunkMs=15000;
     static constexpr qint64 lookAheadMs=10000;
-    std::optional<qint64> begin(qint64 positionMs,qint64 durationMs);
+    std::optional<qint64> begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs=0);
     qint64 bufferedAhead(qint64 positionMs,qint64 durationMs)const;
     bool readyForPlayback(qint64 positionMs,qint64 durationMs)const;
     void complete();

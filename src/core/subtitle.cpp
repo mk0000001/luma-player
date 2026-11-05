@@ -2,9 +2,13 @@
 #include <QRegularExpression>
 #include <algorithm>
 namespace luma {
-std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs){
+std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs){
     if(pending_ || positionMs<0 || positionMs>=durationMs || readyForPlayback(positionMs,durationMs))return {};
-    const auto start=positionMs+bufferedAhead(positionMs,durationMs);
+    const auto ahead=bufferedAhead(positionMs,durationMs);
+    // A disc seek/pause can settle slightly before the requested timestamp.
+    // Recognize that real audio too; contiguous prefetch never reads it twice.
+    auto start=ahead>0?positionMs+ahead:std::max<qint64>(0,positionMs-std::clamp<qint64>(prerollMs,0,chunkMs-lookAheadMs));
+    if(!ahead)for(const auto &range:completed_)if(range.second<=positionMs)start=std::max(start,range.second);
     pending_=qMakePair(start,std::min(start+chunkMs,durationMs));return start;
 }
 qint64 CaptionCoverage::bufferedAhead(qint64 positionMs,qint64 durationMs)const{

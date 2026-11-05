@@ -387,7 +387,7 @@ void MainWindow::updateCaptionBuffer(){
     if(pendingAudio_!=-2 || pendingChapter_!=-2 || pendingTitle_!=-2){bufferStatus_->setText("선택한 트랙·챕터로 이동하는 중…");return;}
     if(full_ && bufferHolding_)clock_->setText(QString("자막 %1 / %2초").arg(ahead/1000.,0,'f',1).arg(needed/1000.,0,'f',1));
     if(!aiFailed_)bufferStatus_->setText(QString("자막 %1 / %2초 준비%3").arg(ahead/1000.,0,'f',1).arg(needed/1000.,0,'f',1).arg(bufferHolding_?(bufferResume_?" · 준비 후 자동 재생":" · 일시정지 유지"):""));
-    if(coverage_.readyForPlayback(position,state.durationMs))releaseCaptionBuffer(true);
+    if(coverage_.readyForPlayback(position,state.durationMs) && coverage_.readyForPlayback(state.positionMs,state.durationMs))releaseCaptionBuffer(true);
     else holdForCaptionBuffer();
 }
 void MainWindow::releaseCaptionBuffer(bool continuePlayback){
@@ -433,7 +433,7 @@ void MainWindow::scheduleSubtitles(){
     if(!captionTimelineAvailable())return;const auto &state=active_->state();
     holdForCaptionBuffer();updateCaptionBuffer();
     if(aiFailed_){if(nextAiAttemptMs_<=0 || QDateTime::currentMSecsSinceEpoch()<nextAiAttemptMs_)return;aiFailed_=false;nextAiAttemptMs_=0;}
-    const auto position=pendingSeek_>=0?pendingSeek_:state.positionMs;auto chunk=coverage_.begin(position,state.durationMs);
+    const auto position=pendingSeek_>=0?pendingSeek_:state.positionMs;auto chunk=coverage_.begin(position,state.durationMs,active_==discEngine_.get()?2000:0);
     const auto ahead=coverage_.bufferedAhead(position,state.durationMs);
     if(!chunk && ahead<30000 && position+ahead<state.durationMs)chunk=coverage_.begin(position+ahead,state.durationMs);
     if(!chunk)return;

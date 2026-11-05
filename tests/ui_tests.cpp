@@ -297,6 +297,29 @@ private slots:
         QVERIFY(observedElapsed<=45000);QVERIFY(!finalStatus.value("captionBufferHolding").toBool());QVERIFY(aiStayedEnabled);QVERIFY(enabled->isChecked());
         enabled->setChecked(false);
     }
+    void physicalDiscCaptionSeekSurvivesClockCorrection(){
+        const auto disc=qEnvironmentVariable("LUMA_UI_TEST_DISC");if(disc.isEmpty())QSKIP("Set LUMA_UI_TEST_DISC for physical seek/caption-clock validation.");
+        QSettings().setValue("ai/mode",qEnvironmentVariable("LUMA_UI_TEST_AI_MODE","auto"));QSettings().setValue("subtitles/translation",false);
+        luma::MainWindow window;window.show();window.openSource(disc);
+        auto *play=window.findChild<QPushButton*>("playButton");auto *seek=window.findChild<QSlider*>("seekSlider");auto *job=window.findChild<luma::SubtitleJob*>();QVERIFY(play);QVERIFY(seek);QVERIFY(job);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("title").toInt(-1)==0 && window.diagnostics().value("playing").toBool(),45000);
+        const auto overlayReady=[&window]{for(const auto &message:window.diagnostics().value("recentMessages").toArray())if(message.toString().contains("Initializing overlay"))return true;return false;};
+        QTRY_VERIFY_WITH_TIMEOUT(overlayReady(),15000);QTest::qWait(300);
+        QPushButton *activate=nullptr;for(auto *control:window.findChildren<QPushButton*>())if(control->accessibleName()==QString::fromUtf8("디스크 확인")){activate=control;break;}QVERIFY(activate);activate->click();
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool() && window.diagnostics().value("durationMs").toDouble()>700000 && !window.diagnostics().value("navigationTitle").toBool(),20000);
+        play->click();QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("playing").toBool(),5000);window.enableAutomaticSubtitles("ja");
+        QSignalSpy failures(job,&luma::SubtitleJob::failed);QElapsedTimer elapsed;elapsed.start();
+        seek->setSliderDown(true);seek->setValue(1127);seek->setSliderDown(false);
+        QVERIFY(window.diagnostics().value("captionBufferHolding").toBool());QVERIFY(!window.diagnostics().value("captionResumeRequested").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("captionBufferHolding").toBool() || !failures.isEmpty(),90000);
+        QVERIFY2(failures.isEmpty(),failures.isEmpty()?"":qPrintable(failures[0][0].toString()));const auto ready=window.diagnostics();
+        QVERIFY(ready.value("captionBufferedAheadMs").toDouble()>=10000);QVERIFY(!ready.value("playing").toBool());QVERIFY(!ready.value("requestedPlaying").toBool());
+        qInfo()<<"Physical paused seek readiness ms"<<elapsed.elapsed()<<"actual position"<<ready.value("positionMs").toDouble()<<"ahead"<<ready.value("captionBufferedAheadMs").toDouble()<<"backend"<<ready.value("aiBackend").toString();
+        play->click();QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool(),5000);
+        const auto resumed=window.diagnostics().value("positionMs").toDouble();QElapsedTimer monitor;monitor.start();
+        while(monitor.elapsed()<8000){QTest::qWait(100);const auto status=window.diagnostics();QVERIFY2(!status.value("captionBufferHolding").toBool(),"A small backward VLC clock correction must not cause another optical seek/caption hold");QVERIFY(status.value("aiEnabled").toBool());QCOMPARE(status.value("aiRetryCount").toInt(),0);}
+        QVERIFY(window.diagnostics().value("positionMs").toDouble()>=resumed+5000);window.findChild<QCheckBox*>("aiEnabled")->setChecked(false);
+    }
     void bundledNotoSupportsBothCaptionScripts(){
         const auto runtime=qEnvironmentVariable("LUMA_FONT_RUNTIME");if(runtime.isEmpty())QSKIP("Set LUMA_FONT_RUNTIME for bundled font validation");
         QVERIFY(luma::installApplicationFonts(runtime));
