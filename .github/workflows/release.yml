@@ -6,14 +6,20 @@ on:
         description: '검증할 기존 버전 태그 / Existing version tag'
         required: true
         type: string
+      include_cuda:
+        description: 'CUDA 음성인식·번역 포함 / Bundle CUDA ASR and translation'
+        required: true
+        type: boolean
+        default: true
 permissions:
   contents: write
 jobs:
   release:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       LUMA_RELEASE_TAG: ${{ inputs.tag }}
+      LUMA_RELEASE_CUDA: ${{ inputs.include_cuda }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +45,12 @@ jobs:
       - name: Fetch optional translation runtime without weights
         shell: pwsh
         run: ./scripts/bootstrap-translation.ps1 -SkipModel -SkipOpenVino
+      - name: Fetch verified app-local CUDA runtimes
+        if: inputs.include_cuda
+        shell: pwsh
+        run: |
+          ./scripts/install-asr-cuda.ps1 -Development
+          ./scripts/install-translation-cuda.ps1 -Development
       - name: Verify packaging and installer safeguards
         shell: pwsh
         run: |
@@ -46,9 +58,12 @@ jobs:
           ./tests/translation_installer_tests.ps1
           ./tests/translation_cuda_installer_tests.ps1
           ./tests/asr_cuda_installer_tests.ps1
+          ./tests/asr_model_installer_tests.ps1
       - name: Package portable player
         shell: pwsh
-        run: ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim())
+        run: |
+          $cuda = $env:LUMA_RELEASE_CUDA -eq 'true'
+          ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim()) -IncludeCuda:$cuda
       - name: Create reviewable draft without replacing previous versions
         shell: pwsh
         env:

@@ -1,4 +1,5 @@
 #include "translation_support.h"
+#include "runtime_environment.h"
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -54,7 +55,9 @@ QVector<TranslationBackend> translationBackends(const QString &runtime,const AiP
     result.append({"cpu",vulkan,"CPU",false});return result;
 }
 TranslationLaunch translationLaunch(const TranslationBackend &backend,const QString &model,quint16 port,const QString &token){
-    TranslationLaunch command;command.program=backend.program;command.environment=QProcessEnvironment::systemEnvironment();
+    TranslationLaunch command;command.program=backend.program;
+    const auto runtime=QDir(QFileInfo(backend.program).absolutePath()).absoluteFilePath("../..");
+    command.environment=localRuntimeEnvironment(runtime);
     // A child inherits only local paths/settings. Never honor unrelated llama server, model, tool or proxy defaults.
     for(const auto &key:command.environment.keys())if(key.startsWith("LLAMA_ARG_")||key.startsWith("GGML_OPENVINO_")||key=="GGML_BACKEND_PATH")command.environment.remove(key);
     command.environment.insert("GGML_BACKEND_PATH",QFileInfo(backend.program).absolutePath());

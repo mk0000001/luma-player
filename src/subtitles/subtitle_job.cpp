@@ -1,4 +1,5 @@
 #include "subtitle_job.h"
+#include "runtime_environment.h"
 #include "pcm_buffer.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -47,6 +48,7 @@ SubtitleJob::SubtitleJob(QString runtime,QObject *parent):QObject(parent),runtim
     connect(pcmBuffer_.get(),&PcmBuffer::failed,this,[this](const QString &message){if(stage_==1){timeout_.stop();stage_=0;emit failed(message);}});
     process_.setProcessChannelMode(QProcess::MergedChannels);
     worker_.setProcessChannelMode(QProcess::MergedChannels);
+    worker_.setProcessEnvironment(localRuntimeEnvironment(runtime_));
     connect(&worker_,&QProcess::readyReadStandardOutput,this,&SubtitleJob::workerOutput);
     connect(&worker_,&QProcess::finished,this,[this](int code,QProcess::ExitStatus status){
         workerOutput();const auto backend=workerBackend_;const bool warming=workerWarming_;const auto epoch=warmupEpoch_;

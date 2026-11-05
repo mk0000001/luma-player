@@ -11,6 +11,10 @@ class ControlsCloseHost:public QWidget {
 public:int closeCalls=0;bool vetoClose=false;
 protected:void closeEvent(QCloseEvent *event)override{++closeCalls;event->setAccepted(!vetoClose);}
 };
+class RaisedControls:public QWidget {
+public:int raises=0;
+protected:bool event(QEvent *event)override{if(event->type()==QEvent::ZOrderChange)++raises;return QWidget::event(event);}
+};
 }
 class FullscreenOverlayTests:public QObject {
     Q_OBJECT
@@ -63,6 +67,29 @@ private slots:
         controls.activateWindow();seek.setFocus();QTest::qWait(4800);const auto value=seek.value();QTest::keyClick(&seek,Qt::Key_Right);QVERIFY(seek.value()>value);QTest::qWait(600);QVERIFY(controls.isVisible());
     }
     void closingTransportToolForwardsHostCloseAndVeto_data(){QTest::addColumn<bool>("active");QTest::newRow("windowed")<<false;QTest::newRow("fullscreen")<<true;}
+    void videoActivationAndClicksRestoreTransportStack_data(){
+        QTest::addColumn<bool>("active");QTest::addColumn<int>("button");
+        QTest::newRow("windowed-right")<<false<<int(Qt::RightButton);
+        QTest::newRow("windowed-middle")<<false<<int(Qt::MiddleButton);
+        QTest::newRow("fullscreen-right")<<true<<int(Qt::RightButton);
+        QTest::newRow("fullscreen-middle")<<true<<int(Qt::MiddleButton);
+    }
+    void videoActivationAndClicksRestoreTransportStack(){
+        QFETCH(bool,active);QFETCH(int,button);
+        QWidget host;host.resize(700,450);auto *layout=new QVBoxLayout(&host);
+        QWidget surface;RaisedControls controls;controls.setFixedHeight(74);layout->addWidget(&surface);layout->addWidget(&controls);
+        luma::FullscreenControls controller(&host,&controls,&surface);
+        QWidget nativeVideo(&host,Qt::Tool|Qt::FramelessWindowHint);nativeVideo.setGeometry(40,40,600,350);
+        host.show();nativeVideo.show();controller.setActive(active);QCoreApplication::processEvents();
+        const auto geometry=surface.geometry();controls.raises=0;
+        // Native video child activation can reorder owned windows without a
+        // QWidget ZOrderChange, leaving a visible transport behind the video.
+        QEvent activate(QEvent::WindowActivate);QCoreApplication::sendEvent(&nativeVideo,&activate);QCoreApplication::processEvents();
+        QVERIFY2(controls.raises>0,"Activating video must restore the transport above it without a resize");
+        controls.raises=0;QTest::mouseClick(&nativeVideo,Qt::MouseButton(button));QCoreApplication::processEvents();
+        QVERIFY2(controls.raises>0,"Right/middle clicks must restore the transport stacking order");
+        QVERIFY(controls.isVisible());QCOMPARE(surface.geometry(),geometry);
+    }
     void closingTransportToolForwardsHostCloseAndVeto(){
         QFETCH(bool,active);ControlsCloseHost host;host.resize(600,400);auto *layout=new QVBoxLayout(&host);QWidget video,controls;controls.setFixedHeight(74);layout->addWidget(&video,1);layout->addWidget(&controls);
         luma::FullscreenControls controller(&host,&controls,&video);host.show();controller.setActive(active);QCoreApplication::processEvents();QVERIFY(controls.isVisible());

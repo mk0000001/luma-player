@@ -58,6 +58,27 @@ Windows 11, NVIDIA GeForce RTX 4080 Laptop GPU, llama.cpp CUDA 12.4에서 검사
 
 테스트를 먼저 추가해 기존 구현의 실패를 확인한 뒤 수정했습니다. 파서 73개 검사가 통과했고, 별도 번역 CTest 3개 대상이 통과했습니다. 일반 CTest의 실제 모델 항목은 환경 변수가 없으면 건너뛰므로, 위 CUDA 실제 검사는 별도로 실행했습니다. 서비스 fixture는 잘못된 자막 뒤의 계속 처리, 원문 보존, 모델별 캐시 초기화와 진행 중 모델 교체 취소를 확인합니다. 설치기 11개 검사는 변조·미완성 파일의 교체 방지, 프로필 선택, 기존 실제 모델 재사용 및 Windows PowerShell 5.1의 패키지 실행을 확인했습니다. 실제 모델 재사용 검사는 하드 링크를 사용했고 다운로드는 0바이트였습니다.
 
+### alpha.4 추가 비교: 번역 모델과 설정 유지
+
+CUDA 포함 패키지 작업 중 같은 모델·장치로 196개 요청을 추가 비교했습니다. 기존 개발 16문장과 이전 별도 12문장을 이번에는 회귀 표본으로 사용했습니다. 온도·반복 페널티 비교 112개, Q6 비교 28개, 일반 자막 스타일 지시 A/B 56개이며 모두 `stop`으로 종료했고 전송 실패는 없었습니다. 비교 서버는 한 번에 하나씩 실행했으며 ASR 검사와 GPU 사용 시간을 나눴습니다.
+
+온도 0.7/0과 repeat_penalty 1.05/1.0의 네 조합에서 top_p 0.6, top_k 20, seed 42, 공식 기본 번역 지시를 유지했습니다. 개발 문장 16개는 네 조건에서 모두 같은 출력이었습니다. 이전 별도 문장에서는 두 문장의 말투만 달라졌고 `불을 끄어줄래?`와 귀환 뉘앙스 생략은 고쳐지지 않았습니다. 따라서 디코딩 설정을 바꾸지 않았습니다.
+
+더 높은 정밀도 후보는 같은 공식 저장소·리비전·Apache-2.0 라이선스의 [HY-MT2-7B-Q6_K.gguf](https://huggingface.co/tencent/Hy-MT2-7B-GGUF/blob/ab8472660ac61fac25f1af43fac2599d52a8a775/HY-MT2-7B-Q6_K.gguf)였습니다. 6,164,482,720바이트를 실제 다운로드하고 SHA-256 `88ef0aba59952a4cfe4be36cb5baf797dbb370bc60e9dcbd7297036021e52831`을 확인했습니다. 같은 프롬프트·설정의 Q4와 비교해 28개 중 3개만 달라졌습니다. `불을 끄어줄래?`는 문법상 올바른 `불을 끌 수 있어?`가 됐지만, 명시적인 부탁이 능력을 묻는 표현으로 바뀌어 명확한 의미 개선으로 세지 않았습니다. 다른 두 변화는 말투와 과거 표현이었고, 귀환 뉘앙스와 하차 안내의 중복은 그대로였습니다.
+
+| 같은 CUDA0 장치의 비교 | Q4 현재 기준 | Q6 후보 |
+|---|---:|---:|
+| 모델 파일 크기 | 4.62 GB | 6.16 GB |
+| 실제 GPU 모델 버퍼 | 4,403.24 MiB | 5,871.74 MiB |
+| 28문장 응답 중앙값 / 95백분위 | 266 / 435 ms | 338 / 544 ms |
+| GPU 전체 사용량 / 남은 양, 모델 로드 후 | 5,596 / 6,400 MiB | 7,142 / 4,854 MiB |
+
+GPU 전체 사용량은 해당 실행의 Windows 작업까지 포함한 값이며 ASR 동시 실행 측정값은 아닙니다. 두 후보 모두 로그에서 CUDA0의 33/33 레이어 오프로드를 확인했습니다. Q6는 파일이 1.54 GB 커지고 응답이 느려졌지만 확실한 의미 개선이 없어 배포 모델·설치기에 추가하지 않았습니다. Q8은 더 큰 다운로드와 메모리 사용을 정당화할 근거가 없어 다운로드하지 않았습니다.
+
+마지막으로 Q4의 공식 기본 지시를 유지하면서 자연스러운 한국어 자막, 부정·화자 의도·이름·동작·미완성 구절 보존을 요청하는 일반 지시 한 가지를 비교했습니다. 정답이나 특정 원문·한국어 단어를 프롬프트에 넣지 않았습니다. 28개 중 9개 출력이 바뀌었지만 잘못된 활용은 `불을 끄어줄 수 있어?`로 남았고, 귀환 뉘앙스와 하차 안내 중복도 유지됐습니다. 중앙값은 기존 273 ms, 후보 281 ms였습니다. 이 지시도 채택하지 않았습니다.
+
+승격할 후보가 없어 새로 준비한 보류 문장에 대한 승격 검사는 진행하지 않았습니다. 앱의 Q4 모델·기본 프롬프트·디코딩·설치 잠금 정보는 그대로 유지했습니다. 이 비교 결과를 번역 정확도가 개선됐다는 주장에 사용하지 않습니다.
+
 ## English
 
 The quality profile uses Tencent's official [Hy-MT2-7B Q4_K_M](https://huggingface.co/tencent/Hy-MT2-7B-GGUF/tree/ab8472660ac61fac25f1af43fac2599d52a8a775), under the pinned [Apache-2.0 license](https://huggingface.co/tencent/Hy-MT2-7B-GGUF/blob/ab8472660ac61fac25f1af43fac2599d52a8a775/LICENSE.txt). Its original license text is preserved. The table above pins the immutable revision, 4,624,648,896-byte model and hashes. Japanese and Korean are listed in the official model card. The restricted HY-MT1.5 license is a different license and is not used for this profile.
@@ -71,3 +92,15 @@ The 16 development examples covered negation, permission/prohibition, intention/
 7B warm latency was 240.5 ms median / 433 ms p95 on the development set and 280 ms / 442 ms on held-out text. Cold model startup was approximately 4.2 seconds. The smaller 1.8B Q8 candidate was faster but had larger conjugation and fragment-completion errors and was not promoted. Final native TranslationService verification measured 5,377 ms for the first weather caption, 442 ms for a warm library caption and 0 ms for a duplicate cache hit. It confirmed the actual CUDA backend and suppressed the canceled response.
 
 New tests were observed failing before implementation. The parser suite passed 73 cases, and all three dedicated translation CTest targets passed. The ordinary native CTest is opt-in and skips without its environment; the CUDA proof above was run separately. Service fixtures cover invalid-cue continuation, unchanged source identifiers, cache invalidation and cancellation across an in-flight model change. Eleven installer checks passed, including corrupt/truncated publication protection, profile selection and real-model reuse through packaged Windows PowerShell 5.1 execution. Real models were hard-linked for reuse tests and downloaded zero bytes.
+
+### alpha.4 follow-up: retain the current translation model and settings
+
+The CUDA-package work added 196 controlled requests: 112 decoding comparisons, 28 Q6 comparisons and 56 subtitle-style prompt comparisons. The previous 16 development and 12 held-out sentences were used as regression data in this round. Every request finished with `stop`, without transport failures. Only one benchmark server ran at a time, with GPU leases separated from ASR tests.
+
+A two-by-two comparison varied temperature .7/0 and repeat_penalty 1.05/1.0 while retaining top_p .6, top_k 20, seed 42 and the official default prompt. All sixteen development outputs were identical across all four conditions. Two older held-out sentences changed politeness or equivalent wording, without fixing the malformed light-switch conjugation or the missing return implication. No decoding change was adopted.
+
+The official [HY-MT2-7B-Q6_K](https://huggingface.co/tencent/Hy-MT2-7B-GGUF/blob/ab8472660ac61fac25f1af43fac2599d52a8a775/HY-MT2-7B-Q6_K.gguf) candidate uses the same pinned revision and Apache-2.0 license. The downloaded 6,164,482,720-byte file matched SHA-256 `88ef0aba59952a4cfe4be36cb5baf797dbb370bc60e9dcbd7297036021e52831`. Only three of 28 outputs differed from Q4. The malformed request became a grammatical ability question, which was not counted as a clear semantic gain. The other changes concerned politeness and past-tense phrasing; the return nuance and repetitive train instruction remained.
+
+Native CUDA logs confirmed 33/33 layers offloaded for both quants. Q4/Q6 GPU model buffers were 4,403.24/5,871.74 MiB. The 28-caption wall-time medians were 266/338 ms, with p95 435/544 ms. Total observed GPU use after load was 5,596/7,142 MiB, leaving 6,400/4,854 MiB; those figures include Windows activity and do not represent concurrent ASR tests. The extra 1.54 GB download and slower responses were not justified by the observed meaning changes, so Q6 was not added to the application profile, lock or installer. Q8 was not downloaded.
+
+One final Q4 prompt variant kept the official default instruction and added general requirements for faithful, natural subtitles, negation, intention, names, actions and incomplete phrases. It contained no answers or source-specific vocabulary. Nine outputs changed, but the malformed conjugation persisted and the remaining known issues were not fixed. Median latency was 273 ms for the current prompt and 281 ms for the candidate. That prompt was also rejected. Since no candidate qualified for promotion, the newly prepared untouched held-out set was not used for a promotion test. The shipped Q4 model, prompt, decoding and installer pins remain unchanged; these negative results do not establish improved translation accuracy.

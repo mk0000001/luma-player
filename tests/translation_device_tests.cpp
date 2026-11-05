@@ -8,6 +8,14 @@ using namespace luma;
 
 class TranslationDeviceTests : public QObject {
     Q_OBJECT
+    static QString fixtureProgram(){
+#ifdef Q_OS_WIN
+        const QString suffix=".exe";
+#else
+        const QString suffix;
+#endif
+        return QCoreApplication::applicationDirPath()+"/translation_device_fixture"+suffix;
+    }
     static void runtimeFile(const QString &root,const QString &backend){
         const auto path=QDir(root).filePath("translation/"+backend);QVERIFY(QDir().mkpath(path));
 #ifdef Q_OS_WIN
@@ -33,10 +41,14 @@ private slots:
     }
     void cudaLaunchPinsOneExactDevice(){
         QTemporaryDir root;QVERIFY(root.isValid());const auto directory=QDir(root.path()).filePath("translation/cuda");
+        QVERIFY(QDir().mkpath(root.path()+"/cuda"));
         const auto launch=translationLaunch({"cuda",directory+"/llama-server","CUDA2",false},"owned.gguf",12345,"fixture-token");
         const auto device=launch.arguments.indexOf("--device"),split=launch.arguments.indexOf("--split-mode");
         QVERIFY(device>=0);QCOMPARE(launch.arguments[device+1],QString("CUDA2"));QVERIFY(split>=0);QCOMPARE(launch.arguments[split+1],QString("none"));
         QCOMPARE(launch.environment.value("GGML_BACKEND_PATH"),directory);
+#ifdef Q_OS_WIN
+        QVERIFY(launch.environment.value("PATH").startsWith(QDir::toNativeSeparators(root.path()+"/cuda")+";"));
+#endif
     }
     void cudaConfirmationNeedsSelectedDeviceAndActualOffload(){
         const TranslationBackend cuda{"cuda","server","CUDA2",false};
@@ -68,13 +80,14 @@ private slots:
 #else
             const auto executable=directory+"/llama-server";
 #endif
-            QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(),executable));
+            QVERIFY(QFile::copy(fixtureProgram(),executable));
             QFile mode(directory+"/probe-mode.txt");QVERIFY(mode.open(QIODevice::WriteOnly));mode.write(backend=="cuda"?"stall":"unicode");
         }
         TranslationDeviceProbe probe(root.path());probe.setTimeout(1500);QSignalSpy ready(&probe,&TranslationDeviceProbe::devicesReady),failed(&probe,&TranslationDeviceProbe::failed);
         QVERIFY(ready.isValid());QVERIFY(failed.isValid());
         probe.start();QCOMPARE(ready.size(),0);probe.start();
-        QTRY_COMPARE_WITH_TIMEOUT(ready.size(),1,8000);QVERIFY(failed.size()>=1);
+        QTRY_COMPARE_WITH_TIMEOUT(ready.size(),1,8000);QCOMPARE(failed.size(),1);
+        QCOMPARE(failed[0][0].toString(),QString::fromUtf8("CUDA 번역 기기 검색 시간이 초과되었습니다."));
         const auto devices=qvariant_cast<QJsonArray>(ready[0][0]);QCOMPARE(devices.size(),1);QCOMPARE(devices[0].toObject().value("name").toString(),QString::fromUtf8("Intel Arc 日本語"));
     }
     void cancellingBeforeDispatchCannotFinishANewerProbeTwice(){
@@ -91,7 +104,7 @@ private slots:
 #else
             const auto executable=directory+"/llama-server";
 #endif
-            QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(),executable));if(backend=="cuda")cudaPath=executable;
+            QVERIFY(QFile::copy(fixtureProgram(),executable));if(backend=="cuda")cudaPath=executable;
             QFile mode(directory+"/probe-mode.txt");QVERIFY(mode.open(QIODevice::WriteOnly));mode.write(backend=="cuda"?"stall":"unicode");
         }
         TranslationDeviceProbe probe(root.path());probe.setTimeout(1500);QSignalSpy ready(&probe,&TranslationDeviceProbe::devicesReady);bool restarted=false;
@@ -110,11 +123,6 @@ private slots:
 };
 int main(int argc,char **argv){
     QCoreApplication app(argc,argv);
-    if(app.arguments().contains("--list-devices")){
-        QFile mode(QCoreApplication::applicationDirPath()+"/probe-mode.txt");if(!mode.open(QIODevice::ReadOnly))return 2;
-        if(mode.readAll()=="stall")return app.exec();
-        QFile output;output.open(stdout,QIODevice::WriteOnly);output.write(QString::fromUtf8("Available devices:\n Vulkan0: Intel Arc 日本語 (16000 MiB, 15000 MiB free)\n").toUtf8());output.flush();return 0;
-    }
     TranslationDeviceTests tests;return QTest::qExec(&tests,argc,argv);
 }
 #include "translation_device_tests.moc"

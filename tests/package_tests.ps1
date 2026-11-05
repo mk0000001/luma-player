@@ -62,6 +62,55 @@ function New-PackageAsrFixture {
     Write-PackageFixture (Join-Path $root 'dependencies.lock.json') ($lock | ConvertTo-Json -Depth 4)
     return $root
 }
+function New-PackageCudaFixture {
+    $root=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'))
+    $downloads=Join-Path $root '.deps/downloads';New-Item -ItemType Directory -Path $downloads -Force | Out-Null
+    $lock=Get-Content -LiteralPath (Join-Path $packageTestProject 'dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach($file in $lock.asrCuda.files){
+        $content=if($file.name -eq 'ggml-cuda.dll'){'owned whisper '+$file.name}else{'owned NVIDIA '+$file.name}
+        $path=Join-Path $root ('.deps/asr-cuda/'+$file.name);Write-PackageFixture $path $content
+        $file.bytes=(Get-Item -LiteralPath $path).Length;$file.sha256=(Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant()
+    }
+    Write-PackageFixture (Join-Path $root 'dependencies.lock.json') ($lock | ConvertTo-Json -Depth 14)
+    $translation=Get-Content -LiteralPath (Join-Path $packageTestProject 'translation-dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach($asset in @($translation.windows | Where-Object {$_.target -eq 'cuda'})){
+        $archive=Join-Path $downloads $asset.archive;$stream=[IO.File]::Open($archive,[IO.FileMode]::CreateNew);$zip=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create)
+        try{
+            $names=if($asset.id -eq 'llama-cpp-cuda'){@('llama-server.exe','ggml-cuda.dll','ggml.dll','ggml-base.dll','ggml-cpu-x64.dll','LICENSE')}else{@('cudart64_12.dll','cublas64_12.dll','cublasLt64_12.dll')}
+            foreach($name in $names){$entry=$zip.CreateEntry($name);$writer=[IO.StreamWriter]::new($entry.Open());try{$writer.Write($(if($asset.id -eq 'llama-cpp-cudart'){'owned NVIDIA '+$name}else{'owned llama '+$name}))}finally{$writer.Dispose()}}
+        }finally{$zip.Dispose();$stream.Dispose()}
+        $asset.bytes=(Get-Item -LiteralPath $archive).Length;$asset.sha256=(Get-FileHash -LiteralPath $archive).Hash.ToLowerInvariant()
+    }
+    Write-PackageFixture (Join-Path $root 'translation-dependencies.lock.json') ($translation | ConvertTo-Json -Depth 14)
+    New-Item -ItemType Directory -Path (Join-Path $root 'LICENSES') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $packageTestProject 'LICENSES/Whisper-MIT.txt') -Destination (Join-Path $root 'LICENSES')
+    Copy-Item -LiteralPath (Join-Path $packageTestProject 'LICENSES/translation') -Destination (Join-Path $root 'LICENSES') -Recurse
+    foreach($name in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll'){Write-PackageFixture (Join-Path $root ('runtime/translation/vulkan/'+$name)) ('owned CRT '+$name)}
+    . (Join-Path $packageTestProject 'scripts/install-translation-cuda.ps1')
+    $spec=Get-LumaTranslationCudaSpec -Directory $root
+    Expand-LumaTranslationCudaArchives -Spec $spec -ArchiveDirectory $downloads -Destination (Join-Path $root '.deps/translation/cuda')
+    return $root
+}
+function New-PackageCudaStagedFixture([object[]]$Files){
+    $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'))
+    foreach($file in $Files){$target=Join-Path $directory $file.Path;New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null;Copy-Item -LiteralPath $file.Source -Destination $target}
+    foreach($relative in 'runtime/ai/luma-whisper-worker.exe','runtime/ai/whisper.dll','runtime/ai/ggml.dll','runtime/ai/ggml-base.dll','runtime/ai/ggml-cpu-x64.dll','runtime/ai/ggml-vulkan.dll','runtime/translation/vulkan/llama-server.exe','runtime/translation/vulkan/ggml.dll','runtime/translation/vulkan/ggml-base.dll','runtime/translation/vulkan/ggml-cpu-x64.dll','runtime/translation/vulkan/ggml-vulkan.dll'){
+        Write-PackageFixture (Join-Path $directory $relative) ('owned fallback '+$relative)
+    }
+    return $directory
+}
+function New-PackageCudaClassicFixture([string]$ProjectRoot,[object[]]$Files){
+    $directory=New-PackageCudaStagedFixture $Files
+    foreach($name in 'cudart64_12.dll','cublas64_12.dll','cublasLt64_12.dll'){
+        foreach($relative in ('runtime/ai/'+$name),('runtime/translation/cuda/'+$name)){
+            $target=Join-Path $directory $relative;New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $ProjectRoot ('.deps/asr-cuda/'+$name)) -Destination $target -Force
+        }
+        $shared=Join-Path $directory ('runtime/cuda/'+$name);if(Test-Path -LiteralPath $shared){[IO.File]::Delete($shared)}
+    }
+    $sharedDirectory=Join-Path $directory 'runtime/cuda';if(Test-Path -LiteralPath $sharedDirectory){[IO.Directory]::Delete($sharedDirectory)}
+    return $directory
+}
 
 $savedGitEnvironment = @{}
 foreach ($name in 'GIT_DIR','GIT_WORK_TREE','GIT_INDEX_FILE') {
@@ -217,12 +266,105 @@ try {
         Assert-LumaPackageTranslationModel -Directory $directory
     }
     Test-PackageCase 'core package excludes optional CUDA binaries and download caches' {
-        foreach($relative in 'runtime/translation/cuda/llama-server.exe','runtime/ai/ggml-cuda.dll','runtime/ai/cudart64_12.dll','runtime/ai/cublas64_12.dll','runtime/ai/cublasLt64_12.dll','runtime/translation/.cuda-downloads/archive.zip','runtime/ai/.asr-cuda-downloads/archive.zip','runtime/ai/partial.download') {
+        foreach($relative in 'runtime/translation/cuda/llama-server.exe','runtime/ai/ggml-cuda.dll','runtime/ai/cudart64_12.dll','runtime/ai/cublas64_12.dll','runtime/ai/cublasLt64_12.dll','runtime/cuda/cudart64_12.dll','runtime/translation/.cuda-downloads/archive.zip','runtime/ai/.asr-cuda-downloads/archive.zip','runtime/ai/partial.download') {
             $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'));Write-PackageFixture (Join-Path $directory $relative) 'owned optional CUDA sentinel'
             Expect-PackageFailure { Assert-LumaPackageCoreCudaOmitted -Directory $directory } "Optional CUDA content accepted in core: $relative"
         }
         $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'));Write-PackageFixture (Join-Path $directory 'licenses/LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html') 'owned notice fixture'
         Assert-LumaPackageCoreCudaOmitted -Directory $directory
+    }
+    Test-PackageCase 'CUDA flavor has separate destinations and truthful manifest metadata' {
+        $root=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'))
+        $core=Get-LumaPackagePaths -ProjectRoot $root -Version '0.1.0-alpha.4' -BuildDirectory build -OutputDirectory dist
+        $cuda=Get-LumaPackagePaths -ProjectRoot $root -Version '0.1.0-alpha.4' -BuildDirectory build -OutputDirectory dist -IncludeCuda
+        Assert-Package ($core.Package -ne $cuda.Package -and $cuda.Package.EndsWith('-windows-x64-cuda')) 'CUDA packaging collides with the core release.'
+        $source=[pscustomobject]@{Commit=('a'*40);Dirty=$false}
+        $coreManifest=New-LumaPackageManifest -Version '0.1.0-alpha.4' -Source $source -Files @()
+        $cudaManifest=New-LumaPackageManifest -Version '0.1.0-alpha.4' -Source $source -Files @() -IncludeCuda
+        Assert-Package ($coreManifest.cudaIncluded -is [bool] -and !$coreManifest.cudaIncluded -and $coreManifest.packageFlavor -ceq 'windows-x64') 'Core manifest does not describe omitted CUDA.'
+        Assert-Package ($cudaManifest.cudaIncluded -is [bool] -and $cudaManifest.cudaIncluded -and $cudaManifest.packageFlavor -ceq 'windows-x64-cuda' -and !$cudaManifest.translationModelIncluded) 'CUDA manifest implies missing runtimes or bundled model weights.'
+    }
+    Test-PackageCase 'CUDA source pins keep Whisper and llama GGML and original notices isolated' {
+        $root=New-PackageCudaFixture;$files=@(Get-LumaPackageCudaFiles -ProjectRoot $root)
+        $asr=@($files | Where-Object {$_.Path -ceq 'runtime/ai/ggml-cuda.dll'});$translation=@($files | Where-Object {$_.Path -ceq 'runtime/translation/cuda/ggml-cuda.dll'})
+        Assert-Package ($asr.Count -eq 1 -and $translation.Count -eq 1 -and $asr[0].Sha256 -ne $translation[0].Sha256) 'Different GGML builds were mixed.'
+        Assert-Package (@($files | Where-Object {$_.Path -ceq 'runtime/ai/asr-cuda-licenses/NVIDIA-CUDA-12.4-EULA.html'}).Count -eq 1) 'ASR raw license was omitted.'
+        $staged=New-PackageCudaStagedFixture $files;Assert-LumaPackageCudaFiles -Files $files -Directory $staged
+    }
+    Test-PackageCase 'only byte-identical NVIDIA DLLs are shared while GGML and provenance stay isolated' {
+        $root=New-PackageCudaFixture;$files=@(Get-LumaPackageCudaFiles -ProjectRoot $root)
+        $shared=@($files | Where-Object {$_.Path -like 'runtime/cuda/*'})
+        Assert-Package ($shared.Count -eq 3 -and @($files | Where-Object {$_.Path -match '^runtime/(?:ai|translation/cuda)/(?:cudart64_12|cublas64_12|cublasLt64_12)\.dll$'}).Count -eq 0) 'NVIDIA dependencies remain duplicated in the manifest.'
+        $staged=New-PackageCudaClassicFixture -ProjectRoot $root -Files $files
+        $manifest=Join-Path $staged 'runtime/translation/cuda/.luma-cuda-install.json';$before=(Get-FileHash -LiteralPath $manifest).Hash
+        Move-LumaPackageCudaSharedRuntime -Files $files -Directory $staged
+        Assert-LumaPackageCudaFiles -Files $files -Directory $staged
+        Assert-Package ((Get-FileHash -LiteralPath $manifest).Hash -eq $before) 'Original verified installation provenance was rewritten.'
+        Assert-Package (@(Get-ChildItem -LiteralPath (Join-Path $staged 'runtime/cuda') -File).Count -eq 3) 'Shared CUDA folder contains more than the identical NVIDIA DLLs.'
+    }
+    Test-PackageCase 'shared-layout conversion rejects incomplete inputs before moving any DLL' {
+        $root=New-PackageCudaFixture;$files=@(Get-LumaPackageCudaFiles -ProjectRoot $root);$staged=New-PackageCudaClassicFixture -ProjectRoot $root -Files $files
+        Write-PackageFixture (Join-Path $staged 'runtime/translation/cuda/cublasLt64_12.dll') 'unexpected duplicate'
+        Expect-PackageFailure {Move-LumaPackageCudaSharedRuntime -Files $files -Directory $staged} 'Nonidentical source copies were deduplicated.'
+        Assert-Package (!(Test-Path -LiteralPath (Join-Path $staged 'runtime/cuda'))) 'Conversion created shared output before validating every input.'
+        Assert-Package (Test-Path -LiteralPath (Join-Path $staged 'runtime/ai/cudart64_12.dll')) 'Conversion moved a valid input before detecting a later corrupt DLL.'
+    }
+    Test-PackageCase 'missing corrupt and stale CUDA installations fail before packaging output exists' {
+        foreach($scenario in 'missing-asr','corrupt-asr','missing-translation','stale-translation'){
+            $root=New-PackageCudaFixture
+            if($scenario -eq 'missing-asr'){Remove-Item -LiteralPath (Join-Path $root '.deps/asr-cuda/ggml-cuda.dll')}
+            elseif($scenario -eq 'corrupt-asr'){Write-PackageFixture (Join-Path $root '.deps/asr-cuda/ggml-cuda.dll') 'stale whisper plugin'}
+            elseif($scenario -eq 'missing-translation'){Remove-Item -LiteralPath (Join-Path $root '.deps/translation/cuda/llama-server.exe')}
+            else{$path=Join-Path $root '.deps/translation/cuda/.luma-cuda-install.json';$manifest=Get-Content -LiteralPath $path -Raw | ConvertFrom-Json;$manifest.archives[0].sha256='0'*64;Write-PackageFixture $path ($manifest | ConvertTo-Json -Depth 8)}
+            Expect-PackageFailure {Get-LumaPackageCudaFiles -ProjectRoot $root} "CUDA source accepted $scenario"
+            Assert-Package (!(Test-Path -LiteralPath (Join-Path $root 'dist'))) 'CUDA preflight wrote a package output.'
+        }
+    }
+    Test-PackageCase 'rewritten installation hashes cannot hide a wrong pinned CUDA binary' {
+        $root=New-PackageCudaFixture;$runtime=Join-Path $root '.deps/translation/cuda';$path=Join-Path $runtime 'ggml-cuda.dll'
+        Write-PackageFixture $path 'old plugin with a forged current installation manifest'
+        $manifestPath=Join-Path $runtime '.luma-cuda-install.json';$manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $file=$manifest.files | Where-Object {$_.path -ceq 'ggml-cuda.dll'};$file.bytes=(Get-Item -LiteralPath $path).Length;$file.sha256=(Get-FileHash -LiteralPath $path).Hash.ToLowerInvariant()
+        Write-PackageFixture $manifestPath ($manifest | ConvertTo-Json -Depth 8)
+        Expect-PackageFailure {Get-LumaPackageCudaFiles -ProjectRoot $root} 'Self-consistent stale GGML was accepted without checking pinned ZIP contents.'
+    }
+    Test-PackageCase 'CUDA pinned archives and raw licenses cannot be missing or corrupt' {
+        foreach($scenario in 'archive','license'){
+            $root=New-PackageCudaFixture
+            $path=if($scenario -eq 'archive'){Join-Path $root '.deps/downloads/llama-b12125-bin-win-cuda-12.4-x64.zip'}else{Join-Path $root 'LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html'}
+            Write-PackageFixture $path 'corrupt fixture'
+            Expect-PackageFailure {Get-LumaPackageCudaFiles -ProjectRoot $root} "CUDA packaging accepted corrupt $scenario"
+        }
+    }
+    Test-PackageCase 'staged CUDA rejects changed files misplaced plugins missing fallbacks and caches' {
+        $root=New-PackageCudaFixture;$files=@(Get-LumaPackageCudaFiles -ProjectRoot $root)
+        foreach($scenario in 'plugin','license','misplaced','misplaced-base','cpu','vulkan','cache'){
+            $staged=New-PackageCudaStagedFixture $files
+            if($scenario -eq 'plugin'){Write-PackageFixture (Join-Path $staged 'runtime/ai/ggml-cuda.dll') 'wrong staged plugin'}
+            elseif($scenario -eq 'license'){Write-PackageFixture (Join-Path $staged 'runtime/translation/cuda/licenses/NVIDIA-CUDA-12.4-EULA.html') 'changed license'}
+            elseif($scenario -eq 'misplaced'){Write-PackageFixture (Join-Path $staged 'ggml-cuda.dll') 'unscoped CUDA plugin'}
+            elseif($scenario -eq 'misplaced-base'){Write-PackageFixture (Join-Path $staged 'runtime/cuda/ggml-base.dll') 'unscoped GGML base'}
+            elseif($scenario -eq 'cpu'){Remove-Item -LiteralPath (Join-Path $staged 'runtime/ai/ggml-cpu-x64.dll')}
+            elseif($scenario -eq 'vulkan'){Remove-Item -LiteralPath (Join-Path $staged 'runtime/translation/vulkan/ggml-vulkan.dll')}
+            else{Write-PackageFixture (Join-Path $staged 'runtime/translation/.cuda-downloads/cache.zip') 'download cache'}
+            Expect-PackageFailure {Assert-LumaPackageCudaFiles -Files $files -Directory $staged} "CUDA staged validation accepted $scenario"
+        }
+    }
+    Test-PackageCase 'CUDA package entrypoint rejects missing runtime before deployment' {
+        $root=New-PackageFixtureRepository;$asr=New-PackageAsrFixture
+        Copy-Item -LiteralPath (Join-Path $asr '.deps') -Destination (Join-Path $root '.deps') -Recurse
+        Copy-Item -LiteralPath (Join-Path $asr 'dependencies.lock.json') -Destination $root
+        New-Item -ItemType Directory -Path (Join-Path $root 'scripts') | Out-Null
+        foreach($file in 'package-windows.ps1','package-support.ps1','install-asr-cuda.ps1','install-translation-cuda.ps1'){Copy-Item -LiteralPath (Join-Path $packageTestProject ('scripts/'+$file)) -Destination (Join-Path $root 'scripts')}
+        Invoke-FixtureGit $root @('add','--','dependencies.lock.json','scripts') | Out-Null;Invoke-FixtureGit $root @('commit','-q','-m','CUDA packaging fixture') | Out-Null
+        $message='';try{& (Join-Path $root 'scripts/package-windows.ps1') -IncludeCuda | Out-Null}catch{$message=$_.Exception.Message}
+        Assert-Package ($message.Contains('CUDA') -and !$message.Contains('parameter cannot be found')) "CUDA preflight was not reached: $message"
+        Assert-Package (!(Test-Path -LiteralPath (Join-Path $root 'dist'))) 'Missing CUDA was discovered only after deployment started.'
+    }
+    Test-PackageCase 'actual compressed archive bytes obey the two GiB asset boundary for every flavor' {
+        Assert-LumaPackageArchiveSize -Bytes (2GB-1)
+        Expect-PackageFailure {Assert-LumaPackageArchiveSize -Bytes 2GB} 'A two-GiB ZIP was accepted.'
+        Expect-PackageFailure {Assert-LumaPackageArchiveSize -Bytes 0} 'An empty ZIP was accepted.'
     }
     Test-PackageCase 'quality ASR model is pinned and cannot be silently omitted' {
         $root=New-PackageAsrFixture;$quality=Join-Path $root '.deps/models/owned-quality.bin';Write-PackageFixture $quality 'owned quality ASR fixture'

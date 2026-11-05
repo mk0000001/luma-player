@@ -1,5 +1,9 @@
-param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino,[switch]$IncludeAsrCuda)
+param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino,[switch]$IncludeAsrCuda,[switch]$IncludeCuda)
 $ErrorActionPreference = 'Stop'
+if ($IncludeCuda) {
+    if ($SkipLocalAi -or $SkipTranslation) { throw 'IncludeCuda requires both local ASR and translation runtimes.' }
+    $IncludeAsrCuda=$true
+}
 if ($SkipLocalAi -and $IncludeAsrCuda) { throw 'IncludeAsrCuda requires the own local ASR runtime.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (![IO.Path]::IsPathRooted($Destination)) { $Destination = Join-Path $projectRoot $Destination }
@@ -56,7 +60,7 @@ if (!$SkipLocalAi) {
     }
 }
 if (!$SkipTranslation) {
-    $translationArgs=@{ RuntimeDirectory=$runtime;SkipModel=$SkipTranslationModel;SkipOpenVino=(!$IncludeTranslationOpenVino) }
+    $translationArgs=@{ RuntimeDirectory=$runtime;SkipModel=$SkipTranslationModel;SkipOpenVino=(!$IncludeTranslationOpenVino);IncludeCuda=$IncludeCuda }
     & (Join-Path $PSScriptRoot 'stage-translation.ps1') @translationArgs
 }
 # Child EXEs do not inherit the parent's DLL search directories.
