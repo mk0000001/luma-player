@@ -46,6 +46,7 @@ private slots:
     void rejectsDisplayCorruptionAndModelArtifacts(){
         QFETCH(QString,korean);QString error;
         QVERIFY(parseTranslationResponse(responseWithKorean(korean),&error).isEmpty());QVERIFY(!error.isEmpty());
+        QVERIFY(parseTranslationResponse(responseWithContent(korean),&error,TranslationProfile::HyMt2Plain).isEmpty());QVERIFY(!error.isEmpty());
     }
     void rejectsUnpairedSurrogatesBeforeUtf8Conversion_data(){
         QTest::addColumn<QByteArray>("response");
@@ -69,6 +70,7 @@ private slots:
     void preservesValidNamesMusicCombiningCharactersAndJsonEscapes(){
         QFETCH(QString,korean);QString error;
         QCOMPARE(parseTranslationResponse(responseWithKorean(korean),&error),korean);QVERIFY(error.isEmpty());
+        QCOMPARE(parseTranslationResponse(responseWithContent(korean),&error,TranslationProfile::HyMt2Plain),korean);QVERIFY(error.isEmpty());
     }
     void decodesNormalJsonUnicodeEscapesExactlyOnce(){
         const auto content=QString::fromLatin1("{\"korean\":\"\\uC548\\uB155\\uD558\\uC138\\uC694.\\nAlice \\\"Hi\\\" \\u266b \\uD83C\\uDFB5\"}");
@@ -127,6 +129,32 @@ private slots:
         QVERIFY(!payload.value("stream").toBool(true));
         QVERIFY(!payload.value("chat_template_kwargs").toObject().value("enable_thinking").toBool(true));
         QCOMPARE(payload.value("response_format").toObject().value("type").toString(),QString("json_schema"));
+    }
+    void onlyKnownDedicatedModelUsesPlainProfile(){
+        QCOMPARE(translationProfileForModel("C:/models/Hy-MT2-7B-Q4_K_M.gguf"),TranslationProfile::HyMt2Plain);
+        for(const auto &name:QStringList{"Qwen3-4B-Q4_K_M.gguf","custom.gguf","Hy-MT2-7B-unknown.gguf","Hy-MT2-1.8B-Q8_0.gguf"})
+            QCOMPARE(translationProfileForModel(name),TranslationProfile::LegacyQwenJson);
+    }
+    void dedicatedModelUsesOfficialPlainTranslationInstruction(){
+        const QString source=QString::fromUtf8("\"日本語\"\nこれは翻訳する原文です。");
+        const auto payload=translationPayload(source,TranslationProfile::HyMt2Plain);
+        const auto messages=payload.value("messages").toArray();QCOMPARE(messages.size(),1);
+        QCOMPARE(messages.first().toObject().value("role").toString(),QString("user"));
+        QCOMPARE(messages.first().toObject().value("content").toString(),QString("Translate the following text into Korean. Note that you should only output the translated result without any additional explanation:\n\n")+source);
+        QVERIFY(!payload.contains("response_format"));QVERIFY(!payload.value("stream").toBool(true));
+        QCOMPARE(payload.value("temperature").toDouble(),0.7);QCOMPARE(payload.value("top_p").toDouble(),0.6);
+        QCOMPARE(payload.value("top_k").toInt(),20);QCOMPARE(payload.value("repeat_penalty").toDouble(),1.05);
+        QCOMPARE(payload.value("seed").toInt(),42);QCOMPARE(payload.value("max_tokens").toInt(),512);
+    }
+    void plainOutputDecodesOnlyWireJsonAndDoesNotGuessOtherFormats(){
+        QString error;const auto plain=QString::fromUtf8("가지 않아도 돼.\nAlice가 \"안녕\"이라고 해요. ♪");
+        QCOMPARE(parseTranslationResponse(responseWithContent(plain),&error,TranslationProfile::HyMt2Plain),plain);QVERIFY(error.isEmpty());
+        QVERIFY(parseTranslationResponse(responseWithContent(plain),&error).isEmpty());
+        for(const auto &text:QStringList{QString(),QString::fromUtf8("日本語です。"),QString::fromUtf8("{\"korean\":\"안녕\"}"),QString::fromUtf8("```\n안녕\n```"),QString::fromUtf8("안녕\\uC138\\uC694")}){
+            QVERIFY(parseTranslationResponse(responseWithContent(text),&error,TranslationProfile::HyMt2Plain).isEmpty());QVERIFY(!error.isEmpty());
+        }
+        const auto truncated=QByteArray("{\"choices\":[{\"finish_reason\":\"length\",\"message\":{\"role\":\"assistant\",\"content\":\"안녕\"}}]}");
+        QVERIFY(parseTranslationResponse(truncated,&error,TranslationProfile::HyMt2Plain).isEmpty());
     }
 };
 namespace {

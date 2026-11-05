@@ -18,6 +18,7 @@ struct TranslationService::Impl {
     TranslationService *q;
     QString runtime,model,selected,log,token;
     AiPreferences preferences;
+    TranslationProfile profile=TranslationProfile::LegacyQwenJson;
     TranslationQueue queue;
     QVector<TranslationBackend> backends;
     int backendIndex=-1,startupMs=75000,requestMs=45000;
@@ -123,7 +124,7 @@ struct TranslationService::Impl {
         });
     }
     void infer(const TranslationTask &task){
-        const auto serial=launchSerial;auto *response=network.post(endpoint("/v1/chat/completions",requestMs),QJsonDocument(translationPayload(task.source)).toJson(QJsonDocument::Compact));reply=response;
+        const auto serial=launchSerial;auto *response=network.post(endpoint("/v1/chat/completions",requestMs),QJsonDocument(translationPayload(task.source,profile)).toJson(QJsonDocument::Compact));reply=response;
         requestDeadline.start(requestMs);
         QObject::connect(response,&QNetworkReply::readyRead,q,[this,response,serial,task]{
             if(serial==launchSerial && reply==response && response->bytesAvailable()>maximumResponseBytes)skipCue(task,"번역 응답이 너무 커서 이 자막을 건너뜁니다.");
@@ -135,7 +136,7 @@ struct TranslationService::Impl {
             if(status==400 || status==413 || status==422){skipCue(task,"번역 실행기가 이 자막 요청을 처리하지 못해 건너뜁니다.");return;}
             if(networkError!=QNetworkReply::NoError || status!=200){nextBackend("로컬 번역 추론 요청이 실패했습니다.");return;}
             const auto body=response->readAll();if(body.size()>maximumResponseBytes){skipCue(task,"번역 응답이 너무 커서 이 자막을 건너뜁니다.");return;}
-            QString error;const auto korean=parseTranslationResponse(body,&error);
+            QString error;const auto korean=parseTranslationResponse(body,&error,profile);
             if(korean.isEmpty()){skipCue(task,error);return;}
             if(selected.isEmpty()){
                 if(process)log+=QString::fromUtf8(process->readAll());const auto actual=confirmedTranslationBackend(backends[backendIndex],log);
@@ -153,7 +154,7 @@ void TranslationService::setPreferences(const AiPreferences &preferences){
     d->clear(false);d->stop();d->preferences=preferences;d->backends.clear();d->backendIndex=-1;d->selected.clear();emit backendSelected({});
 }
 AiPreferences TranslationService::preferences()const{return d->preferences;}
-void TranslationService::setModel(QString model){d->clear(true);d->stop();d->model=model.isEmpty()?QDir(d->runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf"):std::move(model);d->backends.clear();d->backendIndex=-1;d->selected.clear();emit backendSelected({});}
+void TranslationService::setModel(QString model){d->clear(true);d->stop();d->model=model.isEmpty()?QDir(d->runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf"):std::move(model);d->profile=translationProfileForModel(d->model);d->backends.clear();d->backendIndex=-1;d->selected.clear();emit backendSelected({});}
 void TranslationService::request(const QStringList &sources){
     const auto generation=d->queue.generation();QStringList bounded;
     for(const auto &source:sources){

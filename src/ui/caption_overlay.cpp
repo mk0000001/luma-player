@@ -1,7 +1,7 @@
 #include "caption_overlay.h"
+#include "caption_layout.h"
 #include <QEvent>
 #include <QPainter>
-#include <QFontMetrics>
 #include <QTimer>
 #include <algorithm>
 namespace luma {
@@ -11,6 +11,7 @@ CaptionOverlay::CaptionOverlay(QWidget *anchor):QWidget(anchor->window(),Qt::Too
 }
 void CaptionOverlay::setCues(const QVector<SubtitleCue> &cues){const auto generation=timeline_.reset();timeline_.attach(generation,cues);text_.clear();hide();}
 void CaptionOverlay::setPosition(qint64 position){const auto text=timeline_.at(position);if(text!=text_){text_=text;update();}syncGeometry();}
+void CaptionOverlay::setBottomInset(int pixels){pixels=std::max(0,pixels);if(bottomInset_!=pixels){bottomInset_=pixels;update();}}
 bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     switch(event->type()){
     case QEvent::Move:case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:
@@ -24,13 +25,6 @@ void CaptionOverlay::syncGeometry(){
     if(!isVisible())show();
 }
 void CaptionOverlay::paintEvent(QPaintEvent *){
-    if(text_.isEmpty())return;QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);
-    QFont font;font.setFamilies({"Noto Sans CJK JP","Noto Sans CJK KR","Noto Sans"});font.setPixelSize(std::clamp(width()/30,18,34));font.setWeight(QFont::DemiBold);painter.setFont(font);
-    const QRect bounds(24,20,std::max(1,width()-48),std::max(1,height()-40));const int flags=Qt::AlignHCenter|Qt::AlignVCenter|Qt::TextWordWrap;
-    QRect textBounds=QFontMetrics(font).boundingRect(QRect(0,0,bounds.width()-28,bounds.height()),flags,text_);
-    const int boxHeight=std::min(bounds.height(),textBounds.height()+20);const int boxWidth=std::min(bounds.width(),textBounds.width()+28);
-    QRect box((width()-boxWidth)/2,height()-boxHeight-std::max(24,height()/18),boxWidth,boxHeight);
-    painter.setPen(Qt::NoPen);painter.setBrush(QColor(0,0,0,180));painter.drawRoundedRect(box,10,10);
-    painter.setPen(Qt::white);painter.drawText(box.adjusted(14,7,-14,-7),flags,text_);
+    if(text_.isEmpty())return;QPainter painter(this);paintCaption(painter,layoutCaption(text_,size(),bottomInset_,this));
 }
 }

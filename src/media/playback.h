@@ -8,6 +8,7 @@ struct MediaItem { int id; QString label; };
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     bool playing=false, failed=false, navigationTitle=false;
+    bool timelineReady=false;
     int currentTitle=-1,currentChapter=-1;
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
@@ -19,6 +20,8 @@ struct PlaybackState {
     QVector<MediaItem> audioTracks, subtitleTracks, chapters, titles;
 };
 bool isDiscSource(const QString &source);
+// A new title ID alone is insufficient: native live length must match metadata.
+bool discTimelineReady(qint64 liveDurationMs,qint64 titleDurationMs,bool navigationTitle);
 enum class DiscAction { Activate,Up,Down,Left,Right,Popup };
 int discActionCode(DiscAction action);
 class PlaybackEngine : public QObject {

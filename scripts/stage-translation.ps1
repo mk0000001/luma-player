@@ -1,7 +1,9 @@
 param(
     [Parameter(Mandatory=$true)][string]$RuntimeDirectory,
     [switch]$SkipModel,
-    [switch]$SkipOpenVino
+    [switch]$SkipOpenVino,
+    [switch]$IncludeCuda,
+    [ValidateSet('fast','quality','all')][string]$ModelProfile='fast'
 )
 $ErrorActionPreference = 'Stop'
 $translationProject = Split-Path -Parent $PSScriptRoot
@@ -12,6 +14,7 @@ $translationLockPath = Join-Path $translationProject 'translation-dependencies.l
 $translationLock = Get-Content -LiteralPath $translationLockPath -Raw | ConvertFrom-Json
 New-Item -ItemType Directory -Path $translationTarget -Force | Out-Null
 foreach ($dependency in $translationLock.windows) {
+    if ($dependency.target -eq 'cuda') { continue }
     if ($SkipOpenVino -and $dependency.target -eq 'openvino') { continue }
     $source = Join-Path $translationSource $dependency.target
     if (!(Test-Path -LiteralPath (Join-Path $source $dependency.marker))) { throw "Run bootstrap-translation.ps1 first: $($dependency.id)" }
@@ -22,14 +25,28 @@ foreach ($dependency in $translationLock.windows) {
         Copy-Item -LiteralPath $_.FullName -Destination $target -Force
     }
 }
+if ($IncludeCuda) {
+    . (Join-Path $PSScriptRoot 'install-translation-cuda.ps1')
+    $cudaSpec=Get-LumaTranslationCudaSpec -Directory $translationProject -Development
+    $cudaSource=Join-Path $translationSource 'cuda'
+    if (!(Test-LumaTranslationCudaInstallation -Spec $cudaSpec -Directory $cudaSource)) { throw 'Run install-translation-cuda.ps1 -Development first.' }
+    $cudaTarget=Join-Path $translationTarget 'cuda'
+    New-Item -ItemType Directory -Path $cudaTarget -Force | Out-Null
+    Get-ChildItem -LiteralPath $cudaSource -Force | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $cudaTarget -Recurse -Force }
+    if (!(Test-LumaTranslationCudaInstallation -Spec $cudaSpec -Directory $cudaTarget)) { throw 'Staged CUDA runtime verification failed.' }
+}
 if (!$SkipModel) {
-    $model = Join-Path $translationSource "models\$($translationLock.model.file)"
-    if (!(Test-Path -LiteralPath $model) -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash -ne $translationLock.model.sha256) { throw 'Translation model SHA-256 is missing or wrong. Run bootstrap-translation.ps1.' }
+    if ($ModelProfile -ne 'fast' -and !$translationLock.qualityModel) { throw 'The requested quality translation model is absent from the lock.' }
+    $selectedModels = if ($ModelProfile -eq 'quality') { @($translationLock.qualityModel) } elseif ($ModelProfile -eq 'all') { @($translationLock.model,$translationLock.qualityModel) } else { @($translationLock.model) }
     $models = Join-Path $translationTarget 'models'
     New-Item -ItemType Directory -Path $models -Force | Out-Null
-    $destination = Join-Path $models $translationLock.model.file
-    Copy-Item -LiteralPath $model -Destination $destination -Force
-    if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $translationLock.model.sha256) { throw 'Staged translation model SHA-256 mismatch.' }
+    foreach ($spec in $selectedModels) {
+        $model = Join-Path $translationSource "models\$($spec.file)"
+        if (!(Test-Path -LiteralPath $model) -or (Get-Item -LiteralPath $model).Length -ne $spec.bytes -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash -ne $spec.sha256) { throw "Translation model size/SHA-256 is missing or wrong: $($spec.file). Run bootstrap-translation.ps1 with the selected model profile." }
+        $destination = Join-Path $models $spec.file
+        Copy-Item -LiteralPath $model -Destination $destination -Force
+        if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $spec.sha256) { throw 'Staged translation model SHA-256 mismatch.' }
+    }
 }
 $licenseTarget = Join-Path $translationTarget 'licenses'
 New-Item -ItemType Directory -Path $licenseTarget -Force | Out-Null

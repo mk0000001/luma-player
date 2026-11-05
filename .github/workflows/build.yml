@@ -23,6 +23,8 @@ jobs:
         run: |
           ./tests/translation_installer_tests.ps1
           ./tests/package_tests.ps1
+          ./tests/translation_cuda_installer_tests.ps1
+          ./tests/asr_cuda_installer_tests.ps1
       - name: Compile and test
         shell: pwsh
         run: ./scripts/build-windows.ps1
@@ -42,6 +44,7 @@ jobs:
           $env:LUMA_TEST_RUNTIME = "$pwd/build/runtime"
           $env:LUMA_READING_RUNTIME = "$pwd/build/runtime"
           $env:LUMA_FONT_RUNTIME = "$pwd/build/runtime"
+          $env:LUMA_SUBTITLE_FILE_RUNTIME = "$pwd/build/runtime"
           ctest --test-dir build --output-on-failure
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4

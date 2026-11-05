@@ -39,15 +39,17 @@ int main(int argc,char **argv){
                 if(!health&&!headers.contains("Bearer "+token.toUtf8())){socket->disconnectFromHost();return;}
                 const auto payload=QJsonDocument::fromJson(input->mid(headerEnd+4,length)).object();
                 const auto messages=payload.value("messages").toArray();
-                const auto source=messages.isEmpty()?QString():messages.last().toObject().value("content").toString();
-                if(!health){QFile requests(model+".requests");if(requests.open(QIODevice::Append))requests.write(QJsonDocument(QJsonObject{{"source",source}}).toJson(QJsonDocument::Compact)+"\n");}
+                const bool plain=!payload.contains("response_format");
+                auto source=messages.isEmpty()?QString():messages.last().toObject().value("content").toString();
+                if(plain){const auto separator=source.indexOf("\n\n");if(separator>=0)source=source.mid(separator+2);}
+                if(!health){QFile requests(model+".requests");if(requests.open(QIODevice::Append))requests.write(QJsonDocument(QJsonObject{{"source",source},{"plain",plain}}).toJson(QJsonDocument::Compact)+"\n");}
                 QPointer<QTcpSocket> safe(socket);
-                QTimer::singleShot(health&&model.contains("boot")?250:(source==QString::fromUtf8("遅い") || source=="delayed-invalid")?350:5,&app,[safe,health,source]{
+                QTimer::singleShot(health&&model.contains("boot")?250:(source==QString::fromUtf8("遅い") || source=="delayed-invalid")?350:5,&app,[safe,health,source,plain]{
                     if(!safe||safe->state()!=QAbstractSocket::ConnectedState)return;
-                    const auto korean=source=="bad"?QString::fromUtf8("日本語です。"):QString::fromUtf8("안녕하세요.");
-                    const auto content=QJsonDocument(QJsonObject{{"korean",korean}}).toJson(QJsonDocument::Compact);
+                    const auto korean=source=="bad"?QString::fromUtf8("日本語です。"):plain?QString::fromUtf8("가지 않아도 돼."):QString::fromUtf8("안녕하세요.");
+                    const auto content=plain?korean:QString::fromUtf8(QJsonDocument(QJsonObject{{"korean",korean}}).toJson(QJsonDocument::Compact));
                     const auto finish=source=="truncated" || source=="delayed-invalid"?"length":"stop";
-                    auto result=health?QJsonObject{{"status","ok"}}:QJsonObject{{"choices",QJsonArray{QJsonObject{{"finish_reason",finish},{"message",QJsonObject{{"role","assistant"},{"content",QString::fromUtf8(content)}}}}}}};
+                    auto result=health?QJsonObject{{"status","ok"}}:QJsonObject{{"choices",QJsonArray{QJsonObject{{"finish_reason",finish},{"message",QJsonObject{{"role","assistant"},{"content",content}}}}}}};
                     if(source=="oversized-response")result.insert("padding",QString(300000,'x'));
                     const auto body=source=="malformed"?QByteArray("{\"choices\":"):QJsonDocument(result).toJson(QJsonDocument::Compact);
                     const QByteArray status=source=="rejected-request"?"HTTP/1.1 413 Payload Too Large":"HTTP/1.1 200 OK";

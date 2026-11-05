@@ -216,6 +216,23 @@ try {
         Remove-Item -LiteralPath $model
         Assert-LumaPackageTranslationModel -Directory $directory
     }
+    Test-PackageCase 'core package excludes optional CUDA binaries and download caches' {
+        foreach($relative in 'runtime/translation/cuda/llama-server.exe','runtime/ai/ggml-cuda.dll','runtime/ai/cudart64_12.dll','runtime/ai/cublas64_12.dll','runtime/ai/cublasLt64_12.dll','runtime/translation/.cuda-downloads/archive.zip','runtime/ai/.asr-cuda-downloads/archive.zip','runtime/ai/partial.download') {
+            $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'));Write-PackageFixture (Join-Path $directory $relative) 'owned optional CUDA sentinel'
+            Expect-PackageFailure { Assert-LumaPackageCoreCudaOmitted -Directory $directory } "Optional CUDA content accepted in core: $relative"
+        }
+        $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'));Write-PackageFixture (Join-Path $directory 'licenses/LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html') 'owned notice fixture'
+        Assert-LumaPackageCoreCudaOmitted -Directory $directory
+    }
+    Test-PackageCase 'quality ASR model is pinned and cannot be silently omitted' {
+        $root=New-PackageAsrFixture;$quality=Join-Path $root '.deps/models/owned-quality.bin';Write-PackageFixture $quality 'owned quality ASR fixture'
+        $lockPath=Join-Path $root 'dependencies.lock.json';$lock=Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+        $lock | Add-Member -NotePropertyName highQualityModel -NotePropertyValue @{file='owned-quality.bin';bytes=(Get-Item -LiteralPath $quality).Length;sha256=(Get-FileHash -LiteralPath $quality).Hash.ToLower()}
+        Write-PackageFixture $lockPath ($lock | ConvertTo-Json -Depth 5)
+        Assert-Package (@(Get-LumaPackageAsrFiles -ProjectRoot $root).Count -eq 4) 'Quality ASR model was omitted from core contract.'
+        Write-PackageFixture $quality 'corrupt quality fixture';Expect-PackageFailure { Get-LumaPackageAsrFiles -ProjectRoot $root } 'Corrupt quality model accepted.'
+        Remove-Item -LiteralPath $quality;Expect-PackageFailure { Get-LumaPackageAsrFiles -ProjectRoot $root } 'Missing quality model accepted.'
+    }
     Test-PackageCase 'committed upstream license bytes survive checkout normalization rules' {
         $root=New-PackageFixtureRepository
         Copy-Item -LiteralPath (Join-Path $packageTestProject '.gitattributes') -Destination (Join-Path $root '.gitattributes')

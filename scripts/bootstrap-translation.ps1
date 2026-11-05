@@ -1,4 +1,4 @@
-param([switch]$SkipModel, [switch]$SkipOpenVino)
+param([switch]$SkipModel, [switch]$SkipOpenVino, [switch]$IncludeCuda, [ValidateSet('fast','quality','all')][string]$ModelProfile='fast')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $translationProject = Split-Path -Parent $PSScriptRoot
@@ -14,6 +14,7 @@ function Get-TranslationFile([string]$Url,[string]$Destination,[string]$Hash) {
     Move-Item -LiteralPath $partial -Destination $Destination -Force
 }
 foreach ($dependency in $translationLock.windows) {
+    if ($dependency.target -eq 'cuda') { continue }
     if ($SkipOpenVino -and $dependency.target -eq 'openvino') { continue }
     $archive = Join-Path $translationDownloads $dependency.archive
     Get-TranslationFile $dependency.url $archive $dependency.sha256
@@ -27,14 +28,22 @@ foreach ($dependency in $translationLock.windows) {
     }
     Write-Output "Verified local translation runtime: $($dependency.id)"
 }
+if ($IncludeCuda) {
+    . (Join-Path $PSScriptRoot 'install-translation-cuda.ps1')
+    Install-LumaTranslationCuda -Directory $translationProject -Development | Out-Host
+}
 foreach ($license in $translationLock.licenses) {
     $path = Join-Path $translationProject "LICENSES\translation\$($license.file)"
     if (!(Test-Path -LiteralPath $path) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $license.sha256) { throw "Translation license missing or changed: $($license.file)" }
 }
 if (!$SkipModel) {
-    Write-Output 'Verifying optional Korean translation model (2,497,280,256 bytes; about 2.33 GiB).'
+    if ($ModelProfile -ne 'fast' -and !$translationLock.qualityModel) { throw 'The requested quality translation model is absent from the lock.' }
+    $selectedModels = if ($ModelProfile -eq 'quality') { @($translationLock.qualityModel) } elseif ($ModelProfile -eq 'all') { @($translationLock.model,$translationLock.qualityModel) } else { @($translationLock.model) }
     $models = Join-Path $translationRoot 'models'
     New-Item -ItemType Directory -Path $models -Force | Out-Null
-    Get-TranslationFile $translationLock.model.url (Join-Path $models $translationLock.model.file) $translationLock.model.sha256
-    Write-Output "Verified local translation model: $($translationLock.model.file)"
+    foreach ($spec in $selectedModels) {
+        Write-Output "Verifying optional Korean translation model: $($spec.file) ($($spec.bytes) bytes)."
+        Get-TranslationFile $spec.url (Join-Path $models $spec.file) $spec.sha256
+        Write-Output "Verified local translation model: $($spec.file)"
+    }
 }

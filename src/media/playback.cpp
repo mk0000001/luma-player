@@ -2,6 +2,7 @@
 #include "motion_options.h"
 #include <QSettings>
 #include <QSet>
+#include <QHash>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -31,6 +32,11 @@ bool isDiscSource(const QString &source) {
         QRegularExpression("^[A-Za-z]:[/\\\\]?$").match(source).hasMatch() ||
         QFileInfo::exists(QDir(source).filePath("BDMV/index.bdmv"));
 }
+bool discTimelineReady(qint64 liveDurationMs,qint64 titleDurationMs,bool navigationTitle){
+    if(navigationTitle || liveDurationMs<=0 || titleDurationMs<=0)return false;
+    const auto difference=liveDurationMs>titleDurationMs?liveDurationMs-titleDurationMs:titleDurationMs-liveDurationMs;
+    return difference<=2000;
+}
 struct PlaybackEngine::Impl {
     PlaybackEngine *owner;
     Kind kind;
@@ -49,6 +55,7 @@ struct PlaybackEngine::Impl {
     bool discSoftware=true;
     int metadataTitle=-2,metadataAudio=-2;
     QSet<int> navigationTitles;
+    QHash<int,qint64> titleDurations;
     bool titleMetadataReady=false;
     int managedMpvSubtitle=-1;
     std::atomic<quint64> generation{0};
@@ -215,7 +222,7 @@ const PlaybackState &PlaybackEngine::state()const{return d->state;}
 bool PlaybackEngine::open(const QString &source,WId surface){
     if(!available()){d->fail(d->error);return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->managedSubtitle=false;d->managedMpvSubtitle=-1;
-    d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleMetadataReady=false;
+    d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     if(d->kind==Kind::Disc){
         QString url=source;
         if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
@@ -244,7 +251,7 @@ bool PlaybackEngine::open(const QString &source,WId surface){
 }
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
-    d->timer.stop();d->state.playing=false;d->state.durationMs=0;
+    d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->fileLoaded=false;
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.
         // Keep its owner thread pumping while libVLC's blocking stop joins output threads.
@@ -312,17 +319,21 @@ void PlaybackEngine::poll(){
         libvlc_title_description_t **titles=nullptr;
         const int count=d->libvlc_media_player_get_full_title_descriptions(d->player,&titles);
         d->state.titles.clear();
-        const bool menuTitles=count>1 && titles[0] && (titles[0]->i_flags&libvlc_title_menu);
-        if(count>0){
+        const bool menuTitles=count>1 && titles && titles[0] && (titles[0]->i_flags&libvlc_title_menu);
+        if(count>0 && titles){
             d->titleMetadataReady=true;
             d->navigationTitles.clear();
-            for(int i=0;i<count;++i)if(titles[i] && ((titles[i]->i_flags&libvlc_title_menu) || (menuTitles && i==count-1)))d->navigationTitles.insert(i);
+            for(int i=0;i<count && i<10000;++i)if(titles[i]){
+                if((titles[i]->i_flags&libvlc_title_menu) || (menuTitles && i==count-1))d->navigationTitles.insert(i);
+                if(titles[i]->i_duration>0)d->titleDurations.insert(i,titles[i]->i_duration);
+            }
         }
-        // Keep the mapping if a transient metadata query fails. First Play
-        // follows the content titles in libVLC's Blu-ray menu demuxer.
+        // Keep known lengths/mapping if a transient metadata query fails. The
+        // live length can still describe the previous title after its ID changes.
         d->state.navigationTitle=!d->titleMetadataReady || d->state.currentTitle<=0 || d->navigationTitles.contains(d->state.currentTitle);
-        for(int i=0;i<count && i<10000;++i)d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
-        if(count>0)d->libvlc_title_descriptions_release(titles,unsigned(count));
+        d->state.timelineReady=discTimelineReady(d->state.durationMs,d->titleDurations.value(d->state.currentTitle),d->state.navigationTitle);
+        for(int i=0;titles && i<count && i<10000;++i)if(titles[i])d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
+        if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
         if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){
             libvlc_media_track_t **tracks=nullptr;const auto n=d->libvlc_media_tracks_get(d->media,&tracks);
             for(unsigned i=0;i<n;++i){const auto code=tracks[i]->i_codec;char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};if(tracks[i]->i_type==libvlc_track_video)d->state.videoCodec=QString::fromLatin1(fourcc);if(tracks[i]->i_type==libvlc_track_audio && tracks[i]->i_id==d->state.currentAudio){d->state.audioCodec=QString::fromLatin1(fourcc);if(tracks[i]->audio){d->state.audioSampleRate=int(tracks[i]->audio->i_rate);d->state.audioChannels=int(tracks[i]->audio->i_channels);}}}
@@ -338,6 +349,7 @@ void PlaybackEngine::poll(){
             if(event->event_id==MPV_EVENT_END_FILE){auto *end=static_cast<mpv_event_end_file *>(event->data);if(end->reason==MPV_END_FILE_REASON_ERROR)d->fail(QString::fromUtf8(d->mpv_error_string(end->error)));}
         }
         d->state.positionMs=qint64(d->number("time-pos")*1000);d->state.durationMs=qint64(d->number("duration")*1000);
+        d->state.timelineReady=d->fileLoaded && d->state.durationMs>0;
         int paused=1,idle=1;d->mpv_get_property(d->mpv,"pause",MPV_FORMAT_FLAG,&paused);d->mpv_get_property(d->mpv,"idle-active",MPV_FORMAT_FLAG,&idle);d->state.playing=!paused && !idle;
         d->state.videoCodec=d->prop("video-codec");d->state.audioCodec=d->prop("audio-codec-name");d->state.hardwareDecoder=d->prop("hwdec-current");
         d->state.runtimeVersion=d->prop("mpv-version");d->state.colorPrimaries=d->prop("video-params/primaries");d->state.transferFunction=d->prop("video-params/gamma");

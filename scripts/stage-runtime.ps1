@@ -1,5 +1,6 @@
-param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino)
+param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino,[switch]$IncludeAsrCuda)
 $ErrorActionPreference = 'Stop'
+if ($SkipLocalAi -and $IncludeAsrCuda) { throw 'IncludeAsrCuda requires the own local ASR runtime.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (![IO.Path]::IsPathRooted($Destination)) { $Destination = Join-Path $projectRoot $Destination }
 $runtime = Join-Path $Destination 'runtime'
@@ -23,6 +24,15 @@ foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error
 }
 $model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
 if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
+$highQualityModel=(Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json).highQualityModel
+if ($highQualityModel) {
+    if ($highQualityModel.file -notmatch '^[A-Za-z0-9_.-]+\.bin$' -or $highQualityModel.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid pinned high-quality ASR model metadata.' }
+    $highQualityPath=Join-Path $projectRoot ('.deps/models/'+$highQualityModel.file)
+    if (Test-Path -LiteralPath $highQualityPath -PathType Leaf) {
+        if ((Get-Item -LiteralPath $highQualityPath).Length -ne [long]$highQualityModel.bytes -or (Get-FileHash -LiteralPath $highQualityPath -Algorithm SHA256).Hash -ne $highQualityModel.sha256) { throw 'High-quality ASR model size or SHA-256 mismatch.' }
+        Copy-Item -LiteralPath $highQualityPath -Destination (Join-Path $runtime 'models') -Force
+    }
+}
 if (!$SkipLocalAi) {
     foreach($folder in 'reading','reading/ipadic','ai') { New-Item -ItemType Directory -Path (Join-Path $runtime $folder) -Force | Out-Null }
     $nativeAi = Join-Path $projectRoot '.deps/build-ai/bin'
@@ -38,6 +48,11 @@ if (!$SkipLocalAi) {
     foreach($name in 'ggml-base-encoder-openvino.xml','ggml-base-encoder-openvino.bin') {
         $encoder = Join-Path $projectRoot ".deps/models-openvino/$name"
         if(Test-Path -LiteralPath $encoder) { Copy-Item -LiteralPath $encoder -Destination (Join-Path $runtime 'models') -Force }
+    }
+    if($IncludeAsrCuda) {
+        . (Join-Path $PSScriptRoot 'install-asr-cuda.ps1')
+        $asrCudaSpec=Get-LumaAsrCudaSpec -Directory $projectRoot
+        Copy-LumaAsrCudaAddon -Spec $asrCudaSpec -Source (Join-Path $projectRoot '.deps/asr-cuda') -Destination (Join-Path $runtime 'ai') -Notices @(Get-LumaAsrCudaNotices -Directory $projectRoot)
     }
 }
 if (!$SkipTranslation) {

@@ -4,6 +4,17 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.3 — 2026-11-06 프리뷰 작업
+
+- 긴 원문을 시간 안에서 짧게 나누고 원문·독음·번역을 같은 페이지로 표시. 실제 글자 배치로 공백 없는 문자열도 줄바꿈하며 결합 문자·이모지를 보존.
+- 재생·탐색 후 최소 10초 준비와 60초 선행 작업을 분리. 실패로 최소 버퍼를 자동 우회하지 않고 수동 일시정지를 유지하며 재시도/자막 없이 계속을 제공.
+- 엄격한 UTF-8/UTF-16 SRT와 로컬 FFmpeg의 ASS/SSA/VTT/SMI, CP949/Shift-JIS 추정 변환. 같은 이름 검색·드롭·실패 시 현재 언어 AI 전환, 파일/디스크 본편별 로컬 이어보기 추가.
+- 영상과 재생바를 독립 창으로 겹쳐 숨김 때 영상 배치를 유지. 74 px 전체화면 바는 정지 포인터가 바 위에 있어도 5초 후 숨고 메뉴·끌기·키 조작은 유지. Windows 캡처 제외는 영상·자막만 적용하며 본창·메뉴·재생바는 보임.
+- F/Enter/F11 전체화면, Esc 해제, 좌우 10초, 위아래 음량 5%, M 음소거. 디스크 메뉴는 Ctrl+방향키/Ctrl+Enter; 입력 위젯의 키 유지.
+- 코어에 MIT Whisper large-v3-turbo Q5 모델 추가. CUDA 음성 인식·번역은 원문 NVIDIA CUDA 12.4 EULA를 보존하는 선택 수동 설치로 제공하며 드라이버를 변경하지 않음.
+- 선택 번역 프로필: fast Qwen3-4B 약 2.50 GB / quality Hy-MT2-7B 약 4.624 GB(Apache-2.0). 설치한 quality는 명시한 모델 설정이 없을 때만 시작 기본값. 한 cue의 잘린/무효 번역은 건너뛰고 후속 번역 계속.
+- 소유 파일의 실제 키·자막 가져오기·이어서보기 검사와 개발 PC CUDA 실행 확인은 최종 CI·포터블 검증과 구분. [사용 안내](docs/CAPTIONS-AND-PLAYBACK.md)와 [alpha.3 기록](docs/releases/0.1.0-alpha.3.md)에 확인 범위를 기재하며 배포 완료를 미리 주장하지 않음.
+
 ### 0.1.0-alpha.2 — Windows 프리뷰
 
 - TUKI 메뉴→본편 안정화: 소프트웨어 디코딩과 10초 디스크 캐시를 기본으로 선택. 새 연속 재생·네 번 탐색·챕터·메뉴 검사를 통과했으며 하드웨어 디코더의 표면 할당 오류는 재현·기록.
@@ -24,6 +35,17 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.3 — preview work, 2026-11-06
+
+- Split long source cues into timed pages and align source/readings/translations. Measured text layout wraps unbroken strings while preserving combining marks and emoji.
+- Separate the strict ten-second playback/seek minimum from continued 60-second lookahead. Preserve manual pause; failure does not automatically bypass readiness. Provide retry and explicit continue-without-captions actions.
+- Add strict UTF-8/UTF-16 SRT, local FFmpeg ASS/SSA/VTT/SMI import and heuristic CP949/Shift-JIS conversion. Add same-stem discovery, dropping, current-language AI fallback and local per-file/disc-title resume.
+- Float video/transport without reflow. The 74 px fullscreen bar hides after five idle seconds even with the pointer over it, while menus/dragging/key activity remain usable. Exclude only video/captions from Windows capture; main UI, menus and transport stay visible.
+- Add F/Enter/F11 fullscreen, Esc exit, ten-second arrows, 5% volume arrows and M mute. Use Ctrl+arrows/Ctrl+Enter for disc menus while preserving input-control keys.
+- Include the MIT Whisper large-v3-turbo Q5 model in core. Offer manual optional ASR/translation CUDA installation, retaining original NVIDIA CUDA 12.4 EULA and leaving drivers unchanged.
+- Offer optional fast Qwen3-4B (~2.50 GB) and quality Hy-MT2-7B (~4.624 GB, Apache-2.0) translation. Installed quality becomes the startup default only without an explicit saved model. Skip an invalid/truncated cue translation and continue later cues.
+- Owned-media native keys/import/resume checks and development-PC CUDA execution are distinct from final CI/portable validation. The [guide](docs/CAPTIONS-AND-PLAYBACK.md) and [alpha.3 record](docs/releases/0.1.0-alpha.3.md) state scope without claiming publication is complete.
 
 ### 0.1.0-alpha.2 — Windows preview
 

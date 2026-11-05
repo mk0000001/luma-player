@@ -88,6 +88,13 @@ function Get-LumaPackageAsrFiles {
     $model=Join-Path $ProjectRoot ".deps/models/$($lock.model.file)"
     if(!(Test-Path -LiteralPath $model -PathType Leaf) -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash -ne $lock.model.sha256) { throw 'Core ASR model is missing or has the wrong SHA-256. Run bootstrap-windows.ps1 without -SkipAiModel.' }
     $files=@([pscustomobject]@{Name=$lock.model.file;Source=$model;Bytes=(Get-Item -LiteralPath $model).Length;Sha256=$lock.model.sha256})
+    if($lock.highQualityModel) {
+        $quality=$lock.highQualityModel
+        if([string]$quality.file -notmatch '^[A-Za-z0-9_.-]+\.bin$' -or [string]$quality.sha256 -notmatch '^[0-9a-f]{64}$' -or [long]$quality.bytes -le 0) { throw 'Invalid pinned quality ASR metadata.' }
+        $qualityPath=Join-Path $ProjectRoot ".deps/models/$($quality.file)"
+        if(!(Test-Path -LiteralPath $qualityPath -PathType Leaf) -or (Get-Item -LiteralPath $qualityPath).Length -ne [long]$quality.bytes -or (Get-FileHash -LiteralPath $qualityPath -Algorithm SHA256).Hash -ne $quality.sha256) { throw 'Quality ASR model is missing or has the wrong size/SHA-256.' }
+        $files += [pscustomobject]@{Name=$quality.file;Source=$qualityPath;Bytes=[long]$quality.bytes;Sha256=$quality.sha256}
+    }
     $archive=Join-Path $ProjectRoot ".deps/downloads/$($lock.encoder.archive)"
     if(!(Test-Path -LiteralPath $archive -PathType Leaf) -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $lock.encoder.sha256) { throw 'Pinned ASR encoder archive is missing or has the wrong SHA-256.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -123,6 +130,20 @@ function Assert-LumaPackageTranslationModel {
     $spec=(Get-Content -LiteralPath (Join-Path $Directory 'translation-dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json).model
     $model=Join-Path $Directory "runtime/translation/models/$($spec.file)"
     if($models.Count -ne 1 -or !(Test-Path -LiteralPath $model -PathType Leaf) -or (Get-Item -LiteralPath $model).Length -ne $spec.bytes -or (Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash -ne $spec.sha256) { throw 'Explicit translation model inclusion requires the pinned file, size and SHA-256.' }
+}
+
+function Assert-LumaPackageCoreCudaOmitted {
+    param([string]$Directory)
+    $root=[IO.Path]::GetFullPath($Directory).TrimEnd('\','/')
+    foreach($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
+        $relative=$item.FullName.Substring($root.Length+1).Replace('\','/')
+        if($relative -match '^runtime/translation/cuda(?:/|$)' -or
+           $relative -match '^runtime/ai/(?:ggml-cuda|cudart64_12|cublas64_12|cublasLt64_12)\.dll$' -or
+           $relative -match '(?:^|/)(?:\.cuda-downloads|\.asr-cuda-downloads|\.downloads)(?:/|$)' -or
+           (!$item.PSIsContainer -and $item.Name -match '\.(?:download|partial)$')) {
+            throw "Core package contains optional CUDA binaries or download cache: $relative"
+        }
+    }
 }
 
 function Get-LumaPackageManifestFiles {
