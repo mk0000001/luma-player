@@ -70,6 +70,11 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
             }
             if(qint64(ranges.size())+1>=maxPages)last=characters.size();
             else if(last<characters.size()){if(lastSentence>first)last=lastSentence;else if(lastWord>first)last=lastWord;}
+            // Keep sentence endings/closing quotes with the preceding page.
+            // The small allowance cannot turn a punctuation-only input into
+            // one unbounded presentation page.
+            static const QString closing=QString::fromUtf8("。，、！？!?;；:：,.)]}」』】〉》〕”’»…");
+            for(int extra=0;last<characters.size() && extra<4 && closing.contains(cue.text.at(characters[last].start));++extra)++last;
             ranges.append({first,last});first=last;
         }
         QVector<qint64> cumulative{0};for(const auto &character:characters)cumulative.append(cumulative.last()+character.units);

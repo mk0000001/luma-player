@@ -140,6 +140,13 @@ private slots:
         const auto oldGeneration=loader->generation();window.openSource(folder.filePath("new-video.mkv"));
         loader->ready(oldGeneration,{{0,10000,"Stale owned caption"}});QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),0);
     }
+    void changingRecognitionLanguagePreservesAnImportedSubtitle(){
+        QSettings().setValue("subtitles/translation",false);QTemporaryDir folder;QFile file(folder.filePath("owned.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 00:00:15,000\nOwned external original\n");file.close();
+        luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));QVERIFY(window.loadCaptionFile(file.fileName()));
+        QComboBox *language=nullptr;for(auto *box:window.findChildren<QComboBox*>())if(box->findData("ja")>=0 && box->findData("en")>=0){language=box;break;}QVERIFY(language);
+        language->setCurrentIndex(language->findData("en"));QVERIFY(QMetaObject::invokeMethod(language,"activated",Qt::DirectConnection,Q_ARG(int,language->currentIndex())));
+        QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),1);
+    }
     void tabsAndScrollAreasKeepTheirArrowKeys(){
         luma::MainWindow window;window.show();window.activateWindow();QCoreApplication::processEvents();
         auto *tabs=window.findChild<QTabBar*>();auto *volume=window.findChild<QSlider*>("volumeSlider");QVERIFY(tabs);QVERIFY(volume);

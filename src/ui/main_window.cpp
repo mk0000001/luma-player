@@ -244,7 +244,7 @@ void MainWindow::buildUi(){
     connect(subs_,&QComboBox::activated,this,[this]{if(active_){subtitleFileLoader_->cancel();aiEnabled_->setChecked(false);externalCues_.clear();presentationDirty_=true;rebuildManagedCaptions();active_->setSubtitle(subs_->currentData().toInt());}});
     connect(chapters_,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){selectChapter(item->data(Qt::UserRole).toInt());});
     connect(external,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"자막 열기",{},"텍스트 자막 (*.srt *.ass *.ssa *.vtt *.smi *.sami)");if(!path.isEmpty())loadCaptionFile(path);});
-    connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession();model_=path;QSettings().setValue("ai/model",path);aiStatus_->setText("음성 인식 모델 선택됨");if(aiEnabled_->isChecked())job_.warmUp(model_);scheduleSubtitles();}});
+    connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession(true);model_=path;QSettings().setValue("ai/model",path);aiStatus_->setText("음성 인식 모델 선택됨");if(aiEnabled_->isChecked())job_.warmUp(model_);scheduleSubtitles();}});
     connect(translationModel,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"로컬 번역 모델",{},"GGUF 모델 (*.gguf)");if(!path.isEmpty()){translation_->cancel();translationPending_.clear();clearTranslationSkips();translations_.clear();translationFailed_=false;QSettings().setValue("translation/model",path);translation_->setModel(path);rebuildManagedCaptions();scheduleTranslations();}});
     connect(aiMode_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(aiGpu_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(videoGpu_,&QComboBox::activated,this,&MainWindow::changeVideoAdapter);
     connect(translationMode_,&QComboBox::activated,this,&MainWindow::updateTranslationPreferences);connect(translationGpu_,&QComboBox::activated,this,&MainWindow::updateTranslationPreferences);
@@ -269,7 +269,7 @@ void MainWindow::buildUi(){
     });
     // Playback keys are dispatched by the application event filter so the
     // owned video and transport windows have the same keyboard behavior.
-    connect(language_,&QComboBox::activated,this,[this]{resetSubtitleSession();scheduleSubtitles();});
+    connect(language_,&QComboBox::activated,this,[this]{resetSubtitleSession(true);scheduleSubtitles();});
 }
 void MainWindow::applyTheme(){
     const bool dark=playerUsesDarkTheme();themeButton_->setText(dark?"라이트 모드":"다크 모드");

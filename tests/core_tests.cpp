@@ -122,6 +122,11 @@ private slots:
         const auto pages=captionPages({{500,1500,"ABCDEFGHIJ"}},4,900);QCOMPARE(pages.size(),1);QCOMPARE(pages[0].text,QString("ABCDEFGHIJ"));QCOMPARE(pages[0].startMs,qint64(500));QCOMPARE(pages[0].endMs,qint64(1500));
         QVERIFY(captionPages({{100,100,"Invalid"},{0,1000,""}}).isEmpty());
     }
+    void punctuationDoesNotBecomeTheFirstCharacterOfANewPage(){
+        const auto pages=captionPages({{0,12000,QString(30,QChar(0x82b1))+QString::fromUtf8("。")+QString(10,QChar(0x98a8))}});
+        QCOMPARE(pages.size(),2);QVERIFY(pages[0].text.endsWith(QChar(0x3002)));QCOMPARE(pages[1].text.front(),QChar(0x98a8));
+        const auto ascii=captionPages({{0,12000,QString(60,'A')+", "+QString(20,'B')}});QCOMPARE(ascii.size(),2);QVERIFY(ascii[0].text.endsWith(','));QCOMPARE(ascii[1].text,QString(20,'B'));
+    }
 };
 QTEST_GUILESS_MAIN(CoreTests)
 #include "core_tests.moc"

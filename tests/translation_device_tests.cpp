@@ -32,10 +32,11 @@ private slots:
         QVERIFY(backends[0].program.contains("/cuda/"));QCOMPARE(backends[1].key,QString("cpu"));
     }
     void cudaLaunchPinsOneExactDevice(){
-        const auto launch=translationLaunch({"cuda","C:/runtime/translation/cuda/llama-server.exe","CUDA2",false},"owned.gguf",12345,"fixture-token");
+        QTemporaryDir root;QVERIFY(root.isValid());const auto directory=QDir(root.path()).filePath("translation/cuda");
+        const auto launch=translationLaunch({"cuda",directory+"/llama-server","CUDA2",false},"owned.gguf",12345,"fixture-token");
         const auto device=launch.arguments.indexOf("--device"),split=launch.arguments.indexOf("--split-mode");
         QVERIFY(device>=0);QCOMPARE(launch.arguments[device+1],QString("CUDA2"));QVERIFY(split>=0);QCOMPARE(launch.arguments[split+1],QString("none"));
-        QCOMPARE(launch.environment.value("GGML_BACKEND_PATH"),QString("C:/runtime/translation/cuda"));
+        QCOMPARE(launch.environment.value("GGML_BACKEND_PATH"),directory);
     }
     void cudaConfirmationNeedsSelectedDeviceAndActualOffload(){
         const TranslationBackend cuda{"cuda","server","CUDA2",false};
