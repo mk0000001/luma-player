@@ -88,6 +88,29 @@ private slots:
         service.cancel();service.request({"次の場面"});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);
         QCOMPARE(contents(model+".starts").count('\n'),1);QCOMPARE(results.first()[1].toString(),QString::fromUtf8("次の場面"));
     }
+    void dedicatedProfilePreservesSourceSkipsBadCueAndClearsCrossModelCache(){
+        QTemporaryDir dir;const auto legacy=prepare(dir),quality=dir.filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");QVERIFY(QFile::copy(legacy,quality));
+        TranslationService service(dir.path());service.setModel(legacy);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translated),errors(&service,&TranslationService::failed),skipped(&service,&TranslationService::skipped);
+        const QString source=QString::fromUtf8("行かなくてもいい。");service.request({source});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);
+        QCOMPARE(results.last()[2].toString(),QString::fromUtf8("안녕하세요."));const auto oldGeneration=service.generation();
+        service.setModel(quality);QVERIFY(service.generation()>oldGeneration);service.request({"bad",source});
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,3000);QCOMPARE(errors.count(),0);QCOMPARE(skipped.count(),1);
+        QCOMPARE(results.last()[1].toString(),source);QCOMPARE(results.last()[2].toString(),QString::fromUtf8("가지 않아도 돼."));
+        QCOMPARE(results.last()[0].toULongLong(),service.generation());QCOMPARE(service.selectedBackend(),QString("CPU / llama.cpp"));
+        QCOMPARE(contents(quality+".requests").count('\n'),2);service.request({source});QTRY_COMPARE_WITH_TIMEOUT(results.count(),3,1000);QCOMPARE(contents(quality+".requests").count('\n'),2);
+        service.setModel(legacy);service.request({source});QTRY_COMPARE_WITH_TIMEOUT(results.count(),4,3000);
+        QCOMPARE(results.last()[2].toString(),QString::fromUtf8("안녕하세요."));QCOMPARE(contents(legacy+".requests").count('\n'),2);QCOMPARE(errors.count(),0);
+    }
+    void changingModelInvalidatesInFlightLegacyResponseBeforePlainRequest(){
+        QTemporaryDir dir;const auto legacy=prepare(dir),quality=dir.filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");QVERIFY(QFile::copy(legacy,quality));
+        TranslationService service(dir.path());service.setModel(legacy);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translated),errors(&service,&TranslationService::failed),skipped(&service,&TranslationService::skipped);
+        service.request({"遅い"});QTRY_COMPARE_WITH_TIMEOUT(contents(legacy+".requests").count('\n'),1,2000);const auto previous=service.generation();
+        service.setModel(quality);service.request({"新しい原文"});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);QTest::qWait(400);
+        QCOMPARE(errors.count(),0);QCOMPARE(skipped.count(),0);QCOMPARE(results.count(),1);QVERIFY(service.generation()>previous);
+        QCOMPARE(results.first()[0].toULongLong(),service.generation());QCOMPARE(results.first()[1].toString(),QString::fromUtf8("新しい原文"));QCOMPARE(results.first()[2].toString(),QString::fromUtf8("가지 않아도 돼."));
+    }
 };
 QTEST_GUILESS_MAIN(TranslationServiceTests)
 #include "translation_service_tests.moc"

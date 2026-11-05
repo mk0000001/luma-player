@@ -1,13 +1,15 @@
 ﻿[CmdletBinding()]
-param([string]$PlayerDirectory)
+param([string]$PlayerDirectory,[ValidateSet('fast','quality')][string]$Profile='fast')
 
 function Get-LumaTranslationModelSpec {
-    param([string]$Directory)
+    param([string]$Directory,[ValidateSet('fast','quality')][string]$Profile='fast')
     $ErrorActionPreference = 'Stop'
     $candidates = @((Join-Path $Directory 'translation-dependencies.lock.json'),(Join-Path $Directory 'licenses\translation-dependencies.lock.json'))
     $lockPath = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
     if (!$lockPath) { throw '번역 잠금 파일이 없습니다 / Missing translation-dependencies.lock.json in the player folder or licenses folder.' }
-    $model = (Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json).model
+    $manifest = Get-Content -LiteralPath $lockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $model = if ($Profile -eq 'quality') { $manifest.qualityModel } else { $manifest.model }
+    if (!$model) { throw "요청한 번역 모델 프로필이 잠금 파일에 없습니다 / The requested translation model profile is absent: $Profile" }
     if (!$model -or [string]$model.file -notmatch '^[A-Za-z0-9_.-]+\.gguf$' -or [string]$model.sha256 -notmatch '^[0-9a-f]{64}$' -or [string]$model.revision -notmatch '^[0-9a-f]{40}$' -or [string]$model.id -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') {
         throw '번역 모델 잠금 정보가 잘못되었습니다 / Invalid pinned translation model metadata.'
     }
@@ -91,10 +93,10 @@ function Receive-LumaTranslationModelFile {
     }
 }
 function Install-LumaTranslationModel {
-    param([string]$Directory)
+    param([string]$Directory,[ValidateSet('fast','quality')][string]$Profile='fast')
     $ErrorActionPreference = 'Stop'
     $directoryPath = [IO.Path]::GetFullPath($Directory)
-    $model = Get-LumaTranslationModelSpec -Directory $directoryPath
+    $model = Get-LumaTranslationModelSpec -Directory $directoryPath -Profile $Profile
     $models = Join-Path $directoryPath 'runtime\translation\models'
     New-Item -ItemType Directory -Path $models -Force | Out-Null
     $destination = Join-Path $models $model.file
@@ -125,7 +127,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         # Windows PowerShell 5.1 may not initialize PSScriptRoot during parameter
         # default evaluation. Resolve it after entering the script body.
         if ([string]::IsNullOrWhiteSpace($PlayerDirectory)) { $PlayerDirectory=Split-Path -Parent $PSScriptRoot }
-        $result=Install-LumaTranslationModel -Directory $PlayerDirectory
+        $result=Install-LumaTranslationModel -Directory $PlayerDirectory -Profile $Profile
         if ($result.AlreadyInstalled) {
             Write-Output '기존 번역 모델의 SHA-256을 확인했습니다. 다운로드를 생략합니다.'
             Write-Output 'The existing translation model is verified; no download was needed.'

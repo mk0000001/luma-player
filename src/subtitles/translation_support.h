@@ -27,9 +27,14 @@ private:
 };
 struct TranslationBackend {QString key,program,device;bool openvino=false;};
 struct TranslationLaunch {QString program;QStringList arguments;QProcessEnvironment environment;};
+enum class TranslationProfile {LegacyQwenJson,HyMt2Plain};
+// Only the pinned, tested dedicated model opts into its plain-output protocol.
+TranslationProfile translationProfileForModel(const QString &model);
 QVector<TranslationBackend> translationBackends(const QString &runtime,const AiPreferences &preferences={});
 TranslationLaunch translationLaunch(const TranslationBackend &backend,const QString &model,quint16 port,const QString &token);
-QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr);
-QJsonObject translationPayload(const QString &source);
+// Decode JSON once per protocol layer; reject damaged Unicode/model artifacts.
+// Preserve proper names, combining characters and lyric line breaks.
+QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr,TranslationProfile profile=TranslationProfile::LegacyQwenJson);
+QJsonObject translationPayload(const QString &source,TranslationProfile profile=TranslationProfile::LegacyQwenJson);
 QString confirmedTranslationBackend(const TranslationBackend &backend,const QString &log);
 }

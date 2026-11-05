@@ -1,15 +1,18 @@
 #include "subtitle.h"
 #include <QRegularExpression>
+#include <QTextBoundaryFinder>
 #include <algorithm>
 namespace luma {
 std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs){
-    if(pending_ || positionMs<0 || positionMs>=durationMs || readyForPlayback(positionMs,durationMs))return {};
+    if(pending_ || positionMs<0 || positionMs>=durationMs || bufferedAhead(positionMs,durationMs)>=std::min(prefetchMs,durationMs-positionMs))return {};
     const auto ahead=bufferedAhead(positionMs,durationMs);
     // A disc seek/pause can settle slightly before the requested timestamp.
     // Recognize that real audio too; contiguous prefetch never reads it twice.
     auto start=ahead>0?positionMs+ahead:std::max<qint64>(0,positionMs-std::clamp<qint64>(prerollMs,0,chunkMs-lookAheadMs));
     if(!ahead)for(const auto &range:completed_)if(range.second<=positionMs)start=std::max(start,range.second);
-    pending_=qMakePair(start,std::min(start+chunkMs,durationMs));return start;
+    auto end=std::min(start+chunkMs,durationMs);
+    for(const auto &range:completed_)if(range.first>start){end=std::min(end,range.first);break;}
+    pending_=qMakePair(start,end);return start;
 }
 qint64 CaptionCoverage::bufferedAhead(qint64 positionMs,qint64 durationMs)const{
     if(positionMs<0 || positionMs>=durationMs)return 0;
@@ -43,6 +46,48 @@ QVector<SubtitleCue> parseSrt(const QString &input) {
     }
     std::stable_sort(cues.begin(),cues.end(),[](const auto &a,const auto &b){ return a.startMs<b.startMs; });
     return cues;
+}
+QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,qint64 minPageMs){
+    struct Grapheme {qsizetype start,end;int units;bool wordEnd,sentenceEnd;};
+    QVector<SubtitleCue> result;maxUnits=std::max(1,maxUnits);minPageMs=std::max<qint64>(1,minPageMs);
+    for(const auto &cue:cues){
+        if(cue.endMs<=cue.startMs || cue.text.trimmed().isEmpty())continue;
+        QVector<Grapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
+        while((end=finder.toNextBoundary())>=0){
+            const auto text=cue.text.mid(start,end-start);int units=1;
+            for(const auto point:text.toUcs4())if((point>=0x1100 && point<=0x11ff) || (point>=0x2e80 && point<=0xa4cf) || (point>=0xac00 && point<=0xd7af) || (point>=0xf900 && point<=0xfaff) || (point>=0xff01 && point<=0xff60) || (point>=0x1f000 && point<=0x1ffff) || (point>=0x20000 && point<=0x3ffff)){units=2;break;}
+            const auto last=text.back();characters.append({start,end,units,last.isSpace(),QString::fromUtf8("。！？!?;；.\n").contains(last)});start=end;
+        }
+        if(characters.isEmpty())continue;
+        QVector<QPair<qsizetype,qsizetype>> ranges;qsizetype first=0;
+        const qint64 maxPages=std::max<qint64>(1,(cue.endMs-cue.startMs)/minPageMs);
+        while(first<characters.size()){
+            qsizetype last=first,lastWord=-1,lastSentence=-1;int used=0;
+            while(last<characters.size() && (last==first || used+characters[last].units<=maxUnits)){
+                used+=characters[last].units;
+                if(used>=maxUnits/2){if(characters[last].wordEnd)lastWord=last+1;if(characters[last].sentenceEnd)lastSentence=last+1;}
+                ++last;
+            }
+            if(qint64(ranges.size())+1>=maxPages)last=characters.size();
+            else if(last<characters.size()){if(lastSentence>first)last=lastSentence;else if(lastWord>first)last=lastWord;}
+            // Keep sentence endings/closing quotes with the preceding page.
+            // The small allowance cannot turn a punctuation-only input into
+            // one unbounded presentation page.
+            static const QString closing=QString::fromUtf8("。，、！？!?;；:：,.)]}」』】〉》〕”’»…");
+            for(int extra=0;last<characters.size() && extra<4 && closing.contains(cue.text.at(characters[last].start));++extra)++last;
+            ranges.append({first,last});first=last;
+        }
+        QVector<qint64> cumulative{0};for(const auto &character:characters)cumulative.append(cumulative.last()+character.units);
+        const auto timeAt=[&](qsizetype index){return index==characters.size()?cue.endMs:cue.startMs+qint64((static_cast<long double>(cue.endMs-cue.startMs)*cumulative[index])/cumulative.last());};
+        // A short tail is merged with its neighbor rather than becoming a flash.
+        for(qsizetype index=0;index<ranges.size() && ranges.size()>1;){
+            if(timeAt(ranges[index].second)-timeAt(ranges[index].first)>=minPageMs){++index;continue;}
+            if(index>0){ranges[index-1].second=ranges[index].second;ranges.removeAt(index);--index;}
+            else{ranges[1].first=ranges[0].first;ranges.removeFirst();}
+        }
+        for(const auto &range:ranges){const auto begin=characters[range.first].start,finish=characters[range.second-1].end;result.append({timeAt(range.first),timeAt(range.second),cue.text.mid(begin,finish-begin).trimmed()});}
+    }
+    return result;
 }
 quint64 SubtitleTimeline::reset() { cues_.clear(); return ++generation_; }
 bool SubtitleTimeline::attach(quint64 generation, QVector<SubtitleCue> cues) {

@@ -18,6 +18,8 @@
 #include <windows.h>
 #endif
 extern "C" bool luma_whisper_has_gpu_backend(struct whisper_context *context);
+extern "C" const char *luma_whisper_gpu_device(struct whisper_context *context);
+extern "C" const char *luma_whisper_gpu_backend(struct whisper_context *context);
 
 namespace {
 uint32_t le32(const unsigned char *p){return uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24;}
@@ -50,7 +52,7 @@ std::string jsonString(const std::string &text){
 int listDevices(){
     ggml_backend_load_all();bool comma=false;std::cout<<"{\"devices\":[";
     const auto add=[&](const std::string &id,const std::string &name,const std::string &backend,const std::string &type){if(comma)std::cout<<',';comma=true;std::cout<<"{\"id\":"<<jsonString(id)<<",\"name\":"<<jsonString(name)<<",\"backend\":"<<jsonString(backend)<<",\"type\":"<<jsonString(type)<<'}';};
-    for(size_t i=0;i<ggml_backend_dev_count();++i){auto dev=ggml_backend_dev_get(i);const auto type=ggml_backend_dev_type(dev);if(type==GGML_BACKEND_DEVICE_TYPE_GPU || type==GGML_BACKEND_DEVICE_TYPE_IGPU)add(ggml_backend_dev_name(dev),ggml_backend_dev_description(dev),"Vulkan","gpu");}
+    for(size_t i=0;i<ggml_backend_dev_count();++i){auto dev=ggml_backend_dev_get(i);const auto type=ggml_backend_dev_type(dev);if(type==GGML_BACKEND_DEVICE_TYPE_GPU || type==GGML_BACKEND_DEVICE_TYPE_IGPU)add(ggml_backend_dev_name(dev),ggml_backend_dev_description(dev),ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev)),"gpu");}
     try{ov::Core core;for(const auto &dev:core.get_available_devices())if(dev.rfind("GPU",0)==0 || dev.rfind("NPU",0)==0){std::string name=dev;try{name=core.get_property(dev,ov::device::full_name);}catch(...){}add("OpenVINO:"+dev,name,"OpenVINO",dev.rfind("NPU",0)==0?"npu":"gpu");}}catch(...){}
     std::cout<<"]}"<<std::endl;return 0;
 }
@@ -67,23 +69,33 @@ int run(const std::vector<std::string> &args){
         const bool explicitOpenVino=requested.rfind("OpenVINO:",0)==0;
         const auto device=explicitOpenVino?requested.substr(9):requested;
         const bool npu=device.rfind("NPU",0)==0;
-        if(!npu && device!="GPU" && device.rfind("GPU.",0)!=0 && device.rfind("Vulkan",0)!=0)throw std::runtime_error("Explicit NPU or GPU device required");
+        const bool explicitNative=device.rfind("Vulkan",0)==0 || device.rfind("CUDA",0)==0;
+        if(!npu && device!="GPU" && device.rfind("GPU.",0)!=0 && !explicitNative)throw std::runtime_error("Explicit NPU or GPU device required");
         ov::Core core;const auto devices=core.get_available_devices();bool openVinoAvailable=false;
         for(const auto &candidate:devices)if(candidate==device || candidate.rfind(device+".",0)==0)openVinoAvailable=true;
         if(npu && !openVinoAvailable){std::cerr<<"NPU is not available to OpenVINO\n";return 20;}
         ggml_backend_load_all();
         auto contextParams=whisper_context_default_params();contextParams.use_gpu=!npu && !explicitOpenVino;
-        if(device.rfind("Vulkan",0)==0){
-            bool found=false;int gpuIndex=0;
-            for(size_t i=0;i<ggml_backend_dev_count();++i){auto dev=ggml_backend_dev_get(i);const auto type=ggml_backend_dev_type(dev);if(type!=GGML_BACKEND_DEVICE_TYPE_GPU && type!=GGML_BACKEND_DEVICE_TYPE_IGPU)continue;if(device==ggml_backend_dev_name(dev)){contextParams.gpu_device=gpuIndex;found=true;break;}++gpuIndex;}
-            if(!found){std::cerr<<"Selected GPU is unavailable\n";return 20;}
+        if(explicitNative || (device=="GPU" && !explicitOpenVino)){
+            bool found=false;int gpuIndex=0;int fallback=-1;
+            for(size_t i=0;i<ggml_backend_dev_count();++i){
+                auto dev=ggml_backend_dev_get(i);const auto type=ggml_backend_dev_type(dev);if(type!=GGML_BACKEND_DEVICE_TYPE_GPU && type!=GGML_BACKEND_DEVICE_TYPE_IGPU)continue;
+                if(fallback<0)fallback=gpuIndex;
+                const auto backend=ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev));
+                if((explicitNative && device==ggml_backend_dev_name(dev)) || (!explicitNative && std::string(backend)=="CUDA")){contextParams.gpu_device=gpuIndex;found=true;break;}
+                ++gpuIndex;
+            }
+            if(!found && !explicitNative && fallback>=0){contextParams.gpu_device=fallback;found=true;}
+            if(!found && explicitNative){std::cerr<<"Selected GPU is unavailable\n";return 20;}
         }
         using Context=std::unique_ptr<whisper_context,decltype(&whisper_free)>;
         Context context(whisper_init_from_file_with_params(options.at("-m").c_str(),contextParams),whisper_free);
         if(!context)throw std::runtime_error("Cannot load Whisper model");
-        const bool vulkan=contextParams.use_gpu && luma_whisper_has_gpu_backend(context.get());
-        if(!vulkan){
-            if(device.rfind("Vulkan",0)==0){std::cerr<<"Selected GPU initialization failed\n";return 20;}
+        const bool nativeGpu=contextParams.use_gpu && luma_whisper_has_gpu_backend(context.get());
+        const auto gpuDevice=luma_whisper_gpu_device(context.get()),gpuBackend=luma_whisper_gpu_backend(context.get());
+        const std::string actualDevice=gpuDevice?gpuDevice:"",actualBackend=gpuBackend?gpuBackend:"";
+        if(explicitNative && (!nativeGpu || actualDevice!=device)){std::cerr<<"Selected GPU initialization failed\n";return 20;}
+        if(!nativeGpu){
             if(!openVinoAvailable || options.find("--encoder")==options.end()){std::cerr<<"No usable explicit GPU/NPU backend\n";return 20;}
             if(contextParams.use_gpu){context.reset();contextParams.use_gpu=false;context.reset(whisper_init_from_file_with_params(options.at("-m").c_str(),contextParams));if(!context)throw std::runtime_error("Cannot initialize decoder");}
             const auto encoder=options.at("--encoder"),cache=options.at("--cache");
@@ -116,7 +128,7 @@ int run(const std::vector<std::string> &args){
             output<<++number<<'\n'<<timestamp(whisper_full_get_segment_t0(context.get(),i))<<" --> "<<timestamp(whisper_full_get_segment_t1(context.get(),i))<<'\n'<<text<<"\n\n";
         }
         output.close();if(!output)throw std::runtime_error("Subtitle output write failed");
-        std::cout<<"LUMA_ACCELERATOR="<<(vulkan?"Vulkan GPU":"OpenVINO encoder")<<'\n'<<"LUMA_BACKEND="<<(npu?"NPU":"GPU")<<'\n'<<"LUMA_DEVICE="<<requested<<'\n'<<"LUMA_DONE="<<options.at("-of")<<std::endl;
+        std::cout<<"LUMA_ACCELERATOR="<<(nativeGpu?actualBackend+" GPU":"OpenVINO encoder")<<'\n'<<"LUMA_BACKEND="<<(npu?"NPU":"GPU")<<'\n'<<"LUMA_DEVICE="<<(nativeGpu?actualDevice:requested)<<'\n'<<"LUMA_DONE="<<options.at("-of")<<std::endl;
         if(!server)break;
         if(!nextRequest())break;
         }while(server);

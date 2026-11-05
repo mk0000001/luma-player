@@ -61,6 +61,28 @@ try {
         $model=Get-LumaTranslationModelSpec -Directory $directory
         Assert-Installer ($model.file -eq 'Qwen3-4B-Q4_K_M.gguf') 'The licenses-folder manifest was not found.'
     }
+    Test-InstallerCase 'quality profile selects dedicated model and default remains fast' {
+        $directory=Join-Path $installerTestsRoot 'profile-selection'
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $lock=Get-Content -LiteralPath (Join-Path $installerProject 'translation-dependencies.lock.json') -Raw | ConvertFrom-Json
+        $quality=[pscustomobject]@{id='tencent/Hy-MT2-7B-GGUF';revision='ab8472660ac61fac25f1af43fac2599d52a8a775';file='Hy-MT2-7B-Q4_K_M.gguf';url='https://huggingface.co/tencent/Hy-MT2-7B-GGUF/resolve/ab8472660ac61fac25f1af43fac2599d52a8a775/Hy-MT2-7B-Q4_K_M.gguf';sha256='9f96256500f3fc1ab4d64336b58f52a949a95ad7516b0c229476eef782f9f77b';bytes=4624648896}
+        $lock | Add-Member -MemberType NoteProperty -Name qualityModel -Value $quality -Force
+        $lock | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $directory 'translation-dependencies.lock.json') -Encoding UTF8
+        $selected=Get-LumaTranslationModelSpec -Directory $directory -Profile quality
+        Assert-Installer ($selected.file -eq $quality.file) 'Quality must select the dedicated translation model.'
+        $default=Get-LumaTranslationModelSpec -Directory $directory
+        Assert-Installer ($default.file -eq $lock.model.file) 'Existing default fast model must remain unchanged.'
+    }
+    Test-InstallerCase 'missing quality profile fails instead of silently choosing fast' {
+        $directory=Join-Path $installerTestsRoot 'missing-quality'
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $lock=Get-Content -LiteralPath (Join-Path $installerProject 'translation-dependencies.lock.json') -Raw | ConvertFrom-Json
+        $lock.PSObject.Properties.Remove('qualityModel')
+        $lock | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $directory 'translation-dependencies.lock.json') -Encoding UTF8
+        $failed=$false
+        try { Get-LumaTranslationModelSpec -Directory $directory -Profile quality | Out-Null } catch { $failed=$true }
+        Assert-Installer $failed 'An unavailable requested quality profile must fail.'
+    }
     if (!$ExistingModel) { $ExistingModel=Join-Path $installerProject '.deps\translation\models\Qwen3-4B-Q4_K_M.gguf' }
     if (Test-Path -LiteralPath $ExistingModel) {
         Test-InstallerCase 'valid real model is reused without download' {
@@ -89,6 +111,31 @@ try {
             Assert-Installer (Test-Path -LiteralPath $target) 'The packaged model path disappeared.'
         }
     } else { Write-Output 'SKIP valid real model reuse: pass -ExistingModel to a downloaded pinned model.' }
+    $qualityModel=Join-Path $installerProject '.deps\translation\models\Hy-MT2-7B-Q4_K_M.gguf'
+    if (Test-Path -LiteralPath $qualityModel) {
+        Test-InstallerCase 'valid dedicated quality model is reused without downloading fast model' {
+            $directory=Join-Path $installerTestsRoot 'quality player 한국어'
+            $models=Join-Path $directory 'runtime\translation\models'
+            New-Item -ItemType Directory -Path $models -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $installerProject 'translation-dependencies.lock.json') -Destination $directory
+            $target=Join-Path $models 'Hy-MT2-7B-Q4_K_M.gguf'
+            New-Item -ItemType HardLink -Path $target -Target ([IO.Path]::GetFullPath($qualityModel)) | Out-Null
+            $result=Install-LumaTranslationModel -Directory $directory -Profile quality
+            Assert-Installer $result.AlreadyInstalled 'Existing quality model was not reused.'
+            Assert-Installer ($result.BytesTransferred -eq 0) 'Quality reuse unexpectedly downloaded data.'
+            Assert-Installer (!(Test-Path (Join-Path $models 'Qwen3-4B-Q4_K_M.gguf'))) 'Quality installation downloaded the fast model.'
+        }
+        Test-InstallerCase 'packaged quality selection works in Windows PowerShell 5.1' {
+            $directory=Join-Path $installerTestsRoot 'quality player 한국어'
+            $tools=Join-Path $directory 'tools'
+            New-Item -ItemType Directory -Path $tools -Force | Out-Null
+            $copied=Join-Path $tools 'install-translation.ps1'
+            Copy-Item -LiteralPath (Join-Path $installerProject 'scripts\install-translation.ps1') -Destination $copied
+            $windowsPowerShell=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $copied -Profile quality | Out-Host
+            Assert-Installer ($LASTEXITCODE -eq 0) 'Packaged quality installer failed in Windows PowerShell.'
+        }
+    } else { Write-Output 'SKIP dedicated quality model reuse: pinned local model is absent.' }
     if ($RunDownloadTest) {
         Test-InstallerCase 'HttpClient streams a small pinned upstream file and verifies before rename' {
             $reference=Join-Path $installerProject 'LICENSES\translation\Qwen3-4B-Apache-2.0.txt'

@@ -44,6 +44,8 @@ jobs:
         run: |
           ./tests/package_tests.ps1
           ./tests/translation_installer_tests.ps1
+          ./tests/translation_cuda_installer_tests.ps1
+          ./tests/asr_cuda_installer_tests.ps1
       - name: Package portable player
         shell: pwsh
         run: ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim())

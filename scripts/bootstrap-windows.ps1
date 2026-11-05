@@ -58,6 +58,7 @@ if (!$SkipAiModel) {
     $models = Join-Path $dependencyRoot 'models'
     New-Item -ItemType Directory -Path $models -Force | Out-Null
     Get-VerifiedFile $lock.model.url (Join-Path $models $lock.model.file) $lock.model.sha256
+    if($lock.highQualityModel) { Get-VerifiedFile $lock.highQualityModel.url (Join-Path $models $lock.highQualityModel.file) $lock.highQualityModel.sha256 }
     if (!$SkipLocalAi) {
         $encoderArchive = Join-Path $downloads $lock.encoder.archive
         Get-VerifiedFile $lock.encoder.url $encoderArchive $lock.encoder.sha256

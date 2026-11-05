@@ -7,11 +7,16 @@
 class QWidget;
 namespace luma {
 class FullscreenControls final:public QObject {
+    Q_OBJECT
 public:
     FullscreenControls(QWidget *window,QWidget *transport,QWidget *surface);
     void setActive(bool active);
     void activity();
     bool active()const{return active_;}
+    int reservedHeight()const;
+signals:
+    void controlsVisibilityChanged(bool visible);
+    void reservedHeightChanged(int pixels);
 protected:
     bool eventFilter(QObject *object,QEvent *event)override;
 private:
@@ -19,9 +24,13 @@ private:
     QTimer timer_;
     QElapsedTimer idle_;
     QPoint pointer_;
-    bool active_=false;
+    bool active_=false,wanted_=true,syncPending_=false,lastVisible_=false,raisePending_=false;
+    int lastReserved_=0;
     bool interactionInProgress()const;
     void poll();
     void reveal();
+    void syncGeometry();
+    void queueSync();
+    void notifyVisibility();
 };
 }

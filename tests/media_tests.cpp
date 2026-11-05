@@ -8,6 +8,29 @@ using namespace luma;
 class MediaTests : public QObject {
     Q_OBJECT
 private slots:
+    void timelineStartsUnavailable(){
+        const PlaybackState state;QVERIFY(!state.timelineReady);
+    }
+    void discTimelineRejectsStaleLengthAfterTitleChanges_data(){
+        QTest::addColumn<qint64>("liveMs");QTest::addColumn<qint64>("titleMs");QTest::addColumn<bool>("navigation");QTest::addColumn<bool>("ready");
+        constexpr qint64 mainTitle=6294288;
+        QTest::newRow("new-main-id-with-old-menu-length")<<qint64(20000)<<mainTitle<<false<<false;
+        QTest::newRow("main-live-length-now-matches")<<mainTitle<<mainTitle<<false<<true;
+        QTest::newRow("unknown-current-title-metadata")<<mainTitle<<qint64(0)<<false<<false;
+        QTest::newRow("no-live-length-yet")<<qint64(0)<<mainTitle<<false<<false;
+        QTest::newRow("negative-live-length")<<qint64(-1)<<mainTitle<<false<<false;
+        QTest::newRow("negative-metadata-length")<<mainTitle<<qint64(-1)<<false<<false;
+        QTest::newRow("menu-is-never-main-timeline")<<qint64(20000)<<qint64(20000)<<true<<false;
+        QTest::newRow("first-play-is-never-main-timeline")<<mainTitle<<mainTitle<<true<<false;
+        QTest::newRow("native-rounding-below-inclusive")<<qint64(mainTitle-2000)<<mainTitle<<false<<true;
+        QTest::newRow("native-rounding-above-inclusive")<<qint64(mainTitle+2000)<<mainTitle<<false<<true;
+        QTest::newRow("stale-below-tolerance")<<qint64(mainTitle-2001)<<mainTitle<<false<<false;
+        QTest::newRow("stale-above-tolerance")<<qint64(mainTitle+2001)<<mainTitle<<false<<false;
+    }
+    void discTimelineRejectsStaleLengthAfterTitleChanges(){
+        QFETCH(qint64,liveMs);QFETCH(qint64,titleMs);QFETCH(bool,navigation);QFETCH(bool,ready);
+        QCOMPARE(discTimelineReady(liveMs,titleMs,navigation),ready);
+    }
     void menuCommandsMatchNativeAbi() {
         QCOMPARE(discActionCode(DiscAction::Activate),int(libvlc_navigate_activate));QCOMPARE(discActionCode(DiscAction::Up),int(libvlc_navigate_up));
         QCOMPARE(discActionCode(DiscAction::Down),int(libvlc_navigate_down));QCOMPARE(discActionCode(DiscAction::Left),int(libvlc_navigate_left));

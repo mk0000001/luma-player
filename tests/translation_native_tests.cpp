@@ -9,6 +9,7 @@ private slots:
         const auto runtime=qEnvironmentVariable("LUMA_TRANSLATION_RUNTIME");
         if(runtime.isEmpty())QSKIP("Set LUMA_TRANSLATION_RUNTIME for native synthetic translation verification.");
         TranslationService service(runtime);service.setPreferences({qEnvironmentVariable("LUMA_TRANSLATION_MODE","gpu"),qEnvironmentVariable("LUMA_TRANSLATION_DEVICE","Vulkan0")});
+        const auto model=qEnvironmentVariable("LUMA_TRANSLATION_MODEL");if(!model.isEmpty())service.setModel(model);
         service.setTimeouts(75000,45000);
         QSignalSpy result(&service,&TranslationService::translated),errors(&service,&TranslationService::failed),progress(&service,&TranslationService::progress);
         QElapsedTimer timer;timer.start();service.request({"今日はいい天気ですね。"});

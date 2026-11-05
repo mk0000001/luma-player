@@ -5,12 +5,13 @@
 #include <QHash>
 #include <QJsonObject>
 #include "core/disc.h"
+#include "core/resume_history.h"
 #include "media/playback.h"
 #include "subtitles/subtitle_job.h"
 #include "subtitles/japanese_reading.h"
-class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QShortcut;
+class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;
 namespace luma {
-class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;
+class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;
 class MainWindow:public QMainWindow {
     Q_OBJECT
 public:
@@ -21,13 +22,14 @@ public:
     bool loadCaptionFile(const QString &path);
     QJsonObject diagnostics()const;
 protected:
+    bool eventFilter(QObject *object,QEvent *event)override;
     void dragEnterEvent(QDragEnterEvent *event)override;
     void dropEvent(QDropEvent *event)override;
 private:
     QWidget *surface_=nullptr,*welcome_=nullptr,*sidebar_=nullptr,*panel_=nullptr,*header_=nullptr,*transport_=nullptr,*transportTitleRow_=nullptr;
     QLabel *nowTitle_=nullptr,*status_=nullptr,*clock_=nullptr,*discLabel_=nullptr,*discDetails_=nullptr,*aiStatus_=nullptr,*codec_=nullptr,*accelerator_=nullptr;
     QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr;
-    QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr;
+    QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
     QSlider *seek_=nullptr,*volume_=nullptr;
     QComboBox *titles_=nullptr,*audio_=nullptr,*subs_=nullptr,*rate_=nullptr,*language_=nullptr,*aiMode_=nullptr,*aiGpu_=nullptr,*videoGpu_=nullptr,*motionMode_=nullptr,*motionFps_=nullptr;
     QListWidget *chapters_=nullptr;
@@ -37,24 +39,34 @@ private:
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
     AiDeviceProbe *deviceProbe_=nullptr;
+    TranslationDeviceProbe *translationDeviceProbe_=nullptr;
+    QComboBox *translationMode_=nullptr,*translationGpu_=nullptr;
     TranslationService *translation_=nullptr;
+    SubtitleFileLoader *subtitleFileLoader_=nullptr;
+    ResumeHistory resumeHistory_;
+    QString resumeIdentity_;
+    std::optional<ResumePoint> pendingResume_;
+    qint64 resumeSavedAt_=0;
+    bool directResume_=false;
     std::unique_ptr<PlaybackEngine> discEngine_,fileEngine_;
     PlaybackEngine *active_=nullptr;
     SubtitleJob job_;
     JapaneseReading reading_;
     QTemporaryDir subtitleCache_;
     QVector<SubtitleCue> generatedCues_,externalCues_;
+    QVector<SubtitleCue> presentationCues_;
+    bool presentationDirty_=true;
     QHash<QString,QString> readings_,translations_;
     QSet<QString> translationPending_;
     QSet<QString> translationSkipped_;
     QStringList translationSkippedOrder_;
     CaptionCoverage coverage_;
-    QList<QShortcut*> discShortcuts_;
     DiscInfo discInfo_,driveInfo_;
     QString source_,model_,discPath_;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;
+    int lastUnmutedVolume_=70;
     int pendingAudio_=-2,pendingChapter_=-2,pendingTitle_=-2,lastAudio_=-2;
     qint64 pendingControlAt_=0;
     std::optional<bool> requestedPlaying_;
@@ -73,9 +85,11 @@ private:
     void applyCapturePolicy();
     void updateDisplayStatus();
     void updateAiPreferences();
+    void updateTranslationPreferences();
     void changeVideoAdapter();
     void updateMotionSettings();
     void togglePlayback();
+    void toggleMute();
     void seekTo(qint64 position);
     void retryCaptions();
     void holdForCaptionBuffer();
@@ -84,7 +98,14 @@ private:
     void scheduleSubtitles();
     void scheduleTranslations();
     void clearTranslationSkips();
-    void resetSubtitleSession();
+    void resetSubtitleSession(bool preserveExternal=false);
+    void applyExternalCaptions(QVector<SubtitleCue> cues);
+    void subtitleImportFailed(const QString &message);
+    void savePlaybackProgress(bool force=false);
+    void restorePlaybackProgress();
+    void updateResumeButton();
+    void resumeLatest();
+    void openDroppedUrls(const QList<QUrl> &urls);
     void cancelSubtitleWork();
     void rebuildManagedCaptions();
     QVector<SubtitleCue> originalCues()const;

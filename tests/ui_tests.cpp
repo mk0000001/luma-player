@@ -12,6 +12,9 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QMenu>
+#include <QTabBar>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QDir>
 #include <QFileInfo>
 #include <QUrl>
@@ -24,7 +27,10 @@
 #include <optional>
 #include <algorithm>
 #include "ui/main_window.h"
+#include "ui/video_surface.h"
+#include "core/resume_history.h"
 #include "subtitles/translation_service.h"
+#include "subtitles/subtitle_file.h"
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
@@ -98,11 +104,70 @@ private slots:
         QCOMPARE(window.diagnostics().value("aiRetryCount").toInt(),1);
         QVERIFY(window.diagnostics().value("aiRetryAt").toDouble()>QDateTime::currentMSecsSinceEpoch());
         for(int i=0;i<3;++i)job->failed("Owned fixture: repeated failure");
-        QVERIFY(enabled->isChecked());QVERIFY(window.diagnostics().value("captionBufferBypass").toBool());
+        QVERIFY(enabled->isChecked());QVERIFY(!window.diagnostics().value("captionBufferBypass").toBool());
         QVERIFY(!window.diagnostics().value("captionBufferHolding").toBool());
+        auto *continuePlay=window.findChild<QPushButton*>("continueWithoutCaptions");QVERIFY(continuePlay);continuePlay->click();QVERIFY(window.diagnostics().value("captionBufferBypass").toBool());
         auto *retry=window.findChild<QPushButton*>("retryCaptions");QVERIFY(retry);retry->click();
         QCOMPARE(window.diagnostics().value("aiRetryCount").toInt(),0);QVERIFY(!window.diagnostics().value("captionBufferBypass").toBool());
         enabled->setChecked(false);QVERIFY(!QSettings().value("subtitles/aiEnabled").toBool());
+    }
+    void longImportedCaptionUsesConsecutivePresentationPages(){
+        QTemporaryDir folder;QFile file(folder.filePath("owned-long.srt"));QVERIFY(file.open(QIODevice::WriteOnly));
+        const QString source=QString(60,'A')+QString(60,'B');file.write(("1\n00:00:00,000 --> 00:00:12,000\n"+source+"\n").toUtf8());file.close();
+        QSettings().setValue("subtitles/hangul",false);QSettings().setValue("subtitles/translation",false);
+        luma::MainWindow window;window.openSource(folder.filePath("owned-fixture.mkv"));QVERIFY(window.loadCaptionFile(file.fileName()));
+        auto *overlay=window.findChild<luma::CaptionOverlay*>();QVERIFY(overlay);QCOMPARE(overlay->captionText(),QString(60,'A'));
+        QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),1);overlay->setPosition(6000);QCOMPARE(overlay->captionText(),QString(60,'B'));overlay->setPosition(12000);QVERIFY(overlay->captionText().isEmpty());
+    }
+    void requestedPlaybackKeysWorkAndPreserveInputWidgets(){
+        luma::MainWindow window;window.show();window.activateWindow();QTest::qWait(40);
+        auto *volume=window.findChild<QSlider*>("volumeSlider");QVERIFY(volume);volume->setValue(65);window.setFocus();
+        QTest::keyClick(&window,Qt::Key_Up);QCOMPARE(volume->value(),70);QTest::keyClick(&window,Qt::Key_Down);QCOMPARE(volume->value(),65);
+        QTest::keyClick(&window,Qt::Key_M);QCOMPARE(volume->value(),0);QTest::keyClick(&window,Qt::Key_M);QCOMPARE(volume->value(),65);
+        QTest::keyClick(&window,Qt::Key_F);QVERIFY(window.isFullScreen());QTest::keyClick(&window,Qt::Key_Return);QVERIFY(!window.isFullScreen());
+        QLineEdit input(&window);input.show();input.setFocus();QTest::keyClicks(&input,"fm");QCOMPARE(input.text(),QString("fm"));QCOMPARE(volume->value(),65);
+    }
+    void unreadableSubtitleEnablesAutomaticCaptions(){
+        QSettings().setValue("ai/mode","cpu");QTemporaryDir folder;luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));
+        QVERIFY(!window.loadCaptionFile(folder.filePath("missing.srt")));auto *enabled=window.findChild<QCheckBox*>("aiEnabled");QVERIFY(enabled);QVERIFY(enabled->isChecked());QVERIFY(QSettings().value("subtitles/aiEnabled").toBool());
+    }
+    void malformedImportedSubtitlesFallBackAndOldLoadsCannotPublish(){
+        QTemporaryDir folder;QSettings().setValue("ai/model",folder.filePath("missing.bin"));QSettings().setValue("subtitles/translation",false);
+        QFile file(folder.filePath("malformed.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 00:00:10,000\nOwned valid first cue\n\n2\nwrong timestamp\nBroken second cue\n");file.close();
+        luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));QVERIFY(window.loadCaptionFile(file.fileName()));
+        auto *ai=window.findChild<QCheckBox*>("aiEnabled");auto *loader=window.findChild<luma::SubtitleFileLoader*>();QVERIFY(ai);QVERIFY(loader);
+        QTRY_VERIFY(ai->isChecked());QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),0);
+        const auto oldGeneration=loader->generation();window.openSource(folder.filePath("new-video.mkv"));
+        loader->ready(oldGeneration,{{0,10000,"Stale owned caption"}});QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),0);
+    }
+    void changingRecognitionLanguagePreservesAnImportedSubtitle(){
+        QSettings().setValue("subtitles/translation",false);QTemporaryDir folder;QFile file(folder.filePath("owned.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 00:00:15,000\nOwned external original\n");file.close();
+        luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));QVERIFY(window.loadCaptionFile(file.fileName()));
+        QComboBox *language=nullptr;for(auto *box:window.findChildren<QComboBox*>())if(box->findData("ja")>=0 && box->findData("en")>=0){language=box;break;}QVERIFY(language);
+        language->setCurrentIndex(language->findData("en"));QVERIFY(QMetaObject::invokeMethod(language,"activated",Qt::DirectConnection,Q_ARG(int,language->currentIndex())));
+        QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),1);
+    }
+    void tabsAndScrollAreasKeepTheirArrowKeys(){
+        luma::MainWindow window;window.show();window.activateWindow();QCoreApplication::processEvents();
+        auto *tabs=window.findChild<QTabBar*>();auto *volume=window.findChild<QSlider*>("volumeSlider");QVERIFY(tabs);QVERIFY(volume);
+        tabs->setCurrentIndex(0);tabs->setFocus();QTest::keyClick(tabs,Qt::Key_Right);QCOMPARE(tabs->currentIndex(),1);
+        QScrollArea area(&window);area.setFocusPolicy(Qt::StrongFocus);area.resize(100,100);auto *contents=new QWidget;contents->resize(200,1000);area.setWidget(contents);area.show();area.setFocus();QCoreApplication::processEvents();
+        volume->setValue(50);QTest::keyClick(&area,Qt::Key_Down);QVERIFY(area.verticalScrollBar()->value()>0);QCOMPARE(volume->value(),50);
+    }
+    void choosingNativeSubtitleCancelsQueuedExternalImport(){
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);QTemporaryDir folder;
+        QFile file(folder.filePath("owned.vtt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("WEBVTT\n\n00:00:00.000 --> 00:00:04.000\nOwned pending caption\n");file.close();
+        luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));auto *loader=window.findChild<luma::SubtitleFileLoader*>();auto *subs=window.findChild<QComboBox*>("subtitleTracks");QVERIFY(loader);QVERIFY(subs);
+        window.loadCaptionFile(file.fileName());const auto old=loader->generation();QVERIFY(QMetaObject::invokeMethod(subs,"activated",Qt::DirectConnection,Q_ARG(int,0)));
+        QVERIFY(loader->generation()!=old);loader->ready(old,{{0,4000,"Late pending owned caption"}});QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),0);
+    }
+    void ownedVideoAndTransportReceivePlaybackKeys(){
+        luma::MainWindow window;window.show();QCoreApplication::processEvents();
+        auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");auto *transport=window.findChild<QWidget*>("transport");auto *volume=window.findChild<QSlider*>("volumeSlider");
+        QVERIFY(surface);QVERIFY(transport);QVERIFY(volume);surface->setVideoActive(true);auto *video=surface->videoWindow();video->activateWindow();video->setFocus();QCoreApplication::processEvents();
+        volume->setValue(55);QTest::keyClick(video,Qt::Key_M);QCOMPARE(volume->value(),0);QTest::keyClick(video,Qt::Key_M);QCOMPARE(volume->value(),55);
+        QTest::keyClick(video,Qt::Key_F11);QVERIFY(window.isFullScreen());QTest::keyClick(video,Qt::Key_Escape);QVERIFY(!window.isFullScreen());
+        QTest::keyClick(transport,Qt::Key_F);QVERIFY(window.isFullScreen());QTest::keyClick(transport,Qt::Key_Enter);QVERIFY(!window.isFullScreen());
     }
     void skippedTranslationKeepsOtherCuesAndDisplayChoicesActive(){
         QTemporaryDir folder;QSettings().setValue("ai/mode","cpu");QSettings().setValue("translation/model",folder.filePath("missing-fixture.gguf"));
@@ -150,6 +215,32 @@ private slots:
         const auto status=window.diagnostics();QVERIFY(status.value("discValid").toBool());QVERIFY(status.value("discProtected").toBool());
         QCOMPARE(QDir::cleanPath(status.value("discRoot").toString()),QDir::cleanPath(folder.path()));
         QVERIFY(status.value("captureRequested").toBool());
+    }
+    void realOwnedFileResumesAfterWindowCloses(){
+        const auto media=qEnvironmentVariable("LUMA_UI_RESUME_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_RESUME_MEDIA to an owned local video for native resume verification.");
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);
+        {
+            luma::MainWindow window;window.show();window.openSource(media);
+            QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("durationMs").toDouble()>=35000 && window.diagnostics().value("playing").toBool(),15000);
+            auto *play=window.findChild<QPushButton*>("playButton");auto *seek=window.findChild<QSlider*>("seekSlider");QVERIFY(play);QVERIFY(seek);play->click();
+            seek->setSliderDown(true);seek->setValue(4000);seek->setSliderDown(false);
+            QTRY_VERIFY_WITH_TIMEOUT(std::abs(window.diagnostics().value("positionMs").toDouble()-window.diagnostics().value("durationMs").toDouble()*.4)<1000,10000);
+        }
+        luma::ResumeHistory history;const auto saved=history.find(luma::resumeIdentity(media));QVERIFY2(saved.has_value(),"Closing a file must persist a resumable playback position");
+        luma::MainWindow restored;restored.show();restored.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(std::abs(restored.diagnostics().value("positionMs").toDouble()-saved->positionMs)<1500,15000);
+        auto *resume=restored.findChild<QPushButton*>("resumePlayback");QVERIFY(resume);QVERIFY(resume->isEnabled());
+    }
+    void realAudioSwitchPreservesImportedCaptions(){
+        const auto media=qEnvironmentVariable("LUMA_UI_TEST_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_TEST_MEDIA to the owned two-audio video.");
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);QSettings().setValue("subtitles/hangul",false);
+        QTemporaryDir folder;QFile file(folder.filePath("owned.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 00:01:00,000\nOwned original stays visible\n");file.close();
+        luma::MainWindow window;window.show();window.openSource(media);auto *audio=window.findChild<QComboBox*>("audioTracks");QVERIFY(audio);
+        QTRY_VERIFY_WITH_TIMEOUT(audio->count()>=2,15000);QVERIFY(window.loadCaptionFile(file.fileName()));
+        audio->setCurrentIndex(1);QVERIFY(QMetaObject::invokeMethod(audio,"activated",Qt::DirectConnection,Q_ARG(int,1)));
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("currentAudioTrack").toInt(),audio->itemData(1).toInt(),5000);
+        QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),1);QVERIFY(!window.diagnostics().value("aiEnabled").toBool());
+        auto *overlay=window.findChild<luma::CaptionOverlay*>();QVERIFY(overlay);QCOMPARE(overlay->captionText(),QString("Owned original stays visible"));
     }
     void realCaptionReadinessPreservesImmediatePauseBeforeSeek(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_TEST_MEDIA to the owned two-audio fixture for native UI regression.");
@@ -315,6 +406,10 @@ private slots:
         QVERIFY2(failures.isEmpty(),failures.isEmpty()?"":qPrintable(failures[0][0].toString()));const auto ready=window.diagnostics();
         QVERIFY(ready.value("captionBufferedAheadMs").toDouble()>=10000);QVERIFY(!ready.value("playing").toBool());QVERIFY(!ready.value("requestedPlaying").toBool());
         qInfo()<<"Physical paused seek readiness ms"<<elapsed.elapsed()<<"actual position"<<ready.value("positionMs").toDouble()<<"ahead"<<ready.value("captionBufferedAheadMs").toDouble()<<"backend"<<ready.value("aiBackend").toString();
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("captionBufferedAheadMs").toDouble()>=60000 || !failures.isEmpty(),60000);
+        QVERIFY2(failures.isEmpty(),failures.isEmpty()?"":qPrintable(failures[0][0].toString()));QVERIFY(!window.diagnostics().value("playing").toBool());
+        QVERIFY(window.diagnostics().value("captionBufferedAheadMs").toDouble()>=60000);
+        qInfo()<<"Physical paused sixty-second prefetch ms"<<elapsed.elapsed()<<"ahead"<<window.diagnostics().value("captionBufferedAheadMs").toDouble();
         play->click();QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool(),5000);
         const auto resumed=window.diagnostics().value("positionMs").toDouble();QElapsedTimer monitor;monitor.start();
         while(monitor.elapsed()<8000){QTest::qWait(100);const auto status=window.diagnostics();QVERIFY2(!status.value("captionBufferHolding").toBool(),"A small backward VLC clock correction must not cause another optical seek/caption hold");QVERIFY(status.value("aiEnabled").toBool());QCOMPARE(status.value("aiRetryCount").toInt(),0);}

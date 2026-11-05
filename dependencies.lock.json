@@ -4,6 +4,21 @@
     "stub":{"url":"https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe","archive":"7zr.exe","sha256":"9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"},
     "installer":{"url":"https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe","archive":"7z2605-x64.exe","sha256":"fd99e86f57d8f429ef5ed045bf98315af962e2309b0f1ba87a147a44c71647d0"}
   },
+  "asrCuda": {
+    "optional": true,
+    "release": "b5454",
+    "archive": "whisper-bin-win-cuda-12.4.0-x64.zip",
+    "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-win-cuda-12.4.0-x64.zip",
+    "sha256": "afef0b881c500958921c3f5523b50e59ee2ec9b6f5cbd25b324c51ed308a957a",
+    "bytes": 684913404,
+    "license": "MIT; NVIDIA CUDA Toolkit EULA and third-party notices",
+    "files": [
+      {"name":"cudart64_12.dll","bytes":553984,"sha256":"d28e42265da7462162a54da6b7a99ea4fa2caf8139d862bb500db875d0b32dfc"},
+      {"name":"cublas64_12.dll","bytes":100033536,"sha256":"e40202fe4223c1cd2d2dce7beec59e1ed61c7801bd827309183be9b50e358f4c"},
+      {"name":"cublasLt64_12.dll","bytes":473551360,"sha256":"2a896460bef60ed57ef32b0875812f355a6984e671d638bb632f5e8c1d7a831f"},
+      {"name":"ggml-cuda.dll","bytes":569981440,"sha256":"e728ca1baad3ce9cee8b1e96fdc4d7e033ba558ef219c7e4594b007e32570ccc"}
+    ]
+  },
   "windows": [
     {"id":"qt","archive":"qtbase.7z","url":"https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z","sha256":"41688269fac0565db956c66d9eecae777d16197e0c02cd81b88640c1f5d73d3f","target":"qt","marker":"bin/qmake.exe"},
     {"id":"vlc","archive":"vlc.7z","url":"https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.7z","sha256":"1ed59c09152e78aff84663fa76efab26057716576db74332858810e5ef54ae1f","target":"vlc","marker":"vlc-3.0.24/libvlc.dll"},
@@ -30,6 +45,7 @@
     {"file":"NotoSansCJKkr-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf","sha256":"6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a"},
     {"file":"NotoSansCJKjp-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf","sha256":"68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"}
   ],
+  "highQualityModel":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin","revision":"5359861c739e955e79d9a303bcbc70fb988958b1","sha256":"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2","bytes":574041195,"file":"ggml-large-v3-turbo-q5_0.bin","license":"MIT"},
   "encoder":{"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
   "model":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin","sha256":"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe","file":"ggml-base.bin"}
 }
