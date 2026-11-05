@@ -4,6 +4,14 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.4 — 2026-11-06 프리뷰 작업
+
+- `-IncludeCuda`로 `windows-x64-cuda` ZIP에 음성 인식·번역 CUDA 12.4를 함께 준비. 동일 NVIDIA DLL 3개는 `runtime/cuda`로 공유하고 엔진별 GGML은 격리. 드라이버 변경 없이 CPU/Vulkan 경로 유지.
+- 기존 `windows-x64` 코어는 CUDA 생략을 유지. 수동 릴리스 워크플로의 `include_cuda` 기본값은 `true`; 구성별 manifest·해시와 새로 푼 패키지 검증을 구분.
+- 영상 우클릭·가운데 클릭 뒤 재생바가 영상 뒤로 가려지는 입력·겹침 순서 수정. 네 가지 회귀 및 Windows 파일 화면의 창/전체화면 복원 확인. 10초 최소·60초 선행 자막 정책 유지.
+- 번역 디코딩·Q6·일반 자막 지시 196개 요청 비교에서 확실한 의미 개선이 없어 Hy-MT2-7B Q4와 기존 설정 유지. 선택 일본어 Kotoba-Whisper v2.0 Q5 설치기·해시·Apache-2.0 원문 추가. 배포 기본 Turbo Q5는 유지하며 정확도와 실행 검증을 구분.
+- 최종 ZIP 크기·CI·네이티브 실행·공개 완료는 [alpha.4 기록](docs/releases/0.1.0-alpha.4.md)의 확인 상태와 공개 검증 자산을 따름.
+
 ### 0.1.0-alpha.3 — 2026-11-06 프리뷰 작업
 
 - 긴 원문을 시간 안에서 짧게 나누고 원문·독음·번역을 같은 페이지로 표시. 실제 글자 배치로 공백 없는 문자열도 줄바꿈하며 결합 문자·이모지를 보존.
@@ -35,6 +43,14 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.4 — preview work, 2026-11-06
+
+- Add `-IncludeCuda` for a `windows-x64-cuda` ZIP with both ASR and translation CUDA 12.4. Share three identical NVIDIA DLLs under `runtime/cuda`, keeping engine-specific GGML isolated. Preserve CPU/Vulkan paths without driver changes.
+- Keep the CUDA-free `windows-x64` core. The manual release workflow's `include_cuda` input defaults to `true`; distinguish each flavor's manifest, hashes and extracted-package verification.
+- Fix transport stacking after right/middle clicks. Four regression rows and native Windows windowed/fullscreen file checks confirm restoration; preserve ten-second minimum and sixty-second lookahead.
+- Compare 196 decoding, Q6 and general subtitle-style requests without a clear semantic gain, retaining Hy-MT2-7B Q4 and current settings. Fast/quality weights remain optional. Shipped default ASR stays Turbo Q5; additional-candidate results await final review.
+- Final ZIP size, CI, native execution and publication follow the [alpha.4 record](docs/releases/0.1.0-alpha.4.md) and published validation assets.
 
 ### 0.1.0-alpha.3 — preview work, 2026-11-06
 

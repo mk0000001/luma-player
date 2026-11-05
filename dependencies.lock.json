@@ -45,6 +45,20 @@
     {"file":"NotoSansCJKkr-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf","sha256":"6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a"},
     {"file":"NotoSansCJKjp-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf","sha256":"68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"}
   ],
+  "japaneseModel": {
+    "id": "kotoba-tech/kotoba-whisper-v2.0-ggml",
+    "revision": "e3a0cf6a62b95911703cfb97d819292e058f12c3",
+    "file": "ggml-kotoba-whisper-v2.0-q5_0.bin",
+    "url": "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/e3a0cf6a62b95911703cfb97d819292e058f12c3/ggml-kotoba-whisper-v2.0-q5_0.bin",
+    "sha256": "4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658",
+    "bytes": 537819875,
+    "language": "ja",
+    "optionalAtRuntime": true,
+    "license": "Apache-2.0",
+    "licenseFile": "Kotoba-Whisper-Apache-2.0.txt",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
   "highQualityModel":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin","revision":"5359861c739e955e79d9a303bcbc70fb988958b1","sha256":"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2","bytes":574041195,"file":"ggml-large-v3-turbo-q5_0.bin","license":"MIT"},
   "encoder":{"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
   "model":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin","sha256":"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe","file":"ggml-base.bin"}

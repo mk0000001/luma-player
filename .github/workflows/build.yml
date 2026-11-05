@@ -25,6 +25,7 @@ jobs:
           ./tests/package_tests.ps1
           ./tests/translation_cuda_installer_tests.ps1
           ./tests/asr_cuda_installer_tests.ps1
+          ./tests/asr_model_installer_tests.ps1
       - name: Compile and test
         shell: pwsh
         run: ./scripts/build-windows.ps1

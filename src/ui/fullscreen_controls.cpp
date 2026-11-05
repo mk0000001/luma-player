@@ -44,9 +44,9 @@ void FullscreenControls::setActive(bool active){
     if(active_)timer_.start();else timer_.stop();
 }
 void FullscreenControls::reveal(){
-    wanted_=true;if(window_)window_->unsetCursor();if(surface_)surface_->unsetCursor();syncGeometry();
+    wanted_=true;raisePending_=true;if(window_)window_->unsetCursor();if(surface_)surface_->unsetCursor();syncGeometry();
 }
-void FullscreenControls::activity(){if(!active_)return;reveal();idle_.restart();}
+void FullscreenControls::activity(){reveal();if(active_)idle_.restart();}
 bool FullscreenControls::interactionInProgress()const{
     if(QApplication::activePopupWidget() || QApplication::activeModalWidget() || QApplication::mouseButtons()!=Qt::NoButton)return true;
     if(!window_)return false;
@@ -75,8 +75,10 @@ bool FullscreenControls::eventFilter(QObject *object,QEvent *event){
     if(!widget || !window_)return false;
     bool owned=false;for(auto *owner=widget;owner;owner=owner->parentWidget())if(owner==window_){owned=true;break;}
     if(!owned)return false;
-    if(widget!=transport_ && widget->windowType()==Qt::Tool && (event->type()==QEvent::Show || event->type()==QEvent::ZOrderChange)){raisePending_=true;queueSync();}
-    if(!active_)return false;
+    if(widget!=transport_ && widget->windowType()==Qt::Tool){
+        if(event->type()==QEvent::WindowActivate)activity();
+        else if(event->type()==QEvent::Show || event->type()==QEvent::ZOrderChange){raisePending_=true;queueSync();}
+    }
     switch(event->type()){
     case QEvent::MouseMove:case QEvent::MouseButtonPress:case QEvent::MouseButtonRelease:case QEvent::Wheel:
     case QEvent::KeyPress:case QEvent::KeyRelease:case QEvent::ShortcutOverride:case QEvent::TouchBegin:activity();break;

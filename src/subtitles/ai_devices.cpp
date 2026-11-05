@@ -1,4 +1,5 @@
 #include "ai_devices.h"
+#include "runtime_environment.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QJsonDocument>
@@ -22,6 +23,7 @@ void AiDeviceProbe::start(){
 #else
     const QString suffix;
 #endif
+    process_.setProcessEnvironment(localRuntimeEnvironment(runtime_));
     process_.setProgram(QDir(runtime_).filePath("ai/luma-whisper-worker"+suffix));process_.setArguments({"--list-devices"});timer_.start();process_.start();
 }
 AiDeviceProbe::~AiDeviceProbe(){timer_.stop();process_.blockSignals(true);if(process_.state()!=QProcess::NotRunning){process_.kill();process_.waitForFinished(1500);}}
