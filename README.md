@@ -2,13 +2,13 @@
 
 ## 한국어
 
-C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.4` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 진행 중인 CUDA 배포·재생바 수정의 최종 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.4.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.5` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 네이티브 영상 입력 보완의 최종 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.5.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
 
 - **Blu-ray:** libVLC 메뉴·리모컨·타이틀·챕터. 기본값은 소프트웨어 디코딩과 10초 디스크 캐시입니다. 한 디스크의 관찰을 전체 호환성으로 확대하지 않습니다.
 - **파일:** libmpv GPU Next, AV1 등 엔진 지원 코덱, 파일 출력 GPU 선택. HDR/Dolby Vision 처리 경로와 실제 출력 검증은 구분합니다.
 - **로컬 자막:** 원문·일본어 한글 독음·한국어 번역을 분리하고, 긴 자막을 짧은 시간 페이지와 화면 폭에 맞게 표시합니다. 최소 10초 준비 후에도 60초 앞까지 계속 인식합니다. 실행 중 외부 API·계정·Python이 필요하지 않습니다.
 - **외부 자막·이어보기:** SRT/ASS/SSA/VTT/SMI, 같은 이름 자막 자동 검색, 불러오기 실패 시 현재 언어의 AI 전환. 파일별·디스크 본편 타이틀별 위치를 로컬에 저장합니다.
-- **화면:** 기본 다크/선택 라이트, 자체 컨트롤과 Noto Sans. 영상 위의 74 px 전체화면 바는 영상 크기를 바꾸지 않고 5초 비활동 시 커서와 함께 숨습니다. 우클릭·가운데 클릭 후 영상 뒤에 가려진 바를 창 크기 변경 없이 복원합니다. 진단은 개발자 모드에서 표시합니다.
+- **화면:** 기본 다크/선택 라이트, 자체 컨트롤과 Noto Sans. 영상 위의 74 px 전체화면 바는 영상 크기를 바꾸지 않고 5초 비활동 시 커서와 함께 숨습니다. alpha.4에는 이미 포커스된 VLC 영상에서 정지 포인터의 가운데 클릭이 재생바를 복원하지 못하는 [알려진 문제](docs/releases/0.1.0-alpha.4.md)가 남았습니다. alpha.5에서 창/전체화면 우클릭·가운데 클릭 복원과 유휴 숨김을 실물 디스크로 확인했습니다. 진단은 개발자 모드에서 표시합니다.
 - **선택 프레임 보간:** 파일용 디스플레이 동기 혼합과 실험적 CPU 광학 흐름(24~360 fps **목표**). 360 fps 실시간 표시를 보장하지 않습니다.
 
 ### 실행과 선택 번역 모델
@@ -45,7 +45,7 @@ AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 
 
 AACS/BD+ 라이브러리 연결, Windows 캡처 제외, 인증 DRM/HDCP 출력은 서로 다른 기능입니다. 키·인증서·상용 디스크 영상·음성·메뉴 이미지·생성 자막은 배포하지 않습니다. TUKI 한 장의 성공이 모든 디스크의 호환성을 뜻하지 않습니다.
 
-보호 디스크에서는 지원되는 Windows 캡처 제외를 **영상과 자막 창에만** 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. 이전 alpha.3의 실제 관찰에서 검은 영상과 보이는 본창·재생바를 확인했습니다. DRM/HDCP 인증이나 모든 캡처 경로 차단과는 별개입니다. HDR/Dolby Vision·무손실 출력, 새 CI·패키지의 최종 통과 여부는 [alpha.4 기록](docs/releases/0.1.0-alpha.4.md)에 따릅니다.
+보호 디스크에서는 지원되는 Windows 캡처 제외를 **영상과 자막 창에만** 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. 이전 alpha.3의 실제 관찰에서 검은 영상과 보이는 본창·재생바를 확인했습니다. DRM/HDCP 인증이나 모든 캡처 경로 차단과는 별개입니다. HDR/Dolby Vision·무손실 출력, 새 CI·패키지의 최종 통과 여부는 [alpha.5 기록](docs/releases/0.1.0-alpha.5.md)에 따릅니다.
 
 ### 소스에서 빌드
 
@@ -73,7 +73,7 @@ pwsh -File scripts/install-translation-cuda.ps1 -Development
 pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 ```
 
-출력 이름은 `LumaPlayer-0.1.0-alpha.4-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
+출력 이름은 `LumaPlayer-0.1.0-alpha.5-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
 
 Linux 개발 빌드:
 
@@ -95,11 +95,11 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 
 ## English
 
-LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.4`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.4.md) describes CUDA packaging and transport verification. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.5`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.5.md) tracks native-video input verification. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
 
 Features include libVLC disc menus/remote/title/chapter controls; libmpv GPU Next file playback; separate source captions, Japanese Hangul readings and Korean translation; timed long-caption pages and wrapping; SRT/ASS/SSA/VTT/SMI import with AI fallback; per-file/disc-title resume; and dark/light Noto-based controls. The floating 74 px fullscreen bar and cursor hide after five inactive seconds without moving the video, including when the pointer rests over the bar. File-only motion options target 24–360 fps processing, without promising realtime 360 fps display.
 
-The fix for right/middle clicks leaving the transport behind the video awaits native verification.
+Alpha.4 retains a [known issue](docs/releases/0.1.0-alpha.4.md): a stationary middle click on already-focused VLC video after idle can fail to restore the bar. Alpha.5 verified right/middle-click restoration in windowed/fullscreen modes and idle hiding with the physical disc.
 
 Disc defaults are software decoding and a ten-second cache. Results on one protected disc do not establish universal compatibility. Native owned-media checks, protected-disc observations and remaining limits are recorded separately from final CI/package validation.
 
@@ -129,6 +129,6 @@ Windows requires Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, N
 
 For the CUDA ZIP, run both `install-asr-cuda.ps1 -Development` and `install-translation-cuda.ps1 -Development`, then `package-windows.ps1 -BuildDirectory build-next -IncludeCuda`, as shown above. Omitting `-IncludeCuda` preserves the core flavor. The release workflow's manual `include_cuda` input defaults to `true`; final archive size, hashes and native results remain in the release record.
 
-AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Capture exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Prior alpha.3 observations showed black video with visible UI/transport. This is not absolute capture prevention. Final HDR/lossless, CI and package status belongs in the [alpha.4 record](docs/releases/0.1.0-alpha.4.md).
+AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Capture exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Prior alpha.3 observations showed black video with visible UI/transport. This is not absolute capture prevention. Final HDR/lossless, CI and package status belongs in the [alpha.5 record](docs/releases/0.1.0-alpha.5.md).
 
 See the [changelog](CHANGELOG.md), [version policy](docs/VERSIONING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The application is GPL-3.0-or-later, Whisper/Turbo is MIT, optional Qwen3-4B/Hy-MT2 weights are Apache 2.0, and optional CUDA keeps its separate NVIDIA terms. Unmodified Noto fonts retain SIL OFL 1.1 notices.

@@ -6,15 +6,19 @@
 #include <QEvent>
 #include <QLayout>
 #include <QWidget>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 
 namespace luma {
-FullscreenControls::FullscreenControls(QWidget *window,QWidget *transport,QWidget *surface):QObject(window),window_(window),transport_(transport),surface_(surface){
+FullscreenControls::FullscreenControls(QWidget *window,QWidget *transport,QWidget *surface):QObject(window),window_(window),transport_(transport),surface_(surface),captureInput_(QGuiApplication::platformName()==QStringLiteral("windows")){
     if(auto *parent=transport->parentWidget())if(auto *layout=parent->layout())layout->removeWidget(transport);
     transport->setParent(window,Qt::Tool|Qt::FramelessWindowHint);
     transport->setAttribute(Qt::WA_NativeWindow);transport->setAttribute(Qt::WA_ShowWithoutActivating);
     if(auto *layout=transport->layout())layout->setSizeConstraint(QLayout::SetNoConstraint);
     transport->setMinimumWidth(0);
-    qApp->installEventFilter(this);timer_.setInterval(100);connect(&timer_,&QTimer::timeout,this,&FullscreenControls::poll);queueSync();
+    nativeInput_.observe({0,false,false,false});
+    qApp->installEventFilter(this);timer_.setInterval(100);connect(&timer_,&QTimer::timeout,this,&FullscreenControls::poll);timer_.start();queueSync();
 }
 int FullscreenControls::reservedHeight()const{
     return transport_ && surface_ && window_ && transport_->isVisible() && surface_->isVisible() && window_->isVisible() && !window_->isMinimized()?transport_->height():0;
@@ -41,7 +45,6 @@ void FullscreenControls::syncGeometry(){
 }
 void FullscreenControls::setActive(bool active){
     active_=active;pointer_=QCursor::pos();reveal();idle_.restart();
-    if(active_)timer_.start();else timer_.stop();
 }
 void FullscreenControls::reveal(){
     wanted_=true;raisePending_=true;if(window_)window_->unsetCursor();if(surface_)surface_->unsetCursor();syncGeometry();
@@ -54,8 +57,32 @@ bool FullscreenControls::interactionInProgress()const{
     for(auto *button:window_->findChildren<QAbstractButton*>())if(button->isDown())return true;
     return false;
 }
+bool FullscreenControls::nativeInputActivity(){
+#ifdef Q_OS_WIN
+    // VLC's HWND captures buttons on its input thread, including completed clicks
+    // between polls. Process-scoped capture notifications exclude no-op synthetic
+    // input which changes GetLastInputInfo without a real click. No raw-input
+    // receiver or global mouse hook; native hit-testing avoids DPI mixing.
+    if(QGuiApplication::platformName()!=QStringLiteral("windows"))return false;
+    NativeInputSnapshot snapshot{captureInput_.serial()};
+    snapshot.blocked=QApplication::activePopupWidget() || QApplication::activeModalWidget();
+    if(window_ && window_->isVisible() && !window_->isMinimized() && !snapshot.blocked){
+        const auto host=reinterpret_cast<HWND>(window_->winId());
+        const auto root=GetAncestor(host,GA_ROOTOWNER);
+        const auto inputWindow=reinterpret_cast<HWND>(captureInput_.window());
+        snapshot.foregroundOwned=root && GetAncestor(GetForegroundWindow(),GA_ROOTOWNER)==root && GetAncestor(inputWindow,GA_ROOTOWNER)==root;
+        POINT pointer;
+        if(root && GetCursorPos(&pointer))snapshot.pointerOwned=GetAncestor(WindowFromPoint(pointer),GA_ROOTOWNER)==root;
+    }
+    return nativeInput_.observe(snapshot);
+#else
+    return false;
+#endif
+}
 void FullscreenControls::poll(){
-    if(!active_ || !window_ || !transport_)return;
+    if(!window_ || !transport_)return;
+    if(nativeInputActivity())activity();
+    if(!active_)return;
     const auto current=QCursor::pos();
     if(current!=pointer_){pointer_=current;if(window_->frameGeometry().contains(current))activity();}
     if(interactionInProgress()){activity();return;}

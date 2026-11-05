@@ -5,6 +5,12 @@
 #include <QCursor>
 #include <QCloseEvent>
 #include "ui/fullscreen_controls.h"
+#include "ui/input_activity.h"
+#include "ui/native_capture_observer.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <QScopeGuard>
+#endif
 
 namespace {
 class ControlsCloseHost:public QWidget {
@@ -20,6 +26,55 @@ class FullscreenOverlayTests:public QObject {
     Q_OBJECT
 private slots:
     void initTestCase(){QFont font=qApp->font();font.setPointSize(10);qApp->setFont(font);}
+#ifdef Q_OS_WIN
+    void nativeCaptureNotificationSurvivesCompletedClickAndIgnoresOtherEvents(){
+        luma::NativeCaptureObserver observer;QVERIFY(observer.available());
+        const auto window=CreateWindowExW(0,L"STATIC",L"Luma native input fixture",0,0,0,0,0,HWND_MESSAGE,nullptr,GetModuleHandleW(nullptr),nullptr);
+        QVERIFY(window);const auto cleanup=qScopeGuard([&]{DestroyWindow(window);});
+        NotifyWinEvent(EVENT_SYSTEM_CAPTURESTART,window,OBJID_WINDOW,CHILDID_SELF);
+        NotifyWinEvent(EVENT_SYSTEM_CAPTUREEND,window,OBJID_WINDOW,CHILDID_SELF);
+        QTRY_VERIFY_WITH_TIMEOUT(observer.serial()>=2,2000);
+        QCOMPARE(observer.window(),reinterpret_cast<quintptr>(window));
+        const auto serial=observer.serial();NotifyWinEvent(EVENT_OBJECT_FOCUS,window,OBJID_WINDOW,CHILDID_SELF);
+        QTest::qWait(60);QCOMPARE(observer.serial(),serial);
+    }
+    void nativeCaptureObserversUnregisterIndependentlyWithPendingEvents(){
+        luma::NativeCaptureObserver survivor;QVERIFY(survivor.available());
+        const auto window=CreateWindowExW(0,L"STATIC",L"Luma native input lifetime fixture",0,0,0,0,0,HWND_MESSAGE,nullptr,GetModuleHandleW(nullptr),nullptr);
+        QVERIFY(window);const auto cleanup=qScopeGuard([&]{DestroyWindow(window);});
+        {
+            luma::NativeCaptureObserver temporary;QVERIFY(temporary.available());
+            NotifyWinEvent(EVENT_SYSTEM_CAPTURESTART,window,OBJID_WINDOW,CHILDID_SELF);
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(survivor.serial()>0,2000);
+        const auto serial=survivor.serial();NotifyWinEvent(EVENT_SYSTEM_CAPTUREEND,window,OBJID_WINDOW,CHILDID_SELF);
+        QTRY_VERIFY_WITH_TIMEOUT(survivor.serial()!=serial,2000);
+    }
+#endif
+    void completedNativeClickBetweenPollsIsDetectedWithoutPointerMovement(){
+        luma::InputActivityTracker input;
+        QVERIFY(!input.observe({100,true,true,false}));
+        QVERIFY(input.observe({120,true,true,false}));
+        QVERIFY(!input.observe({120,true,true,false}));
+    }
+    void nativeCaptureSerialWrapAndRegressionAreChanges(){
+        luma::InputActivityTracker input;QVERIFY(!input.observe({0xfffffff0u,true,true,false}));
+        QVERIFY(input.observe({5,true,true,false}));QVERIFY(input.observe({3,true,true,false}));
+        QVERIFY(!input.observe({3,true,true,false}));
+    }
+    void foreignOrPopupInputIsConsumedWithoutStaleReplay_data(){
+        QTest::addColumn<bool>("foreground");QTest::addColumn<bool>("pointer");QTest::addColumn<bool>("blocked");
+        QTest::newRow("background-player")<<false<<true<<false;
+        QTest::newRow("other-window-under-pointer")<<true<<false<<false;
+        QTest::newRow("popup-or-modal")<<true<<true<<true;
+    }
+    void foreignOrPopupInputIsConsumedWithoutStaleReplay(){
+        QFETCH(bool,foreground);QFETCH(bool,pointer);QFETCH(bool,blocked);
+        luma::InputActivityTracker input;QVERIFY(!input.observe({100,true,true,false}));
+        QVERIFY(!input.observe({120,foreground,pointer,blocked}));
+        QVERIFY(!input.observe({120,true,true,false}));
+        QVERIFY(input.observe({130,true,true,false}));
+    }
     void showingAndHidingControlsDoesNotResizeVideo(){
         QWidget host;host.resize(800,600);auto *layout=new QVBoxLayout(&host);layout->setContentsMargins(0,0,0,0);layout->setSpacing(0);
         QWidget video,controls;controls.setFixedHeight(74);layout->addWidget(&video,1);layout->addWidget(&controls);
