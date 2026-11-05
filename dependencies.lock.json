@@ -1,5 +1,9 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "archiveTool": {
+    "stub":{"url":"https://github.com/ip7z/7zip/releases/download/26.05/7zr.exe","archive":"7zr.exe","sha256":"9bf582b894dfa665f852d7e9112b02290a1c303c2d95a21fcdc41ffcb03143b7"},
+    "installer":{"url":"https://github.com/ip7z/7zip/releases/download/26.05/7z2605-x64.exe","archive":"7z2605-x64.exe","sha256":"fd99e86f57d8f429ef5ed045bf98315af962e2309b0f1ba87a147a44c71647d0"}
+  },
   "windows": [
     {"id":"qt","archive":"qtbase.7z","url":"https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z","sha256":"41688269fac0565db956c66d9eecae777d16197e0c02cd81b88640c1f5d73d3f","target":"qt","marker":"bin/qmake.exe"},
     {"id":"vlc","archive":"vlc.7z","url":"https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.7z","sha256":"1ed59c09152e78aff84663fa76efab26057716576db74332858810e5ef54ae1f","target":"vlc","marker":"vlc-3.0.24/libvlc.dll"},
@@ -11,5 +15,21 @@
     {"id":"libgcrypt","archive":"mingw-w64-x86_64-libgcrypt-1.12.4-2-any.pkg.tar.zst","url":"https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-libgcrypt-1.12.4-2-any.pkg.tar.zst","sha256":"8d93909ea875f06c913cc44c3e29b17d549591ec679104768b79a441169eed97","target":"aacs","marker":"mingw64/bin/libgcrypt-20.dll"},
     {"id":"libgpg-error","archive":"mingw-w64-x86_64-libgpg-error-1.61-1-any.pkg.tar.zst","url":"https://repo.msys2.org/mingw/mingw64/mingw-w64-x86_64-libgpg-error-1.61-1-any.pkg.tar.zst","sha256":"b6933a26d865e980abf259bb2546f9462fb9700c2a54dc91b1585c04a9794cba","target":"aacs","marker":"mingw64/bin/libgpg-error-0.dll"}
   ],
+  "native": [
+    {"id":"mecab-source","archive":"mecab-source.zip","url":"https://codeload.github.com/taku910/mecab/zip/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1","sha256":"cb654df442350c9913f29a00778aa162cdfcf39ed29c21ab4cdd2e20de0a2cba","target":"mecab-source","marker":"mecab-61b90ba6e669dc2d7d533d4a80d206f3b31d52b1/mecab/src/mecab.h"},
+    {"id":"whisper-source","archive":"whisper-b5454-source.zip","url":"https://codeload.github.com/ggml-org/whisper.cpp/zip/refs/tags/b5454","sha256":"39089bb3fee9a7ed9474fa0949c6f98ae989073cca1db4f4794294e7015a099e","target":"whisper-source","marker":"whisper.cpp-b5454/include/whisper.h"},
+    {"id":"openvino","archive":"openvino-2024.1.zip","url":"https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.1/windows/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64.zip","sha256":"4ee0c4036c91a3c1423c14f47e31b5b4c15082a6cff3a5b7a63cf12da39b70e6","target":"openvino","marker":"w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64/runtime/cmake/OpenVINOConfig.cmake"},
+    {"id":"vulkan-headers","archive":"vulkan-headers.zip","url":"https://codeload.github.com/KhronosGroup/Vulkan-Headers/zip/refs/tags/vulkan-sdk-1.4.350.0","sha256":"43441595055ff0f740bd9d417013c1f5b2f5f1f7b0e5ca1d49e3deeb80777ada","target":"vulkan-headers","marker":"Vulkan-Headers-vulkan-sdk-1.4.350.0/include/vulkan/vulkan.h"},
+    {"id":"vulkan-loader","archive":"vulkan-loader.zip","url":"https://codeload.github.com/KhronosGroup/Vulkan-Loader/zip/refs/tags/vulkan-sdk-1.4.350.0","sha256":"84d2f4506402c95cd329aaFAF50d6aaFA1430da332d21d5d27b4320df1534123","target":"vulkan-loader","marker":"Vulkan-Loader-vulkan-sdk-1.4.350.0/loader/vulkan-1.def","extractor":"7zip"},
+    {"id":"spirv-headers","archive":"spirv-headers.zip","url":"https://codeload.github.com/KhronosGroup/SPIRV-Headers/zip/refs/tags/vulkan-sdk-1.4.350.0","sha256":"22fe22177ea8074f6c7072ff0bf9a24e1a751f3e5b6b77758e0a25b53d9557e7","target":"spirv-headers","marker":"SPIRV-Headers-vulkan-sdk-1.4.350.0/CMakeLists.txt"}
+  ],
+  "shaderCompiler":{"url":"https://sdk.lunarg.com/sdk/download/1.4.350.0/windows/vulkan_sdk.exe?Human=true","archive":"vulkan-sdk-1.4.350.0.exe","sha256":"855b27ba05d2d8119c5114c5d4ff870ca38f2c632b11e1bb9923b9b7e6ecfe7b","markerSha256":"93898530ea4f2e809733ea8a839d09d4b947bd6e853c84670923ac4414f41eb3"},
+  "fonts":[
+    {"file":"NotoSans-Regular.ttf","url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Regular.ttf","sha256":"b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5"},
+    {"file":"NotoSans-Bold.ttf","url":"https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Bold.ttf","sha256":"c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a"},
+    {"file":"NotoSansCJKkr-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf","sha256":"6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a"},
+    {"file":"NotoSansCJKjp-Regular.otf","url":"https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Japanese/NotoSansCJKjp-Regular.otf","sha256":"68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"}
+  ],
+  "encoder":{"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
   "model":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin","sha256":"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe","file":"ggml-base.bin"}
 }

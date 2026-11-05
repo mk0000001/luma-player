@@ -1,4 +1,5 @@
 #include "disc.h"
+#include <QUrl>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -45,8 +46,14 @@ DiscTitle parsePlaylist(const QByteArray &b, const QString &name) {
     }
     return title;
 }
+QString localDiscPath(const QString &source){
+    auto path=source;
+    if(source.startsWith("bluray://",Qt::CaseInsensitive)){QUrl url(source);url.setScheme("file");path=url.toLocalFile();}
+    if(path.size()==2 && path[0].isLetter() && path[1]==':')path+='/';
+    return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+}
 DiscInfo inspectDisc(const QString &root) {
-    DiscInfo info; info.root = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+    DiscInfo info; info.root = localDiscPath(root);
     const QDir dir(info.root);
     const auto index = readBounded(dir.filePath("BDMV/index.bdmv"),16*1024*1024);
     if (index.size()<44 || !index.startsWith("INDX")) { info.error = QStringLiteral("유효한 Blu-ray index.bdmv를 읽을 수 없습니다."); return info; }

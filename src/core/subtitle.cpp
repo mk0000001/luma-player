@@ -3,12 +3,21 @@
 #include <algorithm>
 namespace luma {
 std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs){
-    if(pending_ || positionMs<0 || durationMs<=0)return {};
-    auto chunk=positionMs/30000*30000;if(completed_.contains(chunk))chunk+=30000;
-    if(chunk>=durationMs || completed_.contains(chunk))return {};
-    pending_=chunk;return chunk;
+    if(pending_ || positionMs<0 || positionMs>=durationMs || readyForPlayback(positionMs,durationMs))return {};
+    const auto start=positionMs+bufferedAhead(positionMs,durationMs);
+    pending_=qMakePair(start,std::min(start+chunkMs,durationMs));return start;
 }
-void CaptionCoverage::complete(){if(pending_)completed_.insert(*pending_);pending_.reset();}
+qint64 CaptionCoverage::bufferedAhead(qint64 positionMs,qint64 durationMs)const{
+    if(positionMs<0 || positionMs>=durationMs)return 0;
+    auto end=positionMs;for(const auto &range:completed_){if(range.first>end)break;if(range.second>end)end=range.second;}
+    return std::max<qint64>(0,std::min(end,durationMs)-positionMs);
+}
+bool CaptionCoverage::readyForPlayback(qint64 positionMs,qint64 durationMs)const{
+    return positionMs>=0 && durationMs>positionMs && bufferedAhead(positionMs,durationMs)>=std::min(lookAheadMs,durationMs-positionMs);
+}
+void CaptionCoverage::complete(){
+    if(pending_){completed_.append(*pending_);std::sort(completed_.begin(),completed_.end());QVector<QPair<qint64,qint64>> merged;for(const auto &range:completed_){if(!merged.isEmpty() && merged.last().second>=range.first)merged.last().second=std::max(merged.last().second,range.second);else merged.append(range);}completed_=std::move(merged);}pending_.reset();
+}
 void CaptionCoverage::cancel(){pending_.reset();}
 void CaptionCoverage::reset(){completed_.clear();pending_.reset();}
 QVector<SubtitleCue> parseSrt(const QString &input) {

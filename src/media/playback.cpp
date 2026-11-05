@@ -1,4 +1,7 @@
 #include "playback.h"
+#include "motion_options.h"
+#include <QSettings>
+#include <QSet>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -14,6 +17,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <atomic>
+#include <optional>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -35,6 +39,16 @@ struct PlaybackEngine::Impl {
     QTimer timer;
     bool ready=false, errorSent=false;
     bool managedSubtitle=false;
+    MotionOptions motion;
+    QString motionMetadata;
+    bool motionApplied=false;
+    bool fileLoaded=false;
+    bool seekReady=false;
+    std::optional<qint64> deferredSeek;
+    bool discSoftware=true;
+    int metadataTitle=-2,metadataAudio=-2;
+    QSet<int> navigationTitles;
+    bool titleMetadataReady=false;
     int managedMpvSubtitle=-1;
     std::atomic<quint64> generation{0};
     std::atomic_bool stopping{false};
@@ -51,6 +65,7 @@ struct PlaybackEngine::Impl {
     VF(libvlc_media_new_location); VF(libvlc_media_add_option); VF(libvlc_media_release);
     VF(libvlc_media_player_new); VF(libvlc_media_player_release); VF(libvlc_media_player_set_media);
     VF(libvlc_media_player_play); VF(libvlc_media_player_stop); VF(libvlc_media_player_pause);
+    VF(libvlc_media_player_set_pause);
     VF(libvlc_media_player_get_time); VF(libvlc_media_player_get_length); VF(libvlc_media_player_set_time);
     VF(libvlc_media_player_get_state); VF(libvlc_media_player_is_playing); VF(libvlc_media_player_set_rate);
     VF(libvlc_audio_set_volume); VF(libvlc_audio_get_track_description); VF(libvlc_audio_set_track);
@@ -106,6 +121,8 @@ struct PlaybackEngine::Impl {
         const auto generation=self->generation.load();
         QMetaObject::invokeMethod(self->owner,[o=self->owner,msg,generation]{
             if(generation!=o->d->generation.load() || o->d->stopping.load())return;emit o->logMessage(msg);
+            if(msg.contains("Using D3D11VA"))o->d->state.hardwareDecoder="D3D11VA";
+            else if(msg.contains("Using DXVA2"))o->d->state.hardwareDecoder="DXVA2";
             if(msg.contains("Your input can't be opened") || msg.startsWith("VLC is unable to open"))o->d->fail(msg);
         },Qt::QueuedConnection);
     }
@@ -129,6 +146,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
         LOAD(libvlc_media_new_location); LOAD(libvlc_media_add_option); LOAD(libvlc_media_release);
         LOAD(libvlc_media_player_new); LOAD(libvlc_media_player_release); LOAD(libvlc_media_player_set_media);
         LOAD(libvlc_media_player_play); LOAD(libvlc_media_player_stop); LOAD(libvlc_media_player_pause);
+        LOAD(libvlc_media_player_set_pause);
         LOAD(libvlc_media_player_get_time); LOAD(libvlc_media_player_get_length); LOAD(libvlc_media_player_set_time);
         LOAD(libvlc_media_player_get_state); LOAD(libvlc_media_player_is_playing); LOAD(libvlc_media_player_set_rate);
         LOAD(libvlc_audio_set_volume); LOAD(libvlc_audio_get_track_description); LOAD(libvlc_audio_set_track);
@@ -147,8 +165,9 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #endif
 #undef LOAD
         if(!ok)return;
-        const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1"};
-        d->vlc=d->libvlc_new(5,options);
+        d->discSoftware=qEnvironmentVariable("LUMA_DISC_DECODER")!="hardware";
+        const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1","--avcodec-hw=none"};
+        d->vlc=d->libvlc_new(d->discSoftware?6:5,options);
         if(!d->vlc){d->error="libVLC initialization failed";return;}
         d->libvlc_log_set(d->vlc,&Impl::log,d.get());
         d->player=d->libvlc_media_player_new(d->vlc);
@@ -166,7 +185,13 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
             d->mpv_set_option_string(d->mpv,key.constData(),value.constData());
 #ifdef Q_OS_WIN
         d->mpv_set_option_string(d->mpv,"gpu-api","d3d11");
+        const auto adapter=QSettings().value("video/adapter").toString().toUtf8();
+        if(!adapter.isEmpty())d->mpv_set_option_string(d->mpv,"d3d11-adapter",adapter.constData());
 #endif
+        d->mpv_set_option_string(d->mpv,"target-colorspace-hint","auto");
+        d->mpv_set_option_string(d->mpv,"hwdec-extra-frames","16");
+        const auto motionMode=QSettings().value("motion/mode","off").toString();
+        d->motion=normalizeMotionOptions({motionMode=="display"?MotionMode::DisplayBlend:motionMode=="optical"?MotionMode::OpticalFlow:MotionMode::Off,QSettings().value("motion/fps",120).toInt()});
         if(d->mpv_initialize(d->mpv)<0){d->error="libmpv initialization failed";return;}
         d->mpv_request_log_messages(d->mpv,"warn");
     }
@@ -186,6 +211,7 @@ const PlaybackState &PlaybackEngine::state()const{return d->state;}
 bool PlaybackEngine::open(const QString &source,WId surface){
     if(!available()){d->fail(d->error);return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->managedSubtitle=false;d->managedMpvSubtitle=-1;
+    d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleMetadataReady=false;
     if(d->kind==Kind::Disc){
         QString url=source;
         if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
@@ -199,11 +225,15 @@ bool PlaybackEngine::open(const QString &source,WId surface){
         if(!d->media){d->fail("Blu-ray media creation failed");return false;}
         d->libvlc_media_add_option(d->media,":bluray-menu=1");
         d->libvlc_media_add_option(d->media,":bluray-region=A");
-        d->libvlc_media_add_option(d->media,":disc-caching=1500");
+        d->libvlc_media_add_option(d->media,":disc-caching=10000");
+        if(d->discSoftware)d->libvlc_media_add_option(d->media,":avcodec-hw=none");
         d->libvlc_media_player_set_media(d->player,d->media);
         if(d->libvlc_media_player_play(d->player)<0){d->fail("Blu-ray 재생을 시작할 수 없습니다. 진단 로그를 확인하세요.");return false;}
     }else{
         const int64_t wid=static_cast<int64_t>(surface); d->mpv_set_property(d->mpv,"wid",MPV_FORMAT_INT64,const_cast<int64_t *>(&wid));
+        d->motionMetadata.clear();
+        if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
+        d->mpv_set_property_string(d->mpv,"interpolation","no");
         d->command({"loadfile",source.toUtf8(),"replace"});
     }
     emit logMessage(QString("Opening with %1").arg(name()));return true;
@@ -221,7 +251,27 @@ void PlaybackEngine::stop(){
     if(d->mpv)d->command({"stop"});d->stopping.store(false);if(!d->destroying)d->timer.start();
 }
 void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player)d->libvlc_media_player_pause(d->player);else d->command({"cycle","pause"});}
-void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player)d->libvlc_media_player_set_time(d->player,ms);else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
+void PlaybackEngine::setPaused(bool paused){if(!available())return;if(d->player)d->libvlc_media_player_set_pause(d->player,paused?1:0);else d->mpv_set_property_string(d->mpv,"pause",paused?"yes":"no");}
+void PlaybackEngine::setFrameInterpolation(const QString &mode,int targetFps){
+    d->motion=normalizeMotionOptions({mode=="display"?MotionMode::DisplayBlend:mode=="optical"?MotionMode::OpticalFlow:MotionMode::Off,targetFps});
+    d->motionMetadata.clear();updateFrameInterpolation();emit updated();
+}
+void PlaybackEngine::updateFrameInterpolation(){
+    if(!available() || !d->mpv){d->state.motionStatus=motionPlan(d->motion,d->kind==Kind::File).status;return;}
+    const auto gamma=d->fileLoaded?d->prop("video-params/gamma"):QString{},matrix=d->fileLoaded?d->prop("video-params/colormatrix"):QString{};const auto peak=d->fileLoaded?d->number("video-params/sig-peak"):0;
+    const auto metadata=gamma+'\n'+matrix+'\n'+QString::number(peak);
+    if(metadata==d->motionMetadata)return;d->motionMetadata=metadata;
+    const auto plan=motionPlanForSource(d->motion,true,gamma,matrix,peak);d->state.motionStatus=plan.status;
+    if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
+    d->mpv_set_property_string(d->mpv,"hwdec",plan.requiresCopyBack?"auto-copy":"auto-safe");
+    d->mpv_set_property_string(d->mpv,"interpolation",plan.interpolation.constData());
+    d->mpv_set_property_string(d->mpv,"video-sync",plan.videoSync.constData());
+    if(!plan.videoFilter.isEmpty()){
+        if(d->command({"vf","add",plan.videoFilter.toUtf8()})>=0)d->motionApplied=true;
+        else d->state.motionStatus="이 실행기에서 광학 흐름 필터를 시작할 수 없습니다.";
+    }
+}
+void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player)d->libvlc_media_player_set_time(d->player,ms);else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
 void PlaybackEngine::setVolume(int v){if(!available())return;v=std::clamp(v,0,100);if(d->player)d->libvlc_audio_set_volume(d->player,v);else d->mpv_set_property_string(d->mpv,"volume",QByteArray::number(v).constData());}
 void PlaybackEngine::setRate(double r){if(!available())return;r=std::clamp(r,0.25,4.0);if(d->player)d->libvlc_media_player_set_rate(d->player,float(r));else d->mpv_set_property_string(d->mpv,"speed",QByteArray::number(r).constData());}
 void PlaybackEngine::setAudio(int id){if(!available())return;if(d->player)d->libvlc_audio_set_track(d->player,id);else d->mpv_set_property_string(d->mpv,"aid",QByteArray::number(id).constData());}
@@ -249,7 +299,7 @@ void PlaybackEngine::poll(){
         d->state.playing=d->libvlc_media_player_is_playing(d->player)!=0;
         d->state.currentTitle=d->libvlc_media_player_get_title(d->player);d->state.currentChapter=d->libvlc_media_player_get_chapter(d->player);
         d->state.currentAudio=d->libvlc_audio_get_track(d->player);d->state.currentSubtitle=d->libvlc_video_get_spu(d->player);
-        libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;}
+        libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;d->state.droppedVideoFrames=stats.i_lost_pictures;d->state.lostAudioBuffers=stats.i_lost_abuffers;}
         if(d->libvlc_media_player_get_state(d->player)==libvlc_Error)d->fail("Blu-ray 재생 오류: AACS/BD+ 설정과 진단 로그를 확인하세요.");
         d->state.audioTracks=d->descriptions(d->libvlc_audio_get_track_description(d->player));
         d->state.subtitleTracks=d->descriptions(d->libvlc_video_get_spu_description(d->player));
@@ -258,21 +308,39 @@ void PlaybackEngine::poll(){
         libvlc_title_description_t **titles=nullptr;
         const int count=d->libvlc_media_player_get_full_title_descriptions(d->player,&titles);
         d->state.titles.clear();
+        const bool menuTitles=count>1 && titles[0] && (titles[0]->i_flags&libvlc_title_menu);
+        if(count>0){
+            d->titleMetadataReady=true;
+            d->navigationTitles.clear();
+            for(int i=0;i<count;++i)if(titles[i] && ((titles[i]->i_flags&libvlc_title_menu) || (menuTitles && i==count-1)))d->navigationTitles.insert(i);
+        }
+        // Keep the mapping if a transient metadata query fails. First Play
+        // follows the content titles in libVLC's Blu-ray menu demuxer.
+        d->state.navigationTitle=!d->titleMetadataReady || d->state.currentTitle<=0 || d->navigationTitles.contains(d->state.currentTitle);
         for(int i=0;i<count && i<10000;++i)d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
         if(count>0)d->libvlc_title_descriptions_release(titles,unsigned(count));
-        if(d->media && d->state.playing && d->state.videoCodec.isEmpty()){
+        if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){
             libvlc_media_track_t **tracks=nullptr;const auto n=d->libvlc_media_tracks_get(d->media,&tracks);
-            for(unsigned i=0;i<n;++i){const auto code=tracks[i]->i_codec;char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};if(tracks[i]->i_type==libvlc_track_video)d->state.videoCodec=QString::fromLatin1(fourcc);if(tracks[i]->i_type==libvlc_track_audio)d->state.audioCodec=QString::fromLatin1(fourcc);}
+            for(unsigned i=0;i<n;++i){const auto code=tracks[i]->i_codec;char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};if(tracks[i]->i_type==libvlc_track_video)d->state.videoCodec=QString::fromLatin1(fourcc);if(tracks[i]->i_type==libvlc_track_audio && tracks[i]->i_id==d->state.currentAudio){d->state.audioCodec=QString::fromLatin1(fourcc);if(tracks[i]->audio){d->state.audioSampleRate=int(tracks[i]->audio->i_rate);d->state.audioChannels=int(tracks[i]->audio->i_channels);}}}
             if(n)d->libvlc_media_tracks_release(tracks,n);
+            d->metadataTitle=d->state.currentTitle;d->metadataAudio=d->state.currentAudio;
         }
+        if(d->discSoftware)d->state.hardwareDecoder="CPU · Blu-ray 호환 디코딩";
     }else if(d->mpv){
         for(int i=0;i<100;++i){auto *event=d->mpv_wait_event(d->mpv,0);if(!event || event->event_id==MPV_EVENT_NONE)break;
+            if(event->event_id==MPV_EVENT_FILE_LOADED){d->fileLoaded=true;updateFrameInterpolation();}
+            if(event->event_id==MPV_EVENT_PLAYBACK_RESTART){d->seekReady=true;if(d->deferredSeek){const auto target=*d->deferredSeek;d->deferredSeek.reset();seek(target);}}
             if(event->event_id==MPV_EVENT_LOG_MESSAGE){auto *m=static_cast<mpv_event_log_message *>(event->data);emit logMessage(QString::fromUtf8(m->text).trimmed());}
             if(event->event_id==MPV_EVENT_END_FILE){auto *end=static_cast<mpv_event_end_file *>(event->data);if(end->reason==MPV_END_FILE_REASON_ERROR)d->fail(QString::fromUtf8(d->mpv_error_string(end->error)));}
         }
         d->state.positionMs=qint64(d->number("time-pos")*1000);d->state.durationMs=qint64(d->number("duration")*1000);
         int paused=1,idle=1;d->mpv_get_property(d->mpv,"pause",MPV_FORMAT_FLAG,&paused);d->mpv_get_property(d->mpv,"idle-active",MPV_FORMAT_FLAG,&idle);d->state.playing=!paused && !idle;
         d->state.videoCodec=d->prop("video-codec");d->state.audioCodec=d->prop("audio-codec-name");d->state.hardwareDecoder=d->prop("hwdec-current");
+        d->state.runtimeVersion=d->prop("mpv-version");d->state.colorPrimaries=d->prop("video-params/primaries");d->state.transferFunction=d->prop("video-params/gamma");
+        d->state.sourceFps=d->number("container-fps");d->state.filteredFps=d->number("estimated-vf-fps");d->state.displayFps=d->number("display-fps");
+        updateFrameInterpolation();
+        d->state.outputPrimaries=d->prop("video-target-params/primaries");d->state.outputTransferFunction=d->prop("video-target-params/gamma");
+        d->state.audioSampleRate=int(d->number("audio-params/samplerate"));d->state.audioChannels=int(d->number("audio-params/channel-count"));d->state.audioOutput=d->prop("current-ao");d->state.droppedVideoFrames=int(d->number("frame-drop-count"));
         d->state.currentChapter=int(d->number("chapter"));
         d->state.currentAudio=int(d->number("aid"));const auto sid=d->prop("sid");d->state.currentSubtitle=sid=="no"?-1:sid.toInt();
         const int trackCount=std::clamp(int(d->number("track-list/count")),0,1000);d->state.audioTracks.clear();d->state.subtitleTracks={{-1,"자막 끄기"}};
@@ -280,6 +348,7 @@ void PlaybackEngine::poll(){
         const int chapters=std::clamp(int(d->number("chapter-list/count")),0,10000);d->state.chapters.clear();
         for(int i=0;i<chapters;++i)d->state.chapters.append({i,d->prop((QByteArray("chapter-list/")+QByteArray::number(i)+"/title").constData())});
     }
+    const auto codec=d->state.audioCodec.toLower();d->state.losslessAudio=codec=="flac" || codec=="alac" || codec=="truehd" || codec.startsWith("pcm") || codec=="bpcm" || codec=="mlp" || codec=="s16l" || codec=="s24l";
     emit updated();
 }
 }

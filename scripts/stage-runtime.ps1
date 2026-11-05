@@ -1,9 +1,11 @@
-param([string]$Destination = 'build')
+param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if (![IO.Path]::IsPathRooted($Destination)) { $Destination = Join-Path $projectRoot $Destination }
 $runtime = Join-Path $Destination 'runtime'
 foreach ($folder in 'vlc','mpv','whisper','models','tools') { New-Item -ItemType Directory -Path (Join-Path $runtime $folder) -Force | Out-Null }
+New-Item -ItemType Directory -Path (Join-Path $runtime 'fonts') -Force | Out-Null
+Copy-Item -Path (Join-Path $projectRoot '.deps/fonts/*.ttf'),(Join-Path $projectRoot '.deps/fonts/*.otf') -Destination (Join-Path $runtime 'fonts') -Force
 $vlc = Join-Path $projectRoot '.deps\vlc\vlc-3.0.24'
 Copy-Item -Path "$vlc\*.dll","$vlc\vlc.exe","$vlc\COPYING*","$vlc\AUTHORS*" -Destination (Join-Path $runtime 'vlc') -Force
 Copy-Item -LiteralPath (Join-Path $vlc 'plugins') -Destination (Join-Path $runtime 'vlc') -Recurse -Force
@@ -21,6 +23,36 @@ foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error
 }
 $model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
 if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
+if (!$SkipLocalAi) {
+    foreach($folder in 'reading','reading/ipadic','ai') { New-Item -ItemType Directory -Path (Join-Path $runtime $folder) -Force | Out-Null }
+    $nativeAi = Join-Path $projectRoot '.deps/build-ai/bin'
+    $mecab = Join-Path $projectRoot '.deps/build-mecab/mecab.dll'
+    if (!(Test-Path -LiteralPath (Join-Path $nativeAi 'luma-whisper-worker.exe')) -or !(Test-Path -LiteralPath $mecab)) { throw 'Build native AI first: scripts/build-local-ai.ps1' }
+    Copy-Item -LiteralPath $mecab -Destination (Join-Path $runtime 'reading') -Force
+    Copy-Item -Path (Join-Path $projectRoot '.deps/ipadic/*') -Destination (Join-Path $runtime 'reading/ipadic') -Force
+    [IO.File]::WriteAllText((Join-Path $runtime 'reading/mecabrc'),'', [Text.UTF8Encoding]::new($false))
+    Copy-Item -Path "$nativeAi/*.dll","$nativeAi/luma-whisper-worker.exe" -Destination (Join-Path $runtime 'ai') -Force
+    $openVino = Join-Path $projectRoot '.deps/openvino/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64'
+    Copy-Item -Path "$openVino/runtime/bin/intel64/Release/*.dll" -Destination (Join-Path $runtime 'ai') -Force
+    Get-ChildItem -LiteralPath "$openVino/runtime/3rdparty/tbb/bin" -Filter '*.dll' | Where-Object Name -NotMatch '_debug' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $runtime 'ai') -Force }
+    foreach($name in 'ggml-base-encoder-openvino.xml','ggml-base-encoder-openvino.bin') {
+        $encoder = Join-Path $projectRoot ".deps/models-openvino/$name"
+        if(Test-Path -LiteralPath $encoder) { Copy-Item -LiteralPath $encoder -Destination (Join-Path $runtime 'models') -Force }
+    }
+}
+if (!$SkipTranslation) {
+    $translationArgs=@{ RuntimeDirectory=$runtime;SkipModel=$SkipTranslationModel;SkipOpenVino=(!$IncludeTranslationOpenVino) }
+    & (Join-Path $PSScriptRoot 'stage-translation.ps1') @translationArgs
+}
+# Child EXEs do not inherit the parent's DLL search directories.
+$vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+$visualStudio=& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+$crt=Get-Item -Path (Join-Path $visualStudio 'VC/Redist/MSVC/*/x64/Microsoft.VC143.CRT') -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+if(!$crt) { throw 'Microsoft VC143 redistributable runtime files are required for the portable package.' }
+$crtDestinations=@($Destination,(Join-Path $runtime 'whisper'))
+if(!$SkipLocalAi) { $crtDestinations+=Join-Path $runtime 'ai' }
+if(!$SkipTranslation) { $crtDestinations+=Join-Path $runtime 'translation/vulkan';if($IncludeTranslationOpenVino) { $crtDestinations+=Join-Path $runtime 'translation/openvino' } }
+foreach($directory in $crtDestinations) { Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $directory -Force }
 $licenses = Join-Path $Destination 'licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'dependencies.lock.json') -Destination $licenses -Force

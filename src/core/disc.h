@@ -9,6 +9,7 @@ struct DiscInfo {
     QVector<DiscTitle> titles;
 };
 DiscTitle parsePlaylist(const QByteArray &data, const QString &name);
+QString localDiscPath(const QString &source);
 DiscInfo inspectDisc(const QString &root);
 QString matchDiscPlaylist(const DiscInfo &disc,qint64 durationMs);
 QString formatTime(qint64 milliseconds);

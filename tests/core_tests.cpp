@@ -3,6 +3,7 @@
 #include <QFile>
 #include <QDir>
 #include <QtEndian>
+#include <QUrl>
 #include "core/disc.h"
 #include "core/subtitle.h"
 using namespace luma;
@@ -26,6 +27,8 @@ private slots:
         QTemporaryDir d; QDir(d.path()).mkpath("BDMV"); QDir(d.path()).mkpath("AACS");
         QByteArray b(128, '\0'); b.replace(0,8,"INDX0200"); put32(b,8,64); put32(b,64,60);
         writeFile(d.filePath("BDMV/index.bdmv"), b); writeFile(d.filePath("BDMV/MovieObject.bdmv"), QByteArray("MOBJ0200"));
+        auto url=QUrl::fromLocalFile(d.path());url.setScheme("bluray");const auto fromUrl=inspectDisc(url.toString());
+        QVERIFY(fromUrl.valid);QVERIFY(fromUrl.aacs);QCOMPARE(fromUrl.root,inspectDisc(d.path()).root);
         const auto info = inspectDisc(d.path()); QVERIFY(info.valid); QVERIFY(info.aacs); QCOMPARE(info.menuKind, QString("HDMV"));
     }
     void boundedPlaylist() {
@@ -51,9 +54,18 @@ private slots:
         QCOMPARE(t.at(2500),QString("one\ntwo")); QCOMPARE(t.at(4000),QString()); QCOMPARE(t.at(1000),QString("one"));
     }
     void cancelledCaptionChunkCanRetry() {
-        CaptionCoverage coverage;QCOMPARE(coverage.begin(5000,90000).value(),0);QVERIFY(!coverage.begin(5000,90000));
-        coverage.cancel();QCOMPARE(coverage.begin(5000,90000).value(),0);coverage.complete();
-        QCOMPARE(coverage.begin(5000,90000).value(),30000);coverage.cancel();coverage.reset();QCOMPARE(coverage.begin(5000,90000).value(),0);
+        CaptionCoverage coverage;QCOMPARE(coverage.begin(5000,90000).value(),5000);QVERIFY(!coverage.begin(5000,90000));
+        coverage.cancel();QCOMPARE(coverage.begin(5000,90000).value(),5000);coverage.complete();
+        QVERIFY(!coverage.begin(5000,90000));coverage.reset();QCOMPARE(coverage.begin(5000,90000).value(),5000);
+    }
+    void captionBufferTracksCoverageInsteadOfText(){
+        CaptionCoverage coverage;QVERIFY(!coverage.readyForPlayback(1250,90000));
+        QCOMPARE(coverage.begin(1250,90000).value(),1250);coverage.complete();
+        QCOMPARE(coverage.bufferedAhead(1250,90000),qint64(15000));QVERIFY(coverage.readyForPlayback(6250,90000));
+        QVERIFY(!coverage.readyForPlayback(6251,90000));QCOMPARE(coverage.begin(6251,90000).value(),16250);coverage.complete();
+        QCOMPARE(coverage.bufferedAhead(10000,90000),qint64(21250));
+        QCOMPARE(coverage.begin(88000,90000).value(),88000);coverage.complete();QVERIFY(coverage.readyForPlayback(88000,90000));
+        QVERIFY(!coverage.readyForPlayback(60000,90000));QVERIFY(!coverage.readyForPlayback(-1,90000));
     }
 };
 QTEST_GUILESS_MAIN(CoreTests)
