@@ -4,6 +4,11 @@
 #include "subtitles/translation_support.h"
 using namespace luma;
 
+namespace {
+QByteArray responseWithContent(const QString &content);
+QByteArray responseWithKorean(const QString &korean);
+}
+
 class TranslationTests : public QObject {
     Q_OBJECT
 private slots:
@@ -18,6 +23,60 @@ private slots:
         for(const auto &data:{response("{\"korean\":\"今日はいい天気ですね。\"}"),response("{\"korean\":\"내일の 오후\"}"),response("{\"korean\":\"안녕\"}","length"),response("설명: 안녕"),QByteArray("{}")}) {
             QVERIFY(parseTranslationResponse(data,&error).isEmpty());QVERIFY(!error.isEmpty());
         }
+    }
+    void rejectsDisplayCorruptionAndModelArtifacts_data(){
+        QTest::addColumn<QString>("korean");
+        QTest::newRow("replacement-character")<<QString::fromUtf8("안녕 �");
+        for(const auto code:{0x00,0x01,0x07,0x0b,0x0c,0x1b,0x1f,0x7f,0x80,0x85,0x9b,0x9f,0x061c,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2066,0x2067,0x2068,0x2069}){
+            const auto name=QString("control-%1").arg(code,4,16,QChar('0')).toLatin1();
+            QTest::newRow(name.constData())<<(QString::fromUtf8("안녕")+QChar(static_cast<char16_t>(code))+QString::fromUtf8("세계"));
+        }
+        QTest::newRow("control-before-trimming")<<(QString(QChar(0x001f))+QString::fromUtf8("안녕"));
+        for(const auto &marker:QStringList{"<think>","</think>","<ThInK>","</THINK>","< think >","</ analysis>","<reasoning>","<|im_start|>","<|im_end|>","[INST]","[/INST]","<<SYS>>"}){
+            QTest::newRow(marker.toLatin1().constData())<<(QString::fromUtf8("안녕 ")+marker);
+        }
+        for(const auto &prefix:QStringList{"assistant:","USER:","System：","developer:","analysis:\n","final:\n","### Assistant:\n","assistant\n"}){
+            QTest::newRow(prefix.toLatin1().constData())<<(prefix+QString::fromUtf8("안녕하세요."));
+        }
+        QTest::newRow("role-on-another-line")<<QString::fromUtf8("안녕하세요.\nassistant: 다음 답변");
+        QTest::newRow("literal-unicode-escape")<<QString::fromUtf8("안녕\\uC138\\uC694");
+        QTest::newRow("literal-newline-escape")<<QString::fromUtf8("안녕\\nAlice");
+        QTest::newRow("literal-quoted-json")<<QString::fromUtf8("안녕 \\\"Alice\\\"");
+    }
+    void rejectsDisplayCorruptionAndModelArtifacts(){
+        QFETCH(QString,korean);QString error;
+        QVERIFY(parseTranslationResponse(responseWithKorean(korean),&error).isEmpty());QVERIFY(!error.isEmpty());
+    }
+    void rejectsUnpairedSurrogatesBeforeUtf8Conversion_data(){
+        QTest::addColumn<QByteArray>("response");
+        QTest::newRow("escaped-high-surrogate")<<responseWithContent(QString::fromUtf8("{\"korean\":\"안녕\\uD800\"}"));
+        QTest::newRow("escaped-low-surrogate")<<responseWithContent(QString::fromUtf8("{\"korean\":\"안녕\\uDC00\"}"));
+        QTest::newRow("outer-high-surrogate")<<QByteArray("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"korean\\\":\\\"안녕\\ud800\\\"}\"}}]}");
+        QTest::newRow("outer-low-surrogate")<<QByteArray("{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"korean\\\":\\\"안녕\\udc00\\\"}\"}}]}");
+    }
+    void rejectsUnpairedSurrogatesBeforeUtf8Conversion(){
+        QFETCH(QByteArray,response);QString error;
+        QVERIFY(parseTranslationResponse(response,&error).isEmpty());QVERIFY(!error.isEmpty());
+    }
+    void preservesValidNamesMusicCombiningCharactersAndJsonEscapes_data(){
+        QTest::addColumn<QString>("korean");
+        QTest::newRow("English-names")<<QString::fromUtf8("Alice와 Bob이 Final Fantasy를 해요. ThinkPad도 써요.");
+        QTest::newRow("Han-proper-name")<<QString::fromUtf8("王小明 씨, 안녕하세요. Hello, Alice!");
+        QTest::newRow("music-emoji-ZWJ-combining")<<QString::fromUtf8("함께 노래해요 ♪ ♫ ♬ 🎵 👩‍🎤 Cafe\u0301");
+        QTest::newRow("decomposed-Hangul")<<QString::fromUtf8("안녕, Alice.");
+        QTest::newRow("ordinary-quotes-and-backslash")<<QString::fromUtf8("Alice가 \"안녕\"이라고 해요. C:\\Users\\Alice");
+    }
+    void preservesValidNamesMusicCombiningCharactersAndJsonEscapes(){
+        QFETCH(QString,korean);QString error;
+        QCOMPARE(parseTranslationResponse(responseWithKorean(korean),&error),korean);QVERIFY(error.isEmpty());
+    }
+    void decodesNormalJsonUnicodeEscapesExactlyOnce(){
+        const auto content=QString::fromLatin1("{\"korean\":\"\\uC548\\uB155\\uD558\\uC138\\uC694.\\nAlice \\\"Hi\\\" \\u266b \\uD83C\\uDFB5\"}");
+        QString error;QCOMPARE(parseTranslationResponse(responseWithContent(content),&error),QString::fromUtf8("안녕하세요.\nAlice \"Hi\" ♫ 🎵"));QVERIFY(error.isEmpty());
+    }
+    void normalizesOnlyUnambiguousCaptionWhitespace(){
+        QString error;
+        QCOMPARE(parseTranslationResponse(responseWithKorean(QString::fromUtf8("\t 안녕\tAlice\r\n노래해요.\r마지막 \t")),&error),QString::fromUtf8("안녕 Alice\n노래해요.\n마지막"));QVERIFY(error.isEmpty());
     }
     void cancellationCannotPublishOrCacheOldGeneration() {
         TranslationQueue queue;queue.enqueue({"old"});const auto old=queue.take();QVERIFY(old.has_value());
@@ -70,5 +129,14 @@ private slots:
         QCOMPARE(payload.value("response_format").toObject().value("type").toString(),QString("json_schema"));
     }
 };
+namespace {
+QByteArray responseWithContent(const QString &content){
+    return QJsonDocument(QJsonObject{{"choices",QJsonArray{QJsonObject{
+        {"finish_reason","stop"},{"message",QJsonObject{{"role","assistant"},{"content",content}}}}}}}).toJson(QJsonDocument::Compact);
+}
+QByteArray responseWithKorean(const QString &korean){
+    return responseWithContent(QString::fromUtf8(QJsonDocument(QJsonObject{{"korean",korean}}).toJson(QJsonDocument::Compact)));
+}
+}
 QTEST_GUILESS_MAIN(TranslationTests)
 #include "translation_tests.moc"

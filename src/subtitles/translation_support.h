@@ -29,6 +29,8 @@ struct TranslationBackend {QString key,program,device;bool openvino=false;};
 struct TranslationLaunch {QString program;QStringList arguments;QProcessEnvironment environment;};
 QVector<TranslationBackend> translationBackends(const QString &runtime,const AiPreferences &preferences={});
 TranslationLaunch translationLaunch(const TranslationBackend &backend,const QString &model,quint16 port,const QString &token);
+// Decode JSON once per protocol layer; reject damaged Unicode/model artifacts.
+// Preserve proper names, combining characters and lyric line breaks.
 QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr);
 QJsonObject translationPayload(const QString &source);
 QString confirmedTranslationBackend(const TranslationBackend &backend,const QString &log);
