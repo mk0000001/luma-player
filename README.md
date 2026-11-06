@@ -2,7 +2,9 @@
 
 ## 한국어
 
-C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.5` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 네이티브 영상 입력 보완의 최종 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.5.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.6` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 새 인코더·오류 처리 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.6.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+
+선택 Kotoba 모델용 C++ NPU 인코더 변환·설치·검증 도구를 제공합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·제한 기록](docs/PERFORMANCE-KOTOBA.md)을 확인하세요. 현재 개발 PC의 구형 NPU 드라이버에서는 전체 인코더 컴파일이 30분 안에 끝나지 않아 NPU 실제 추론은 미통과이며, CUDA 경로를 유지합니다.
 
 - **Blu-ray:** libVLC 메뉴·리모컨·타이틀·챕터. 기본값은 소프트웨어 디코딩과 10초 디스크 캐시입니다. 한 디스크의 관찰을 전체 호환성으로 확대하지 않습니다.
 - **파일:** libmpv GPU Next, AV1 등 엔진 지원 코덱, 파일 출력 GPU 선택. HDR/Dolby Vision 처리 경로와 실제 출력 검증은 구분합니다.
@@ -73,7 +75,7 @@ pwsh -File scripts/install-translation-cuda.ps1 -Development
 pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 ```
 
-출력 이름은 `LumaPlayer-0.1.0-alpha.5-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
+출력 이름은 `LumaPlayer-0.1.0-alpha.6-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
 
 Linux 개발 빌드:
 
@@ -95,7 +97,9 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 
 ## English
 
-LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.5`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.5.md) tracks native-video input verification. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.6`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.6.md) tracks the new encoder and error handling. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+
+Native C++ conversion, installation and verification tools are available for the optional Kotoba NPU encoder. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [performance limits](docs/PERFORMANCE-KOTOBA.md). On the development PC's old NPU driver, full encoder compilation did not finish within 30 minutes, so genuine NPU inference remains unverified and CUDA remains available.
 
 Features include libVLC disc menus/remote/title/chapter controls; libmpv GPU Next file playback; separate source captions, Japanese Hangul readings and Korean translation; timed long-caption pages and wrapping; SRT/ASS/SSA/VTT/SMI import with AI fallback; per-file/disc-title resume; and dark/light Noto-based controls. The floating 74 px fullscreen bar and cursor hide after five inactive seconds without moving the video, including when the pointer rests over the bar. File-only motion options target 24–360 fps processing, without promising realtime 360 fps display.
 

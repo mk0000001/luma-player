@@ -145,7 +145,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
 MainWindow::~MainWindow(){savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 void MainWindow::bindEngine(PlaybackEngine *engine){
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
-    connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){status_->setText(message);status_->setProperty("error",true);}});
+    connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}});
     if(!engine->available())appendLog(engine->lastError());
 }
 
@@ -197,7 +197,7 @@ void MainWindow::buildUi(){
     bufferStatus_=label("재생 전·탐색 후 자막을 10초 이상 준비합니다.","muted");bufferStatus_->setObjectName("captionBufferStatus");bufferStatus_->setWordWrap(true);aiLayout->addWidget(bufferStatus_);
     auto *bufferActions=new QHBoxLayout;auto *retry=button("자막 다시 시도","subtle");retry->setObjectName("retryCaptions");auto *continuePlay=button("자막 없이 계속","subtle");continuePlay->setObjectName("continueWithoutCaptions");bufferActions->addWidget(retry);bufferActions->addWidget(continuePlay);aiLayout->addLayout(bufferActions);
     choice(aiLayout,"음성 언어",language_);language_->addItem("日本語 · 일본어","ja");language_->addItem("English · 영어","en");language_->addItem("한국어","ko");language_->addItem("자동 감지","auto");
-    choice(aiLayout,"음성 인식 가속",aiMode_);aiMode_->setObjectName("aiMode");aiMode_->addItem("자동 · NPU 우선","auto");aiMode_->addItem("NPU","npu");aiMode_->addItem("GPU","gpu");aiMode_->addItem("CPU","cpu");setSavedChoice(aiMode_,"ai/mode","auto");
+    choice(aiLayout,"음성 인식 가속",aiMode_);aiMode_->setObjectName("aiMode");aiMode_->addItem("자동 · NPU 우선","auto");aiMode_->addItem("NPU 우선 · 실패 시 GPU","npu");aiMode_->addItem("GPU","gpu");aiMode_->addItem("CPU","cpu");setSavedChoice(aiMode_,"ai/mode","auto");
     choice(aiLayout,"AI GPU",aiGpu_);aiGpu_->setObjectName("aiGpu");aiGpu_->addItem("자동 GPU 선택",QString{});const auto savedGpu=QSettings().value("ai/gpu").toString();if(!savedGpu.isEmpty()){aiGpu_->addItem("저장된 GPU · "+savedGpu,savedGpu);aiGpu_->setCurrentIndex(1);}
     auto *model=button("음성 인식 모델 선택","subtle");aiLayout->addWidget(model);accelerator_=label("음성 인식 · 실행 대기","muted");accelerator_->setObjectName("accelerator");accelerator_->setWordWrap(true);aiLayout->addWidget(accelerator_);
     aiLayout->addSpacing(6);aiLayout->addWidget(label("표시할 자막","section"));originalEnabled_=new QCheckBox("원문");originalEnabled_->setObjectName("originalEnabled");originalEnabled_->setChecked(QSettings().value("subtitles/original",true).toBool());aiLayout->addWidget(originalEnabled_);
@@ -342,7 +342,7 @@ void MainWindow::openSource(const QString &source){
     const bool disc=isDiscSource(source);source_=disc?localDiscPath(source):source;if(disc)discInfo_=inspectDisc(source_);
     resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_);resumeSavedAt_=0;
     active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
-    surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setText("미디어를 여는 중…");
+    surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
     const bool opened=active_->open(source_,static_cast<VideoSurface*>(surface_)->videoWindowId());
     if(opened){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());if(!disc && aiEnabled_->isChecked()){bufferHolding_=true;bufferResume_=true;active_->setPaused(true);}}
     else{status_->setText(active_->lastError());welcome_->show();}
@@ -423,7 +423,7 @@ void MainWindow::toggleFullScreen(){
     static_cast<IconButton*>(fullButton_)->setPlayerIcon(full_?PlayerIcon::ExitFullscreen:PlayerIcon::Fullscreen);fullButton_->setToolTip(full_?"전체 화면 나가기 · Esc":"전체 화면 · F11");
     if(full_)showFullScreen();else showNormal();fullscreenControls_->setActive(full_);updateDisplayStatus();
 }
-bool MainWindow::wantsPlayback()const{return requestedPlaying_.value_or(bufferHolding_?bufferResume_:active_ && active_->state().playing);}
+bool MainWindow::wantsPlayback()const{if(active_ && active_->state().failed)return false;return requestedPlaying_.value_or(bufferHolding_?bufferResume_:active_ && active_->state().playing);}
 bool MainWindow::captionTimelineAvailable()const{
     if(!active_)return false;const auto &state=active_->state();
     return state.timelineReady && state.durationMs>0 && state.currentAudio>=0 && (active_!=discEngine_.get() || (!state.navigationTitle && state.currentTitle>0 && !state.audioTracks.isEmpty()));

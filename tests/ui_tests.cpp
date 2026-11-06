@@ -42,6 +42,14 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void failedOpenDoesNotKeepPauseIntent(){
+        QTemporaryDir media;luma::MainWindow window;window.show();
+        auto *play=window.findChild<QPushButton*>("playButton");QVERIFY(play);
+        window.openSource(media.filePath("missing.mp4"));
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["failed"].toBool(),5000);
+        QTRY_VERIFY_WITH_TIMEOUT(play->accessibleName().startsWith("재생 ·"),2000);
+        QVERIFY(!window.diagnostics()["captionResumeRequested"].toBool());
+    }
     void darkIsDefaultAndLightPreferenceSurvivesThemeReinstall(){
         luma::installPlayerTheme();
         QWidget dark;dark.show();QCoreApplication::processEvents();

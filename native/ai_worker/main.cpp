@@ -3,7 +3,9 @@
 #include <whisper.h>
 #include <ggml-backend.h>
 #include <openvino/openvino.hpp>
+#include "encoder_identity.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -20,6 +22,7 @@
 extern "C" bool luma_whisper_has_gpu_backend(struct whisper_context *context);
 extern "C" const char *luma_whisper_gpu_device(struct whisper_context *context);
 extern "C" const char *luma_whisper_gpu_backend(struct whisper_context *context);
+extern "C" bool luma_whisper_encoder_statistics(const struct whisper_context *context,double *totalMs,int32_t *rawCalls);
 
 namespace {
 uint32_t le32(const unsigned char *p){return uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24;}
@@ -99,6 +102,12 @@ int run(const std::vector<std::string> &args){
             if(!openVinoAvailable || options.find("--encoder")==options.end()){std::cerr<<"No usable explicit GPU/NPU backend\n";return 20;}
             if(contextParams.use_gpu){context.reset();contextParams.use_gpu=false;context.reset(whisper_init_from_file_with_params(options.at("-m").c_str(),contextParams));if(!context)throw std::runtime_error("Cannot initialize decoder");}
             const auto encoder=options.at("--encoder"),cache=options.at("--cache");
+            const auto encoderPath=std::filesystem::u8path(encoder);
+            auto manifest=encoderPath;manifest.replace_extension(".json");
+            // Legacy bundled base IR is retained. New/128-mel encoders require
+            // the exact source and artifact hashes before entering OpenVINO.
+            const bool legacyBase=whisper_model_n_mels(context.get())==80 && whisper_model_n_audio_layer(context.get())==6 && whisper_model_n_audio_state(context.get())==512;
+            if(!legacyBase || std::filesystem::exists(manifest))luma::encoder::verifyEncoderIdentity(std::filesystem::u8path(options.at("-m")),encoderPath);
             std::filesystem::create_directories(std::filesystem::u8path(cache));
             if(whisper_ctx_init_openvino_encoder(context.get(),encoder.c_str(),device.c_str(),cache.c_str())!=0){std::cerr<<"Explicit "<<device<<" encoder initialization failed\n";return 21;}
         }
@@ -118,9 +127,17 @@ int run(const std::vector<std::string> &args){
         params.max_len=48;params.token_timestamps=true;params.greedy.best_of=1;
         params.abort_callback=[](void *data){std::error_code error;return std::filesystem::exists(*static_cast<const std::filesystem::path*>(data),error);};params.abort_callback_user_data=const_cast<std::filesystem::path*>(&cancelPath);
         std::cout<<"LUMA_WORKING="<<options.at("-of")<<std::endl;
+        whisper_reset_timings(context.get());
+        const auto inferenceStart=std::chrono::steady_clock::now();
         const auto result=whisper_full(context.get(),params,samples.data(),static_cast<int>(samples.size()));
+        const auto inferenceMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-inferenceStart).count();
         if(canceled()){std::cout<<"LUMA_ABORTED="<<options.at("-of")<<std::endl;if(!server || !nextRequest())break;continue;}
         if(result!=0){std::cerr<<"Encoder/decoder inference failed\n";return 22;}
+        double encoderMs=0;int32_t encoderCalls=0;
+        if(!luma_whisper_encoder_statistics(context.get(),&encoderMs,&encoderCalls) || encoderCalls<=0 || encoderMs<=0){std::cerr<<"No encoder inference completed\n";return 22;}
+        // Includes actual encode-call counts; reset above prevents resident totals
+        // from being mistaken for a single request or a warmed first inference.
+        whisper_print_timings(context.get());
         std::ofstream output(std::filesystem::u8path(options.at("-of")+".srt"),std::ios::binary);
         if(!output)throw std::runtime_error("Cannot create subtitle output");
         int number=0;for(int i=0;i<whisper_full_n_segments(context.get());++i){
@@ -128,6 +145,8 @@ int run(const std::vector<std::string> &args){
             output<<++number<<'\n'<<timestamp(whisper_full_get_segment_t0(context.get(),i))<<" --> "<<timestamp(whisper_full_get_segment_t1(context.get(),i))<<'\n'<<text<<"\n\n";
         }
         output.close();if(!output)throw std::runtime_error("Subtitle output write failed");
+        std::cout<<std::fixed<<std::setprecision(3)<<"LUMA_AUDIO_MS="<<samples.size()/16.0<<'\n'<<"LUMA_INFERENCE_MS="<<inferenceMs<<'\n';
+        std::cout<<"LUMA_ENCODER_MS="<<encoderMs<<'\n'<<"LUMA_ENCODER_CALLS="<<encoderCalls<<'\n';
         std::cout<<"LUMA_ACCELERATOR="<<(nativeGpu?actualBackend+" GPU":"OpenVINO encoder")<<'\n'<<"LUMA_BACKEND="<<(npu?"NPU":"GPU")<<'\n'<<"LUMA_DEVICE="<<(nativeGpu?actualDevice:requested)<<'\n'<<"LUMA_DONE="<<options.at("-of")<<std::endl;
         if(!server)break;
         if(!nextRequest())break;

@@ -41,11 +41,11 @@ if (!$SkipLocalAi) {
     foreach($folder in 'reading','reading/ipadic','ai') { New-Item -ItemType Directory -Path (Join-Path $runtime $folder) -Force | Out-Null }
     $nativeAi = Join-Path $projectRoot '.deps/build-ai/bin'
     $mecab = Join-Path $projectRoot '.deps/build-mecab/mecab.dll'
-    if (!(Test-Path -LiteralPath (Join-Path $nativeAi 'luma-whisper-worker.exe')) -or !(Test-Path -LiteralPath $mecab)) { throw 'Build native AI first: scripts/build-local-ai.ps1' }
+    if (!(Test-Path -LiteralPath (Join-Path $nativeAi 'luma-whisper-worker.exe')) -or !(Test-Path -LiteralPath (Join-Path $nativeAi 'luma-whisper-encoder.exe')) -or !(Test-Path -LiteralPath $mecab)) { throw 'Build native AI first: scripts/build-local-ai.ps1' }
     Copy-Item -LiteralPath $mecab -Destination (Join-Path $runtime 'reading') -Force
     Copy-Item -Path (Join-Path $projectRoot '.deps/ipadic/*') -Destination (Join-Path $runtime 'reading/ipadic') -Force
     [IO.File]::WriteAllText((Join-Path $runtime 'reading/mecabrc'),'', [Text.UTF8Encoding]::new($false))
-    Copy-Item -Path "$nativeAi/*.dll","$nativeAi/luma-whisper-worker.exe" -Destination (Join-Path $runtime 'ai') -Force
+    Copy-Item -Path "$nativeAi/*.dll","$nativeAi/luma-whisper-worker.exe","$nativeAi/luma-whisper-encoder.exe" -Destination (Join-Path $runtime 'ai') -Force
     $openVino = Join-Path $projectRoot '.deps/openvino/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64'
     Copy-Item -Path "$openVino/runtime/bin/intel64/Release/*.dll" -Destination (Join-Path $runtime 'ai') -Force
     Get-ChildItem -LiteralPath "$openVino/runtime/3rdparty/tbb/bin" -Filter '*.dll' | Where-Object Name -NotMatch '_debug' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $runtime 'ai') -Force }

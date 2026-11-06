@@ -4,6 +4,13 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.6 — 2026-11-06 프리뷰 작업
+
+- 고정 Kotoba Q5 가중치에서 FP16 OpenVINO 인코더를 만드는 C++ 변환기·수치 비교·공유 정체성 검증 CLI 추가. 실제 인코더 호출 수·시간을 기록하며, 추론을 건너뛴 짧은 음성을 가속 성공으로 인정하지 않음.
+- NPU 우선의 GPU→CPU 대체와 선택 설치기의 원자적 파일 게시·앱 캐시 별도 준비 추가. 이 개발 PC에서는 구형 NPU 드라이버의 전체 컴파일이 30분 내 끝나지 않아 실제 NPU 성공은 미확인. 연산량 하한과 제품 TFLOPS를 구분해 [성능 기록](docs/PERFORMANCE-KOTOBA.md)에 명시.
+- AACS/BD+ 상세 오류가 일반 오류로 덮이지 않게 보존하고 재열기 때 초기화. 실패 후 잘못된 일시정지 아이콘·재생 의도를 정리. 실제 연결 디스크의 시작 안내→메뉴 진입은 확인했으나 과거 AACS 실패 원인은 미확정.
+- 최종 패키지·CI·장치 확인은 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 따름. 이전 버전·태그·ZIP은 보존.
+
 ### 0.1.0-alpha.5 — 2026-11-06 프리뷰 작업
 
 - 정지 포인터의 VLC 가운데 클릭을 감지하기 위해 현재 프로세스의 캡처 시작·종료 WinEvent만 관찰. GUI 스레드에서는 이벤트 번호·창만 기록하고, 100ms 확인 시 전경 창·캡처 창·포인터가 플레이어 소유인지 검사해 창/전체화면 재생바를 깨움. 전역 마우스 훅·Raw Input 등록·세션 유휴 시각은 사용하지 않음.
@@ -49,6 +56,13 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.6 — preview work, 2026-11-06
+
+- Added native C++ export, parity and shared identity verification for a pinned Q5-derived FP16 Kotoba encoder, plus actual per-request encoder counts/timing. Skipped short inputs cannot acknowledge acceleration.
+- Added NPU-priority GPU/CPU fallback, atomic optional installation and separate preparation in the app cache. Full NPU compilation did not finish within 30 minutes on this PC's old driver; actual NPU inference remains unverified. The performance report distinguishes analytical operation-rate bounds from product TFLOPS.
+- Preserve specific AACS/BD+ errors, reset them when reopening and clear failed playback intent. The connected disc reached its interactive menu; the original AACS failure's root cause is unconfirmed.
+- Follow the alpha.6 release record for final package, CI and device status. Earlier versions and artifacts remain immutable.
 
 ### 0.1.0-alpha.5 — preview work, 2026-11-06
 

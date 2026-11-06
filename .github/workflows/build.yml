@@ -26,12 +26,16 @@ jobs:
           ./tests/translation_cuda_installer_tests.ps1
           ./tests/asr_cuda_installer_tests.ps1
           ./tests/asr_model_installer_tests.ps1
+          ./tests/asr_encoder_install_tests.ps1
       - name: Compile and test
         shell: pwsh
         run: ./scripts/build-windows.ps1
       - name: Compile local recognition and reading engines
         shell: pwsh
         run: ./scripts/build-local-ai.ps1
+      - name: Verify native encoder graph and model identity
+        shell: pwsh
+        run: ctest --test-dir .deps/build-ai --output-on-failure --timeout 60
       - name: Fetch optional translation runtime
         shell: pwsh
         run: ./scripts/bootstrap-translation.ps1 -SkipModel -SkipOpenVino
@@ -55,6 +59,7 @@ jobs:
           path: |
             build/Testing/Temporary/
             build/*-test-results.txt
+            .deps/build-ai/Testing/Temporary/
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
