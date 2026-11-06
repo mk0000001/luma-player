@@ -4,6 +4,12 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.10 — 2026-11-06 프리뷰
+
+- 사전 생성 창이 현재 재생하던 디스크·유일하게 확인된 타이틀·오디오 순서를 우선 선택. 정지 전에 상태를 전달하고 다른 디스크·모호한 길이·범위 밖 입력을 거부.
+- 재생 정보가 없으면 가장 긴 타이틀을 선택하되 본편으로 단정하지 않고 코멘터리 등 부가영상 여부를 메뉴와 대조하도록 안내. 실물 ALL PLAY와 더 긴 코멘터리 선택판을 구분.
+- [alpha.10 검증·배포 기록](docs/releases/0.1.0-alpha.10.md). 생성·모델·프로젝트 형식과 alpha.9 이하 태그·파일은 유지.
+
 ### 0.1.0-alpha.9 — 2026-11-06 프리뷰
 
 - 준비한 Blu-ray 타이틀을 메뉴 없는 실제 native 목록에서 길이로 선택하고, 선택·길이가 확인될 때까지 일시정지. 모호하거나 맞지 않는 타이틀에는 자막을 강제로 적용하지 않음. 일반 메뉴 재생 유지.
@@ -81,6 +87,12 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.10 — preview, 2026-11-06
+
+- Prefer the playing disc, uniquely identified title and audio ordinal when opening preparation. Snapshot before stop and reject other-disc, ambiguous-duration or out-of-bounds preferences.
+- Without usable playback state, keep longest-title selection without labeling it the main feature; explain commentary/bonus selection against the disc menu. Distinguish actual ALL PLAY from the longer commentary variant.
+- See alpha.10 validation/release evidence. Generation, models, project schema and earlier tags/assets remain unchanged.
 
 ### 0.1.0-alpha.9 — preview, 2026-11-06
 

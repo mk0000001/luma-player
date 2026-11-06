@@ -11,6 +11,8 @@
 #include <QJsonDocument>
 #include <QPointer>
 #include <QScopeGuard>
+#include <QSpinBox>
+#include <QtEndian>
 #include "ui/caption_preparation_dialog.h"
 #include "subtitles/translation_support.h"
 using namespace luma;
@@ -35,6 +37,22 @@ class CaptionPreparationDialogTests:public QObject {
     }
 private slots:
     void init(){QTest::failOnWarning(QRegularExpression("QProcess: Destroyed while process.*|QTemporaryDir: Unable to remove.*"));}
+    void currentDiscSelectionIsPreferredOverTheLongestTitle_data(){
+        QTest::addColumn<QString>("scenario");
+        for(const auto &scenario:{"current","other-disc","missing-title","ambiguous-duration","invalid-audio","invalid-duration","no-current"})QTest::newRow(scenario)<<QString(scenario);
+    }
+    void currentDiscSelectionIsPreferredOverTheLongestTitle(){
+        QFETCH(QString,scenario);QTemporaryDir root;QVERIFY(QDir(root.path()).mkpath("disc/BDMV/PLAYLIST"));QVERIFY(QDir(root.path()).mkpath("other/BDMV"));
+        const auto disc=root.filePath("disc");QByteArray index(128,'\0');index.replace(0,8,"INDX0200");qToBigEndian(quint32(64),reinterpret_cast<uchar*>(index.data()+8));qToBigEndian(quint32(60),reinterpret_cast<uchar*>(index.data()+64));put(disc+"/BDMV/index.bdmv",index);put(disc+"/BDMV/MovieObject.bdmv","MOBJ0200");
+        const auto playlist=[&](const QString &name,quint32 ticks){QByteArray bytes(74,'\0');bytes.replace(0,8,"MPLS0200");qToBigEndian(quint32(40),reinterpret_cast<uchar*>(bytes.data()+8));qToBigEndian(quint32(30),reinterpret_cast<uchar*>(bytes.data()+40));qToBigEndian(quint16(1),reinterpret_cast<uchar*>(bytes.data()+46));qToBigEndian(quint16(20),reinterpret_cast<uchar*>(bytes.data()+50));bytes.replace(52,5,"00002");bytes.replace(57,4,"M2TS");qToBigEndian(ticks,reinterpret_cast<uchar*>(bytes.data()+68));put(disc+"/BDMV/PLAYLIST/"+name+".mpls",bytes);};
+        playlist("00002",2700000);playlist("00003",2835000);if(scenario=="ambiguous-duration")playlist("00004",2700000);
+        CaptionPreparationRequest defaults;defaults.source.source=disc;defaults.source.disc=true;defaults.source.playlist="00002";defaults.source.audioIndex=1;defaults.durationMs=60000;
+        if(scenario=="other-disc")defaults.source.source=root.filePath("other");else if(scenario=="missing-title")defaults.source.playlist="99999";else if(scenario=="invalid-audio")defaults.source.audioIndex=64;else if(scenario=="invalid-duration")defaults.durationMs=0;else if(scenario=="no-current")defaults.source={};
+        CaptionPreparationDialog dialog(defaults,disc,{},nullptr,root.path());const bool prefer=scenario=="current";
+        QCOMPARE(dialog.diagnostics()["playlist"].toString(),QString(prefer?"00002":"00003"));QCOMPARE(dialog.diagnostics()["durationMs"].toInteger(),prefer?qint64(60000):qint64(63000));
+        QCOMPARE(dialog.findChild<QSpinBox*>("prepareDiscAudio")->value(),prefer?2:1);
+        const auto text=dialog.findChild<QLabel*>("preparationStatus")->text();QVERIFY(prefer?text.contains("재생하던"):text.contains("부가영상"));
+    }
     void stoppedGenerationCannotPublishCompletion_data(){QTest::addColumn<bool>("cancel");QTest::newRow("canceled")<<true;QTest::newRow("failed")<<false;}
     void stoppedGenerationCannotPublishCompletion(){
         QFETCH(bool,cancel);QTemporaryDir root;CaptionPreparationDialog dialog({}, {}, {},nullptr,root.path());auto *service=dialog.findChild<CaptionPreparationService*>();QVERIFY(service);const auto old=service->generation();

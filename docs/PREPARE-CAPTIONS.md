@@ -2,7 +2,7 @@
 
 ## 한국어
 
-**AI 자막 → 재생 전 전체 자막 만들기**에서 로컬 파일이나 연결된 Blu-ray를 선택합니다. 영상을 먼저 열 필요가 없습니다. Blu-ray는 가장 긴 플레이리스트를 기본 선택하며, 다른 타이틀과 오디오 순서를 선택할 수 있습니다. 파일은 재생 없이 길이와 오디오 목록을 확인합니다.
+**AI 자막 → 재생 전 전체 자막 만들기**에서 로컬 파일이나 연결된 Blu-ray를 선택합니다. 영상을 먼저 열 필요가 없습니다. alpha.10은 현재 재생하던 디스크의 확인된 타이틀·오디오를 우선 선택합니다. 정보가 없거나 모호하면 가장 긴 타이틀·첫 오디오를 선택합니다. 가장 긴 타이틀이 코멘터리 등 부가영상일 수도 있으므로 메뉴 항목과 대조해 확인하세요. 타이틀과 오디오 순서는 직접 바꿀 수 있습니다. 파일은 재생 없이 길이와 오디오 목록을 확인합니다.
 
 1. AI 자막 설정에서 음성 언어, 인식 모델·장치와 번역 모델·장치를 선택합니다. 한국어 해석에는 별도 번역 모델이 필요합니다.
 2. 사전 생성 창에서 미디어, 타이틀·오디오, 저장 폴더를 확인합니다. 한국어 해석과 일본어 한글 독음 저장은 선택 사항입니다.
@@ -11,7 +11,7 @@
 
 원문 `original.srt`, 한국어 `korean.srt`, 선택한 원문·독음·한국어 조합 `display.srt`, 원문 토큰 시각과 번역을 보존하는 프로젝트 JSON을 저장합니다. 원본 미디어와 프로젝트·SRT 파일을 유지하세요. 프로젝트는 원래 저장 폴더의 내보내기 파일을 확인합니다. 완성 프로젝트를 재생할 때는 생성에 쓴 모델을 다시 실행하지 않습니다.
 
-alpha.9에서 준비한 Blu-ray는 메뉴를 거치지 않고 해당 길이의 실제 native 본편을 선택합니다. 인덱스와 길이가 확인될 때까지 일시정지하며, 200ms 안에서 유일하게 맞는 타이틀을 찾지 못하면 오류를 표시합니다. 같은 번호라도 메뉴 모드와 직접 모드의 타이틀은 다를 수 있습니다. **이어서 보기**는 이 모드와 완성 프로젝트를 함께 저장합니다. 메뉴를 이용하려면 일반 **Blu-ray 재생**을 누르세요. alpha.8은 가장 긴 준비 타이틀과 ALL PLAY가 다르면 완성 자막을 연결하지 못하는 알려진 문제가 있습니다.
+alpha.9에서 준비한 Blu-ray는 메뉴를 거치지 않고 해당 길이의 실제 native 타이틀을 선택합니다. 인덱스와 길이가 확인될 때까지 일시정지하며, 200ms 안에서 유일하게 맞는 타이틀을 찾지 못하면 오류를 표시합니다. 같은 번호라도 메뉴 모드와 직접 모드의 타이틀은 다를 수 있습니다. **이어서 보기**는 이 모드와 완성 프로젝트를 함께 저장합니다. 메뉴를 이용하려면 일반 **Blu-ray 재생**을 누르세요. alpha.8은 가장 긴 준비 타이틀과 ALL PLAY가 다르면 완성 자막을 연결하지 못하는 알려진 문제가 있습니다.
 
 취소하면 완료한 구간을 저장합니다. 같은 미디어·타이틀·오디오·모델·옵션·실행기와 저장 폴더로 다시 시작하면 완료 구간을 재사용합니다. 미디어나 생성 조건이 달라지면 이전 결과를 섞지 않고 오류를 표시합니다. 새 조건은 새 폴더에서 생성하세요. 폴더는 한 작업만 사용할 수 있습니다.
 
@@ -29,7 +29,7 @@ Blu-ray 사전 생성은 재생용 읽기 속도 제한을 적용하지 않으�
 
 ## English
 
-Open **AI 자막 → 재생 전 전체 자막 만들기** and choose a local file or connected Blu-ray without first playing it. The longest disc playlist is selected by default; choose another title/audio ordinal if required. File duration and audio tracks are inspected without rendering playback.
+Open **AI 자막 → 재생 전 전체 자막 만들기** and choose a local file or connected Blu-ray without first playing it. Alpha.10 prefers the verified playing disc title/audio. Without usable unambiguous state it selects the longest title/first audio. Match this against the disc menu: commentary or bonus material can be longer than the main feature. You can choose another title/audio ordinal. File duration and audio tracks are inspected without rendering playback.
 
 Choose language, ASR model/device and translation model/device in the AI settings. Confirm the media, title/audio, output folder and optional Korean/Hangul-reading exports, then select **전체 자막 만들기**. Playback stops. Recognition covers the entire selected title before translation begins. Translation receives recognized source text, with bounded original context from up to 60 seconds on either side; it never receives audio directly.
 
@@ -37,7 +37,7 @@ Select **준비한 자막으로 재생** when complete, or later open `luma-capt
 
 Exports are `original.srt`, `korean.srt`, the selected source/Hangul/Korean combination in `display.srt`, and a project retaining original token times and translations. Keep the source media and project/SRT exports in their recorded locations. Playing a completed project does not rerun its models.
 
-In alpha.9, prepared discs bypass menus and select the actual native feature by a unique duration match within 200 ms, remaining paused until index/duration acknowledgment. Failure or ambiguity produces an error. Native indexes can differ between menu and direct modes; resume retains the mode and completed project. Use ordinary **Blu-ray 재생** for menus. Alpha.8 has a known attachment problem when its longest prepared title differs from ALL PLAY.
+In alpha.9, prepared discs bypass menus and select the actual native title by a unique duration match within 200 ms, remaining paused until index/duration acknowledgment. Failure or ambiguity produces an error. Native indexes can differ between menu and direct modes; resume retains the mode and completed project. Use ordinary **Blu-ray 재생** for menus. Alpha.8 has a known attachment problem when its longest prepared title differs from ALL PLAY.
 
 Canceling checkpoints completed work. Restart with the same source/title/audio/models/options/runtime and folder to reuse it. Changed inputs are rejected instead of mixing results; use a new folder for new conditions. Only one writer may use an output folder.
 
