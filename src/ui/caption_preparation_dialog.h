@@ -29,19 +29,22 @@ private:
     QString runtime_,discRoot_;
     QLabel *sourceLabel_=nullptr,*durationLabel_=nullptr,*status_=nullptr,*backend_=nullptr;
     QLineEdit *output_=nullptr;
-    QPushButton *chooseFile_=nullptr,*chooseDisc_=nullptr,*browseOutput_=nullptr,*start_=nullptr,*cancel_=nullptr,*play_=nullptr;
+    QPushButton *chooseFile_=nullptr,*chooseDisc_=nullptr,*browseOutput_=nullptr,*start_=nullptr,*cancel_=nullptr,*play_=nullptr,*retryAccelerator_=nullptr;
     QComboBox *playlists_=nullptr,*audio_=nullptr;
     QSpinBox *discAudio_=nullptr;
     QCheckBox *translate_=nullptr,*readingEnabled_=nullptr;
     QProgressBar *bar_=nullptr;
     QFormLayout *form_=nullptr;
-    bool busy_=false,probing_=false,customOutput_=false;
+    bool busy_=false,probing_=false,customOutput_=false,retryingAccelerator_=false;
     void setBusy(bool busy);
     void updateStart();
     void invalidateResult();
     void setDefaultOutput();
     void startPreparation();
+    void retryAccelerator();
     void reportProgress(const CaptionPreparationProgress &progress);
+    void updateBackendLabel();
+    void updateAcceleratorRetry();
     bool exportDisplay(const CaptionPreparationResult &result,QString &error);
 };
 }

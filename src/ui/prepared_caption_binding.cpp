@@ -2,6 +2,8 @@
 #include "subtitles/subtitle_job.h"
 #include "media/playback.h"
 #include "core/disc.h"
+#include "core/resume_history.h"
+#include "subtitles/caption_preparation.h"
 #include <QFileInfo>
 #include <QDir>
 #include <algorithm>
@@ -16,6 +18,11 @@ bool samePath(const QString &left,const QString &right){
     return left==right;
 #endif
 }
+}
+bool preparedCaptionResumeMatches(const CaptionPreparationResult &project,const ResumePoint &point){
+    constexpr qint64 maximumDuration=24LL*60*60*1000;const auto &request=project.request;
+    if(request.source.disc!=point.disc || (point.disc?(point.discMenus || point.title<0):point.title!=-1) || request.durationMs<=0 || request.durationMs>maximumDuration || point.durationMs<=0 || point.durationMs>maximumDuration || std::abs(request.durationMs-point.durationMs)>200)return false;
+    return samePath(canonicalSource(request.source.source,point.disc),canonicalSource(point.source,point.disc));
 }
 bool preparedCaptionSourceTimelineMatches(const RecognitionRequest &request,qint64 preparedDurationMs,const QString &currentSource,const PlaybackState &state,const DiscInfo *disc){
     constexpr qint64 maximumDuration=24LL*60*60*1000;

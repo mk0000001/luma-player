@@ -10,6 +10,7 @@
 #include <QTimer>
 #include <QThread>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QUrl>
 #include <QRegularExpression>
 #include <vlc/vlc.h>
@@ -82,6 +83,10 @@ struct PlaybackEngine::Impl {
     QSet<int> navigationTitles;
     QHash<int,qint64> titleDurations;
     bool titleMetadataReady=false;
+    qint64 preparedDiscDuration=0;
+    int preparedNativeTitle=-1;
+    bool preparedPauseRequested=false;
+    QElapsedTimer preparedTitleWait;
     int managedMpvSubtitle=-1;
     std::atomic<quint64> generation{0};
     std::atomic_bool stopping{false};
@@ -263,10 +268,17 @@ bool PlaybackEngine::available()const{return d->ready;}
 QString PlaybackEngine::lastError()const{return d->error;}
 QString PlaybackEngine::name()const{return d->kind==Kind::Disc?"libVLC · Blu-ray":"libmpv · GPU Next";}
 const PlaybackState &PlaybackEngine::state()const{return d->state;}
-bool PlaybackEngine::open(const QString &source,WId surface){
+bool PlaybackEngine::openPreparedDisc(const QString &source,WId surface,qint64 durationMs){
+    if(d->kind!=Kind::Disc || durationMs<=0 || durationMs>24LL*60*60*1000){d->fail("준비한 디스크 타이틀의 길이가 올바르지 않습니다.");return false;}
+    return openInternal(source,surface,durationMs);
+}
+bool PlaybackEngine::open(const QString &source,WId surface){return openInternal(source,surface,0);}
+bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs){
     if(!available()){d->fail(d->error);return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->error.clear();d->discError.clear();d->managedSubtitle=false;d->managedMpvSubtitle=-1;
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
+    d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
+    if(preparedDiscDurationMs>0)d->preparedTitleWait.start();else d->preparedTitleWait.invalidate();
     if(d->kind==Kind::Disc){
         QString url=source;
         if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
@@ -278,7 +290,8 @@ bool PlaybackEngine::open(const QString &source,WId surface){
         if(d->media){d->libvlc_media_release(d->media);d->media=nullptr;}
         d->media=d->libvlc_media_new_location(d->vlc,url.toUtf8().constData());
         if(!d->media){d->fail("Blu-ray media creation failed");return false;}
-        d->libvlc_media_add_option(d->media,":bluray-menu=1");
+        d->libvlc_media_add_option(d->media,d->state.discMenus?":bluray-menu":":no-bluray-menu");
+        if(preparedDiscDurationMs>0)d->libvlc_media_add_option(d->media,":start-paused");
         d->libvlc_media_add_option(d->media,":bluray-region=A");
         d->libvlc_media_add_option(d->media,":disc-caching=10000");
         if(d->discSoftware)d->libvlc_media_add_option(d->media,":avcodec-hw=none");
@@ -296,7 +309,7 @@ bool PlaybackEngine::open(const QString &source,WId surface){
 }
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
-    d->videoOutputActive=false;
+    d->videoOutputActive=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();
     d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->fileLoaded=false;
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.
@@ -307,8 +320,8 @@ void PlaybackEngine::stop(){
     }
     if(d->mpv)d->command({"stop"});d->stopping.store(false);if(!d->destroying)d->timer.start();
 }
-void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player)d->libvlc_media_player_pause(d->player);else d->command({"cycle","pause"});}
-void PlaybackEngine::setPaused(bool paused){if(!available())return;if(d->player)d->libvlc_media_player_set_pause(d->player,paused?1:0);else d->mpv_set_property_string(d->mpv,"pause",paused?"yes":"no");}
+void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player){if(d->preparedDiscDuration>0)setPaused(!d->preparedPauseRequested);else d->libvlc_media_player_pause(d->player);}else d->command({"cycle","pause"});}
+void PlaybackEngine::setPaused(bool paused){if(!available())return;if(d->player){d->preparedPauseRequested=paused;d->libvlc_media_player_set_pause(d->player,d->preparedDiscDuration>0 || paused?1:0);}else d->mpv_set_property_string(d->mpv,"pause",paused?"yes":"no");}
 void PlaybackEngine::setFrameInterpolation(const QString &mode,int targetFps){
     d->motion=normalizeMotionOptions({mode=="display"?MotionMode::DisplayBlend:mode=="optical"?MotionMode::OpticalFlow:MotionMode::Off,targetFps});
     d->motionMetadata.clear();updateFrameInterpolation();emit updated();
@@ -334,7 +347,7 @@ void PlaybackEngine::setRate(double r){if(!available())return;r=std::clamp(r,0.2
 void PlaybackEngine::setAudio(int id){if(!available())return;if(d->player)d->libvlc_audio_set_track(d->player,id);else d->mpv_set_property_string(d->mpv,"aid",QByteArray::number(id).constData());}
 void PlaybackEngine::setSubtitle(int id){if(!available())return;d->managedSubtitle=false;if(d->player)d->libvlc_video_set_spu(d->player,id);else d->mpv_set_property_string(d->mpv,"sid",id<0?"no":QByteArray::number(id).constData());}
 void PlaybackEngine::setChapter(int id){if(!available())return;if(d->player)d->libvlc_media_player_set_chapter(d->player,id);else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
-void PlaybackEngine::setTitle(int id){if(d->player)d->libvlc_media_player_set_title(d->player,id);}
+void PlaybackEngine::setTitle(int id){if(d->player){d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_title(d->player,id);}}
 void PlaybackEngine::navigate(int mode){if(d->player && mode>=libvlc_navigate_activate && mode<=libvlc_navigate_popup)d->libvlc_media_player_navigate(d->player,mode);}
 void PlaybackEngine::clearManagedSubtitles(){
     if(!d->managedSubtitle)return;
@@ -376,8 +389,24 @@ void PlaybackEngine::poll(){
         }
         // Keep known lengths/mapping if a transient metadata query fails. The
         // live length can still describe the previous title after its ID changes.
-        d->state.navigationTitle=!d->titleMetadataReady || d->state.currentTitle<=0 || d->navigationTitles.contains(d->state.currentTitle);
+        d->state.navigationTitle=!d->titleMetadataReady || d->state.currentTitle<0 || (d->state.discMenus && d->state.currentTitle==0) || d->navigationTitles.contains(d->state.currentTitle);
         d->state.timelineReady=discTimelineReady(d->state.durationMs,d->titleDurations.value(d->state.currentTitle),d->state.navigationTitle);
+        if(d->preparedDiscDuration>0 && !d->state.failed){
+            d->libvlc_media_player_set_pause(d->player,1);d->state.playing=false;
+            int matches=0,match=-1,known=0;
+            for(int i=0;titles && i<count && i<10000;++i)if(titles[i] && !d->navigationTitles.contains(i)){
+                const auto length=titles[i]->i_duration;
+                if(length>0 && length<=24LL*60*60*1000){++known;if(std::abs(length-d->preparedDiscDuration)<=200){++matches;match=i;}}
+            }
+            const bool complete=count>0 && count<=10000 && known==count;
+            if(count>10000 || (complete && matches!=1))d->fail(matches>1?"준비한 길이와 일치하는 디스크 타이틀이 여러 개입니다. 타이틀을 확인해 주세요.":"준비한 디스크 타이틀을 직접 재생 목록에서 찾을 수 없습니다. 디스크 메뉴에서 타이틀을 확인해 주세요.");
+            else if(complete && d->preparedNativeTitle>=0 && match!=d->preparedNativeTitle)d->fail("확인 중 디스크 타이틀 정보가 바뀌었습니다. 디스크를 다시 열어 주세요.");
+            else if(complete && d->preparedNativeTitle<0){d->preparedNativeTitle=match;if(d->state.currentTitle!=match)d->libvlc_media_player_set_title(d->player,match);}
+            if(!d->state.failed && complete && matches==1 && match==d->preparedNativeTitle && d->preparedNativeTitle>=0 && d->state.currentTitle==d->preparedNativeTitle && !d->state.navigationTitle && d->state.timelineReady && std::abs(d->state.durationMs-d->preparedDiscDuration)<=200){
+                d->preparedDiscDuration=0;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_pause(d->player,d->preparedPauseRequested?1:0);
+            }else d->state.timelineReady=false;
+            if(!d->state.failed && d->preparedTitleWait.isValid() && d->preparedTitleWait.elapsed()>=15000)d->fail("준비한 디스크 타이틀을 확인하는 시간이 초과됐습니다. 디스크를 다시 열어 주세요.");
+        }
         for(int i=0;titles && i<count && i<10000;++i)if(titles[i])d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
         if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
         if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){

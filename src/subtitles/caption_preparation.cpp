@@ -77,6 +77,10 @@ std::optional<QJsonObject> sourceMetadata(const CaptionPreparationRequest &reque
 }
 QJsonObject preferencesJson(const AiPreferences &p){return {{"mode",p.mode},{"gpu_device",p.gpuDevice}};}
 bool validPreferences(const AiPreferences &p){return QStringList{"auto","cpu","gpu","npu"}.contains(p.mode)&&p.gpuDevice.size()<=256&&unicode(p.gpuDevice,false);}
+QString acceleratorRejection(const QString &message){
+    static const QRegularExpression pattern("^(GPU|NPU) 사용 불가 \\((시간 초과|처리 실패|실행할 수 없음|가속 실행 확인 실패|자막 결과 없음|모델 준비 시간 초과)\\) · 다음 장치로 전환 중…$");
+    const auto match=pattern.match(message);return match.hasMatch()?match.captured(1)+" 사용 불가 ("+match.captured(2)+')':QString{};
+}
 QJsonObject requestJson(const CaptionPreparationRequest &request){
     const auto &s=request.source;
     return {{"source",s.source},{"disc",s.disc},{"playlist",s.playlist},{"language",s.language},{"title",s.title},{"audio_index",s.audioIndex},{"audio_track_id",s.audioTrackId},{"duration_ms",request.durationMs},{"model",request.model},{"translation_model",request.translationModel},{"output_directory",request.outputDirectory},{"translate",request.translate},{"recognition_preferences",preferencesJson(request.recognitionPreferences)},{"translation_preferences",preferencesJson(request.translationPreferences)}};
@@ -245,6 +249,7 @@ struct CaptionPreparationService::Impl {
     CaptionPreparationService *q;QString runtime;quint64 generation=0,recognitionGeneration=0,translationGeneration=0;
     bool active=false,owns=false;Checkpoint state;SubtitleJob *recognition=nullptr;TranslationService *translation=nullptr;
     std::unique_ptr<QLockFile> lock;QVector<SubtitleCue> pages;QHash<QString,SubtitleCue> targets;QSet<QString> pending;
+    QString recognitionNotice;bool canRetryAccelerator=false;
     Impl(QString root,CaptionPreparationService *owner):q(owner),runtime(root.isEmpty()?QCoreApplication::applicationDirPath()+"/runtime":std::move(root)){}
     ~Impl(){stop();}
     void releaseRecognition(){
@@ -264,7 +269,7 @@ struct CaptionPreparationService::Impl {
         pending.clear();
     }
     void defer(void(Impl::*method)()){const auto id=generation;QTimer::singleShot(0,q,[this,id,method]{if(active&&generation==id)(this->*method)();});}
-    bool report(){const auto id=generation;emit q->progress(id,{state.phase,state.next,state.result.request.durationMs,int(state.result.translations.size()+state.skipped.size()),state.result.request.translate?int(targets.size()):0,state.recognitionBackend,state.translationBackend});return active&&generation==id;}
+    bool report(){const auto id=generation;emit q->progress(id,{state.phase,state.next,state.result.request.durationMs,int(state.result.translations.size()+state.skipped.size()),state.result.request.translate?int(targets.size()):0,state.recognitionBackend,state.translationBackend,recognitionNotice,state.phase=="recognition"&&canRetryAccelerator});return active&&generation==id;}
     void fail(QString message,bool persist=true){
         if(!active)return;const auto id=generation;QString error;
         if(persist&&owns&&!saveCheckpoint(state,error))message+="\n"+error;
@@ -306,6 +311,14 @@ struct CaptionPreparationService::Impl {
         owns=true;if(!checkpoint())return;
         if(state.next==request.durationMs){beginTranslations();return;}
         recognition=new SubtitleJob(runtime,q);recognition->setPreferences(request.recognitionPreferences);const auto id=generation;
+        QObject::connect(recognition,&SubtitleJob::progress,q,[this,id](const QString &message){
+            if(!active||generation!=id||state.phase!="recognition")return;
+            const auto notice=acceleratorRejection(message);
+            if(!notice.isEmpty()){recognitionNotice=notice;canRetryAccelerator=false;report();}
+            else if(message=="CPU에서 로컬 AI 자막 생성 중…"&&!recognitionNotice.isEmpty()){
+                canRetryAccelerator=state.result.request.recognitionPreferences.mode!="cpu";report();
+            }
+        });
         QObject::connect(recognition,&SubtitleJob::failed,q,[this,id](const QString &message){if(active&&generation==id)fail(message);});
         QObject::connect(recognition,&SubtitleJob::ready,q,[this,id](quint64 child,QVector<SubtitleCue> cues){
             if(!active||generation!=id||!recognition||child!=recognitionGeneration)return;
@@ -330,7 +343,7 @@ struct CaptionPreparationService::Impl {
     void finish(){
         if(!unchanged())return;state.phase="complete";if(!checkpoint())return;
         const auto id=generation;const auto result=state.result;active=false;stop();lock.reset();
-        emit q->progress(id,{"complete",state.next,state.result.request.durationMs,int(state.result.translations.size()+state.skipped.size()),state.result.request.translate?int(targets.size()):0,state.recognitionBackend,state.translationBackend});
+        emit q->progress(id,{"complete",state.next,state.result.request.durationMs,int(state.result.translations.size()+state.skipped.size()),state.result.request.translate?int(targets.size()):0,state.recognitionBackend,state.translationBackend,recognitionNotice,false});
         if(generation==id)emit q->ready(id,result);
     }
     void beginTranslations(){
@@ -368,7 +381,7 @@ CaptionPreparationService::CaptionPreparationService(QString runtime,QObject *pa
 }
 CaptionPreparationService::~CaptionPreparationService()=default;
 quint64 CaptionPreparationService::start(const CaptionPreparationRequest &request){
-    if(d->active)cancel();d->stop();d->lock.reset();d->state={};d->pages.clear();d->targets.clear();d->owns=false;d->active=true;
+    if(d->active)cancel();d->stop();d->lock.reset();d->state={};d->pages.clear();d->targets.clear();d->recognitionNotice.clear();d->canRetryAccelerator=false;d->owns=false;d->active=true;
     const auto id=++d->generation;QTimer::singleShot(0,this,[this,id,request]{if(d->active&&d->generation==id)d->begin(request);});return id;
 }
 void CaptionPreparationService::cancel(){

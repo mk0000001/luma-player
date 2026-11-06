@@ -8,7 +8,7 @@ struct MediaItem { int id; QString label; };
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     bool playing=false, failed=false, navigationTitle=false;
-    bool timelineReady=false;
+    bool timelineReady=false,discMenus=true;
     int currentTitle=-1,currentChapter=-1;
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
@@ -34,6 +34,7 @@ public:
     QString lastError() const;
     QString name() const;
     bool open(const QString &source, WId surface);
+    bool openPreparedDisc(const QString &source,WId surface,qint64 durationMs);
     void stop();
     void pauseToggle();
     void setPaused(bool paused);
@@ -55,6 +56,7 @@ signals:
     void errorOccurred(QString message);
     void videoOutputLost(QString message);
 private:
+    bool openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs);
     struct Impl;
     std::unique_ptr<Impl> d;
     void poll();

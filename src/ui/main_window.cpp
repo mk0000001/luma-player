@@ -186,17 +186,23 @@ void MainWindow::recoverVideoOutput(PlaybackEngine *engine,const QString &messag
         requestedPlaying_=false;releaseCaptionBuffer(false);engine->setPaused(true);status_->setText("영상 출력 복구 후 장치 오류가 다시 발생했습니다. 재생을 멈췄습니다. 미디어를 다시 열어 주세요.");status_->setProperty("error",true);return;
     }
     const auto state=engine->state();const bool disc=engine==discEngine_.get(),playing=wantsPlayback();
-    const auto source=source_;const auto external=externalCues_;
+    const auto source=source_;const auto prepared=preparedCaptions_;const auto targetDuration=discTargetDurationMs_;
+    const auto external=prepared?QVector<SubtitleCue>{}:externalCues_;
     std::optional<ResumePoint> point;
-    if(state.timelineReady && state.durationMs>0 && (!disc || (!state.navigationTitle && state.currentTitle>0)))
-        point=ResumePoint{source,disc,disc?state.currentTitle:-1,pendingSeek_>=0?pendingSeek_:state.positionMs,state.durationMs};
+    if(state.timelineReady && state.durationMs>0 && (!disc || (!state.navigationTitle && state.currentTitle>=0)))
+        point=ResumePoint{source,disc,disc?state.currentTitle:-1,pendingSeek_>=0?pendingSeek_:state.positionMs,state.durationMs,state.discMenus,preparedApplied_ && preparedCaptions_?preparedCaptions_->projectFile:QString{}};
     savePlaybackProgress(true);cancelSubtitleWork();releaseCaptionBuffer(false);engine->stop();active_=nullptr;
     static_cast<VideoSurface*>(surface_)->setVideoActive(false);
     auto &replacement=disc?discEngine_:fileEngine_;
     replacement=std::make_unique<PlaybackEngine>(disc?PlaybackEngine::Kind::Disc:PlaybackEngine::Kind::File,QString{},this);bindEngine(replacement.get());
-    openSource(source);videoRecoveryCount_=1;requestedPlaying_=playing;recoveryAudio_=state.currentAudio;recoverySubtitle_=state.currentSubtitle;
+    if(prepared)playPreparedCaptions(*prepared);else openSourceImpl(source,false,targetDuration);
+    videoRecoveryCount_=1;requestedPlaying_=playing;recoveryAudio_=state.currentAudio;recoverySubtitle_=state.currentSubtitle;
     recoveryExternalCues_=external;
-    if(active_->state().failed){pendingResume_.reset();recoveryPlayback_.reset();return;}
+    if(!active_ || active_->state().failed){
+        pendingResume_.reset();recoveryPlayback_.reset();recoveryExternalCues_.clear();
+        if(!active_){requestedPlaying_=false;videoRecoveryExhausted_=true;preparedCaptions_.reset();preparedApplied_=false;resetSubtitleSession();status_->setText("원본 미디어가 변경되어 영상 출력을 복구하지 못했습니다. 미디어를 다시 열어 주세요.");status_->setProperty("error",true);}
+        return;
+    }
     pendingResume_=point;directResume_=disc && point.has_value();recoveryPlayback_=point?std::optional<bool>(playing):std::nullopt;
     if(!point && !recoveryExternalCues_.isEmpty()){const auto cues=std::move(recoveryExternalCues_);recoveryExternalCues_.clear();applyExternalCaptions(cues);}
     if(bufferHolding_)bufferResume_=playing;
@@ -434,14 +440,16 @@ void MainWindow::showCaptionPreparation(){
 bool MainWindow::loadPreparedCaptionProject(const QString &path){
     QString error;auto result=CaptionPreparationService::loadProject(path,&error);
     if(!result){status_->setText("자막 프로젝트를 열 수 없습니다. "+error);return false;}
-    playPreparedCaptions(std::move(*result));return preparedCaptions_.has_value();
+    return playPreparedCaptions(std::move(*result));
 }
-void MainWindow::playPreparedCaptions(CaptionPreparationResult result){
-    QString error;if(!CaptionPreparationService::sourceUnchanged(result,&error)){status_->setText("준비한 자막의 미디어가 변경됐습니다. "+error);return;}
-    const auto source=result.request.source.source;openSourceImpl(source,true);subtitleFileLoader_->cancel();
+bool MainWindow::playPreparedCaptions(CaptionPreparationResult result){
+    QString error;if(!CaptionPreparationService::sourceUnchanged(result,&error)){status_->setText("준비한 자막의 미디어가 변경됐습니다. "+error);return false;}
+    const auto source=result.request.source.source;openSourceImpl(source,true,result.request.source.disc?result.request.durationMs:0);subtitleFileLoader_->cancel();
+    if(!active_ || active_->state().failed)return false;
     if(pendingResume_ && std::abs(pendingResume_->durationMs-result.request.durationMs)>1000)pendingResume_.reset();
     preparedCaptions_=std::move(result);preparedApplied_=false;applyPreparedCaptions();
     aiStatus_->setText("전체 자막 프로젝트 준비됨 · 해당 본편에서 표시합니다.");
+    return true;
 }
 void MainWindow::applyPreparedCaptions(){
     if(!preparedCaptions_ || preparedApplied_ || !active_)return;
@@ -461,16 +469,19 @@ void MainWindow::applyPreparedCaptions(){
     translationStatus_->setText(project.request.translate?QString("전체 문맥으로 미리 준비한 한국어 %1개%2").arg(translations_.size()).arg(project.skippedTranslations?QString(" · %1구간 제외").arg(project.skippedTranslations):QString{}):"원문 자막을 미리 준비했습니다.");
 }
 void MainWindow::openSource(const QString &source){openSourceImpl(source,false);}
-void MainWindow::openSourceImpl(const QString &source,bool preparedOpen){
+void MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs){
+    savePlaybackProgress(true);
     preparedCaptions_.reset();preparedApplied_=false;
     ++sourceGeneration_;videoRecoveryCount_=0;videoRecoveryExhausted_=false;recoveryPlayback_.reset();recoveryAudio_=-1;recoverySubtitle_=-1;recoveryExternalCues_.clear();
-    savePlaybackProgress(true);if(subtitleFileLoader_)subtitleFileLoader_->cancel();pendingResume_.reset();directResume_=false;
+    if(subtitleFileLoader_)subtitleFileLoader_->cancel();pendingResume_.reset();directResume_=false;
     resetSubtitleSession();releaseCaptionBuffer(false);if(active_)active_->stop();lastTitle_=-1;lastNavigation_=false;lastAudio_=-2;decodedSamples_=0;pendingSeek_=-1;pendingAudio_=-2;pendingChapter_=-2;pendingTitle_=-2;requestedPlaying_=true;
     const bool disc=isDiscSource(source);source_=disc?localDiscPath(source):source;if(disc)discInfo_=inspectDisc(source_);
-    resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_);resumeSavedAt_=0;
+    discTargetDurationMs_=disc?preparedDiscDurationMs:0;
+    resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);resumeSavedAt_=0;
     active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
     surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
-    const bool opened=active_->open(source_,static_cast<VideoSurface*>(surface_)->videoWindowId());
+    const auto videoWindow=static_cast<VideoSurface*>(surface_)->videoWindowId();
+    const bool opened=disc && preparedDiscDurationMs>0?active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs):active_->open(source_,videoWindow);
     if(opened){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());if(!disc && (preparedOpen || liveCaptioningActive())){bufferHolding_=true;bufferResume_=true;active_->setPaused(true);}}
     else{status_->setText(active_->lastError());welcome_->show();}
     applyCapturePolicy();static_cast<VideoSurface*>(surface_)->setVideoActive(opened);updateDisplayStatus();updateMotionSettings();
@@ -492,12 +503,14 @@ void MainWindow::updateResumeButton(){
 void MainWindow::savePlaybackProgress(bool force){
     if(!active_ || resumeIdentity_.isEmpty() || pendingResume_ || pendingSeek_>=0 || pendingTitle_!=-2 || pendingChapter_!=-2 || pendingAudio_!=-2)return;
     const auto now=QDateTime::currentMSecsSinceEpoch();if(!force && now-resumeSavedAt_<5000)return;
-    const auto &state=active_->state();const bool disc=active_==discEngine_.get();if(state.failed || !state.timelineReady || (disc && (state.navigationTitle || state.currentTitle<=0)))return;
-    resumeHistory_.save(resumeIdentity_,{source_,disc,disc?state.currentTitle:-1,state.positionMs,state.durationMs});resumeSavedAt_=now;updateResumeButton();
+    const auto &state=active_->state();const bool disc=active_==discEngine_.get();if(state.failed || !state.timelineReady || (disc && (state.navigationTitle || state.currentTitle<0)))return;
+    resumeHistory_.save(resumeIdentity_,{source_,disc,disc?state.currentTitle:-1,state.positionMs,state.durationMs,state.discMenus,preparedApplied_ && preparedCaptions_?preparedCaptions_->projectFile:QString{}});resumeSavedAt_=now;updateResumeButton();
 }
 void MainWindow::restorePlaybackProgress(){
     if(!active_ || !pendingResume_ || videoRecoveryExhausted_)return;const auto state=active_->state();if(state.failed)return;
     const bool disc=active_==discEngine_.get();
+    if(disc && state.discMenus!=pendingResume_->discMenus){pendingResume_.reset();return;}
+    if(disc && !state.discMenus && !state.timelineReady)return;
     if(disc && directResume_){
         if(state.titles.isEmpty())return;
         // Disc-authored First Play may forbid title selection. Let it reach
@@ -507,12 +520,12 @@ void MainWindow::restorePlaybackProgress(){
         if(std::none_of(state.titles.begin(),state.titles.end(),[title](const MediaItem &item){return item.id==title;})){pendingResume_.reset();status_->setText("저장된 디스크 타이틀을 찾을 수 없습니다.");return;}
         if(state.currentTitle!=title || state.navigationTitle){selectTitle(title);return;}
     }
-    if(disc && (state.navigationTitle || state.currentTitle<=0 || pendingTitle_!=-2))return;
+    if(disc && (state.navigationTitle || state.currentTitle<0 || pendingTitle_!=-2))return;
     if(!state.timelineReady || state.durationMs<=0)return;
-    if(disc && state.currentTitle!=pendingResume_->title){pendingResume_=resumeHistory_.find(resumeIdentity_,state.currentTitle);if(!pendingResume_)return;}
+    if(disc && state.currentTitle!=pendingResume_->title){pendingResume_=resumeHistory_.find(resumeIdentity_,state.currentTitle,state.discMenus);if(!pendingResume_)return;}
     const auto point=*pendingResume_;pendingResume_.reset();
     if(std::abs(point.durationMs-state.durationMs)>2000 || (!recoveryPlayback_ && point.positionMs>=state.durationMs-5000)){
-        resumeHistory_.remove(resumeIdentity_,point.title);updateResumeButton();
+        resumeHistory_.remove(resumeIdentity_,point.title,point.discMenus);updateResumeButton();
         if(recoveryPlayback_){recoveryPlayback_.reset();recoveryExternalCues_.clear();requestedPlaying_=false;active_->setPaused(true);videoRecoveryExhausted_=true;status_->setText("미디어 길이가 달라 재생 위치를 복원하지 못했습니다. 미디어를 다시 열어 주세요.");status_->setProperty("error",true);}
         return;
     }
@@ -532,7 +545,11 @@ void MainWindow::resumeLatest(){
         if(!discPath_.isEmpty())source=discPath_;const auto disc=inspectDisc(source);
         if(resumeIdentity(source,&disc)!=identity){status_->setText("이어볼 Blu-ray 디스크를 연결해 주세요.");return;}
     }else if(resumeIdentity(source)!=identity){status_->setText("미디어 파일이 변경되었거나 이동해 저장 위치를 복원할 수 없습니다.");return;}
-    openSource(source);pendingResume_=point;directResume_=point->disc;
+    if(!point->preparedProject.isEmpty()){
+        QString error;auto project=CaptionPreparationService::loadProject(point->preparedProject,&error);
+        if(project && preparedCaptionResumeMatches(*project,*point) && playPreparedCaptions(std::move(*project))){pendingResume_=point;directResume_=point->disc;return;}
+    }
+    openSourceImpl(source,false,point->disc && !point->discMenus?point->durationMs:0);pendingResume_=point;directResume_=point->disc;
 }
 void MainWindow::refresh(){
     if(!active_)return;const auto state=active_->state();
@@ -579,7 +596,7 @@ void MainWindow::refresh(){
     const auto select=[](QComboBox *box,int id){const int index=box->findData(id);if(index>=0 && index!=box->currentIndex()){QSignalBlocker guard(box);box->setCurrentIndex(index);}};
     select(titles_,state.currentTitle);select(audio_,state.currentAudio);select(subs_,state.currentSubtitle);
     if(chapters_->count()!=state.chapters.size()){chapters_->clear();for(const auto &chapter:state.chapters){auto *item=new QListWidgetItem(chapter.label.isEmpty()?QString("Chapter %1").arg(chapter.id+1):chapter.label);item->setData(Qt::UserRole,chapter.id);chapters_->addItem(item);}}
-    if(active_==discEngine_.get())menuStatus_->setText(state.currentTitle<=0?"디스크 메뉴 · 마우스 또는 Ctrl+방향키·Ctrl+Enter로 조작하세요.":state.navigationTitle?"디스크 시작 안내 · 메뉴를 준비하는 중…":QString("타이틀 %1 · 챕터 %2\n팝업 메뉴로 디스크 메뉴를 열 수 있습니다.").arg(state.currentTitle).arg(std::max(0,state.currentChapter)+1));
+    if(active_==discEngine_.get())menuStatus_->setText(!state.discMenus?QString("준비한 타이틀 · 챕터 %1\n디스크 메뉴는 상단 ‘Blu-ray 재생’에서 열 수 있습니다.").arg(std::max(0,state.currentChapter)+1):state.currentTitle<=0?"디스크 메뉴 · 마우스 또는 Ctrl+방향키·Ctrl+Enter로 조작하세요.":state.navigationTitle?"디스크 시작 안내 · 메뉴를 준비하는 중…":QString("타이틀 %1 · 챕터 %2\n팝업 메뉴로 디스크 메뉴를 열 수 있습니다.").arg(state.currentTitle).arg(std::max(0,state.currentChapter)+1));
 }
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 void MainWindow::toggleFullScreen(){
@@ -591,7 +608,7 @@ bool MainWindow::wantsPlayback()const{if(videoRecoveryExhausted_ || (active_ && 
 bool MainWindow::liveCaptioningActive()const{return aiEnabled_->isChecked() && !preparedCaptions_ && externalCues_.isEmpty();}
 bool MainWindow::captionTimelineAvailable()const{
     if(!active_)return false;const auto &state=active_->state();
-    return state.timelineReady && state.durationMs>0 && state.currentAudio>=0 && (active_!=discEngine_.get() || (!state.navigationTitle && state.currentTitle>0 && !state.audioTracks.isEmpty()));
+    return state.timelineReady && state.durationMs>0 && state.currentAudio>=0 && (active_!=discEngine_.get() || (!state.navigationTitle && state.currentTitle>=0 && !state.audioTracks.isEmpty()));
 }
 void MainWindow::togglePlayback(){
     if(!active_ || videoRecoveryExhausted_)return;
@@ -745,6 +762,7 @@ QJsonObject MainWindow::diagnostics()const{
     result.insert("aiTiming",job_.selectedAlignment());
     const auto request=job_.currentRequest();
     if(active_)result.insert("navigationTitle",active_->state().navigationTitle);
+    if(active_)result.insert("discMenus",active_->state().discMenus);
     result.insert("pendingAudioTrack",pendingAudio_);result.insert("pendingChapter",pendingChapter_);result.insert("pendingTitle",pendingTitle_);
     result.insert("jobBusy",job_.busy());result.insert("requestedAudioTrack",request.audioTrackId);result.insert("requestedAudioIndex",request.audioIndex);result.insert("requestedPlaying",wantsPlayback());
     result.insert("asrModel",QFileInfo(model_).fileName());result.insert("requestedCaptionStartMs",request.startMs);result.insert("requestedCaptionDurationMs",request.durationMs);result.insert("resumePending",pendingResume_.has_value());

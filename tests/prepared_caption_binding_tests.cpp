@@ -6,10 +6,26 @@
 #include "subtitles/subtitle_job.h"
 #include "media/playback.h"
 #include "core/disc.h"
+#include "core/resume_history.h"
+#include "subtitles/caption_preparation.h"
 using namespace luma;
 class PreparedCaptionBindingTests:public QObject {
     Q_OBJECT
 private slots:
+    void resumeCannotOpenAReplacedProjectForAnotherSource(){
+        QTemporaryDir root;for(const auto &name:{"movie-a.mkv","movie-b.mkv"}){QFile file(root.filePath(name));QVERIFY(file.open(QIODevice::WriteOnly));file.write("owned fixture");}
+        CaptionPreparationResult project;project.request.source.source=root.filePath("movie-a.mkv");project.request.durationMs=60000;
+        ResumePoint point{root.filePath("movie-a.mkv"),false,-1,10000,60000};QVERIFY(preparedCaptionResumeMatches(project,point));
+        project.request.source.source=root.filePath("movie-b.mkv");QVERIFY(!preparedCaptionResumeMatches(project,point));project.request.source.source=point.source;
+        project.request.source.disc=true;QVERIFY(!preparedCaptionResumeMatches(project,point));project.request.source.disc=false;
+        project.request.durationMs=65000;QVERIFY(!preparedCaptionResumeMatches(project,point));project.request.durationMs=0;QVERIFY(!preparedCaptionResumeMatches(project,point));
+    }
+    void directDiscResumeRequiresMatchingModeAndSource(){
+        QTemporaryDir root;QVERIFY(QDir(root.path()).mkpath("disc-a/BDMV"));QVERIFY(QDir(root.path()).mkpath("disc-b/BDMV"));
+        CaptionPreparationResult project;project.request.source.source=root.filePath("disc-a");project.request.source.disc=true;project.request.durationMs=6296832;
+        ResumePoint point{project.request.source.source,true,0,10000,6296832,false,"project.json"};QVERIFY(preparedCaptionResumeMatches(project,point));
+        point.discMenus=true;QVERIFY(!preparedCaptionResumeMatches(project,point));point.discMenus=false;point.source=root.filePath("disc-b");QVERIFY(!preparedCaptionResumeMatches(project,point));
+    }
     void fileMustMatchMediaTimelineAndAudio(){
         QTemporaryDir root;QFile source(root.filePath("owned.mkv"));QVERIFY(source.open(QIODevice::WriteOnly));source.write("fixture");source.close();
         QFile other(root.filePath("other.mkv"));QVERIFY(other.open(QIODevice::WriteOnly));other.write("other");other.close();

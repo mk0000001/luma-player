@@ -26,6 +26,9 @@ struct CaptionPreparationProgress {
     qint64 recognizedMs=0,totalMs=0;
     int completedTranslations=0,totalTranslations=0;
     QString recognitionBackend,translationBackend;
+    // Controlled device failure text only; never raw recognition output.
+    QString recognitionNotice;
+    bool canRetryAccelerator=false;
 };
 // Headless full-source recognition, then bounded original-context translation.
 // Call from the owning Qt event-loop thread. Projects contain data, never tools.

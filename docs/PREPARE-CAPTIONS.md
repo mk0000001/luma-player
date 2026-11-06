@@ -11,7 +11,11 @@
 
 원문 `original.srt`, 한국어 `korean.srt`, 선택한 원문·독음·한국어 조합 `display.srt`, 원문 토큰 시각과 번역을 보존하는 프로젝트 JSON을 저장합니다. 원본 미디어와 프로젝트·SRT 파일을 유지하세요. 프로젝트는 원래 저장 폴더의 내보내기 파일을 확인합니다. 완성 프로젝트를 재생할 때는 생성에 쓴 모델을 다시 실행하지 않습니다.
 
+alpha.9에서 준비한 Blu-ray는 메뉴를 거치지 않고 해당 길이의 실제 native 본편을 선택합니다. 인덱스와 길이가 확인될 때까지 일시정지하며, 200ms 안에서 유일하게 맞는 타이틀을 찾지 못하면 오류를 표시합니다. 같은 번호라도 메뉴 모드와 직접 모드의 타이틀은 다를 수 있습니다. **이어서 보기**는 이 모드와 완성 프로젝트를 함께 저장합니다. 메뉴를 이용하려면 일반 **Blu-ray 재생**을 누르세요. alpha.8은 가장 긴 준비 타이틀과 ALL PLAY가 다르면 완성 자막을 연결하지 못하는 알려진 문제가 있습니다.
+
 취소하면 완료한 구간을 저장합니다. 같은 미디어·타이틀·오디오·모델·옵션·실행기와 저장 폴더로 다시 시작하면 완료 구간을 재사용합니다. 미디어나 생성 조건이 달라지면 이전 결과를 섞지 않고 오류를 표시합니다. 새 조건은 새 폴더에서 생성하세요. 폴더는 한 작업만 사용할 수 있습니다.
+
+가속 장치가 거부되면 알려진 대체 사유를 표시합니다. **가속 다시 시도**는 현재 완료 구간을 저장하고 같은 요청을 새 작업자로 재개합니다. 취소한 상태의 장치명은 마지막 사용 장치이며 실행 중이라는 뜻이 아닙니다. 재시도해도 같은 하드웨어·드라이버·모델 문제가 계속되면 다시 CPU로 대체될 수 있습니다. 실물 장기 생성에서 최초 GPU 거부 원인은 아직 확정하지 못했습니다.
 
 Blu-ray 사전 생성은 재생용 읽기 속도 제한을 적용하지 않으며, 선택한 타이틀의 임시 PCM을 로컬에 저장할 수 있습니다(16 kHz 모노 16비트, 시간당 약 115 MB). 감상 중 실시간 자막의 읽기 제한과 10초/60초 버퍼 정책은 유지합니다. 생성 시간은 모델·장치·음원에 따라 달라집니다. 긴 노래, 배경음, 인식 오류나 정렬 없는 구간에서 정확도·싱크·어투의 한계는 남습니다. 잘못된 번역 구간은 건너뛰고 개수를 표시할 수 있습니다.
 
@@ -33,7 +37,11 @@ Select **준비한 자막으로 재생** when complete, or later open `luma-capt
 
 Exports are `original.srt`, `korean.srt`, the selected source/Hangul/Korean combination in `display.srt`, and a project retaining original token times and translations. Keep the source media and project/SRT exports in their recorded locations. Playing a completed project does not rerun its models.
 
+In alpha.9, prepared discs bypass menus and select the actual native feature by a unique duration match within 200 ms, remaining paused until index/duration acknowledgment. Failure or ambiguity produces an error. Native indexes can differ between menu and direct modes; resume retains the mode and completed project. Use ordinary **Blu-ray 재생** for menus. Alpha.8 has a known attachment problem when its longest prepared title differs from ALL PLAY.
+
 Canceling checkpoints completed work. Restart with the same source/title/audio/models/options/runtime and folder to reuse it. Changed inputs are rejected instead of mixing results; use a new folder for new conditions. Only one writer may use an output folder.
+
+Known controlled accelerator rejections are displayed. **가속 다시 시도** checkpoints work and resumes the identical request with a fresh worker. A canceled display names the last-used device, not ongoing execution. Retry may still fall back if the hardware/driver/model issue persists. The initial GPU rejection during the observed long physical-disc run remains unconfirmed.
 
 Offline Blu-ray reads omit the live reader's rate limit and may store temporary PCM locally (16 kHz mono 16-bit, approximately 115 MB per hour). Live reading limits and ten/sixty-second policy remain unchanged. Runtime depends on hardware, models and audio. Singing, background music and recognition/alignment failures can still affect meaning, tone and synchronization; invalid translations can be skipped and counted.
 
