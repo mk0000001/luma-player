@@ -108,12 +108,13 @@ private slots:
         const auto fixture=QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
         for(const auto &tool:{"tools/ffmpeg","whisper/whisper-cli","ai/luma-whisper-worker"})QVERIFY(QFile::copy(fixture,dir.filePath(QString(tool)+suffix)));
         for(const auto &name:{"ggml-base.bin","ggml-base-encoder-openvino.xml","ggml-base-encoder-openvino.bin"}){QFile file(dir.filePath("models/"+QString(name)));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");}
-        const auto starts=dir.filePath("starts");qputenv("LUMA_FIXTURE_ASR_STARTS",QFile::encodeName(starts));qputenv("LUMA_FIXTURE_WARMUP_DELAY","800");
-        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_STARTS");qunsetenv("LUMA_FIXTURE_WARMUP_DELAY");});
+        const auto starts=dir.filePath("starts"),release=dir.filePath("warmup-release");qputenv("LUMA_FIXTURE_ASR_STARTS",QFile::encodeName(starts));qputenv("LUMA_FIXTURE_WARMUP_GATE",QFile::encodeName(release));
+        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_STARTS");qunsetenv("LUMA_FIXTURE_WARMUP_GATE");});
         SubtitleJob job(dir.path());QSignalSpy warm(&job,&SubtitleJob::warmedUp),ready(&job,&SubtitleJob::ready),backend(&job,&SubtitleJob::backendSelected),errors(&job,&SubtitleJob::failed);
-        job.warmUp();QTest::qWait(60);QVERIFY(!job.busy());QCOMPARE(backend.count(),0);
-        RecognitionRequest request;request.source="speech.wav";job.start(request);QTest::qWait(80);job.cancel();
-        request.startMs=1000;job.start(request);QTest::qWait(80);job.cancel();request.startMs=2000;const auto generation=job.start(request);
+        job.warmUp();QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(starts).size()>0,3000);QTest::qWait(30);QVERIFY(!job.busy());QCOMPARE(warm.count(),0);QCOMPARE(backend.count(),0);
+        RecognitionRequest request;request.source="speech.wav";job.start(request);QTest::qWait(80);job.cancel();QCOMPARE(warm.count(),0);QCOMPARE(ready.count(),0);
+        request.startMs=1000;job.start(request);QTest::qWait(80);job.cancel();request.startMs=2000;const auto generation=job.start(request);QCOMPARE(warm.count(),0);QCOMPARE(ready.count(),0);
+        QFile gate(release);QVERIFY(gate.open(QIODevice::WriteOnly));QCOMPARE(gate.write("release\n"),8);gate.close();
         QTRY_COMPARE_WITH_TIMEOUT(ready.count(),1,4000);QCOMPARE(errors.count(),0);QCOMPARE(warm.count(),1);QCOMPARE(backend.count(),1);QCOMPARE(ready[0][0].toULongLong(),generation);
         const auto cues=qvariant_cast<QVector<SubtitleCue>>(ready[0][1]);QCOMPARE(cues[0].startMs,2000);QVERIFY(cues[0].text.contains("request 1"));
         QFile log(starts);QVERIFY(log.open(QIODevice::ReadOnly));QCOMPARE(log.readAll().count('\n'),1);job.shutdown();

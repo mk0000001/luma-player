@@ -47,6 +47,7 @@ function Test-LumaPackagePrivateFile {
     param([string]$Path)
     $name=[IO.Path]::GetFileName($Path)
     if($name -match '^(KEYDB\.cfg|HostKeyCertificate\.txt|ProcessingDeviceKeysSimple\.txt)$') { return $true }
+    if($name -match '\.npu-profile\.json$') { return $true }
     $privateExtensions=@(
         '.key','.pem','.der','.crt','.cer','.pfx','.p12','.p7b','.p7c',
         '.srt','.vtt','.ass','.ssa','.sup','.sub','.idx','.smi','.sami','.ttml','.dfxp','.sbv','.lrc',

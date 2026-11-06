@@ -4,11 +4,11 @@
 
 C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.6` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 새 인코더·오류 처리 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.6.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
 
-선택 Kotoba 모델용 C++ NPU 인코더 변환·설치·검증 도구를 제공합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·제한 기록](docs/PERFORMANCE-KOTOBA.md)을 확인하세요. 현재 개발 PC의 구형 NPU 드라이버에서는 전체 인코더 컴파일이 30분 안에 끝나지 않아 NPU 실제 추론은 미통과이며, CUDA 경로를 유지합니다.
+선택 Kotoba 모델용 C++ NPU 인코더와 설치 검사를 제공합니다. OpenVINO 2026.4.1에서 실제 NPU 연속 추론을 확인했습니다. 설치기는 실제 인코더 호출·안정성·처리 시간을 검사하고, 적합한 모델·장치 조합만 자동 NPU를 사용하며 나머지는 GPU→CPU로 대체합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·검증 범위](docs/PERFORMANCE-KOTOBA.md)를 확인하세요.
 
 - **Blu-ray:** libVLC 메뉴·리모컨·타이틀·챕터. 기본값은 소프트웨어 디코딩과 10초 디스크 캐시입니다. 한 디스크의 관찰을 전체 호환성으로 확대하지 않습니다.
 - **파일:** libmpv GPU Next, AV1 등 엔진 지원 코덱, 파일 출력 GPU 선택. HDR/Dolby Vision 처리 경로와 실제 출력 검증은 구분합니다.
-- **로컬 자막:** 원문·일본어 한글 독음·한국어 번역을 분리하고, 긴 자막을 짧은 시간 페이지와 화면 폭에 맞게 표시합니다. 최소 10초 준비 후에도 60초 앞까지 계속 인식합니다. 실행 중 외부 API·계정·Python이 필요하지 않습니다.
+- **로컬 자막:** 원문·일본어 한글 독음·한국어 번역을 분리하고, 긴 자막을 짧은 시간 페이지와 화면 폭에 맞게 표시합니다. 최소 10초 준비 후에도 60초 앞까지 계속 인식합니다. 한국어 번역은 최신 버퍼의 앞뒤 원문을 참고하고 현재 구간만 번역합니다. 실행 중 외부 API·계정·Python이 필요하지 않습니다.
 - **외부 자막·이어보기:** SRT/ASS/SSA/VTT/SMI, 같은 이름 자막 자동 검색, 불러오기 실패 시 현재 언어의 AI 전환. 파일별·디스크 본편 타이틀별 위치를 로컬에 저장합니다.
 - **화면:** 기본 다크/선택 라이트, 자체 컨트롤과 Noto Sans. 영상 위의 74 px 전체화면 바는 영상 크기를 바꾸지 않고 5초 비활동 시 커서와 함께 숨습니다. alpha.4에는 이미 포커스된 VLC 영상에서 정지 포인터의 가운데 클릭이 재생바를 복원하지 못하는 [알려진 문제](docs/releases/0.1.0-alpha.4.md)가 남았습니다. alpha.5에서 창/전체화면 우클릭·가운데 클릭 복원과 유휴 숨김을 실물 디스크로 확인했습니다. 진단은 개발자 모드에서 표시합니다.
 - **선택 프레임 보간:** 파일용 디스플레이 동기 혼합과 실험적 CPU 광학 흐름(24~360 fps **목표**). 360 fps 실시간 표시를 보장하지 않습니다.
@@ -47,7 +47,7 @@ AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 
 
 AACS/BD+ 라이브러리 연결, Windows 캡처 제외, 인증 DRM/HDCP 출력은 서로 다른 기능입니다. 키·인증서·상용 디스크 영상·음성·메뉴 이미지·생성 자막은 배포하지 않습니다. TUKI 한 장의 성공이 모든 디스크의 호환성을 뜻하지 않습니다.
 
-보호 디스크에서는 지원되는 Windows 캡처 제외를 **영상과 자막 창에만** 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. 이전 alpha.3의 실제 관찰에서 검은 영상과 보이는 본창·재생바를 확인했습니다. DRM/HDCP 인증이나 모든 캡처 경로 차단과는 별개입니다. HDR/Dolby Vision·무손실 출력, 새 CI·패키지의 최종 통과 여부는 [alpha.5 기록](docs/releases/0.1.0-alpha.5.md)에 따릅니다.
+보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 확인하세요.
 
 ### 소스에서 빌드
 
@@ -99,7 +99,7 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 
 LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.6`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.6.md) tracks the new encoder and error handling. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
 
-Native C++ conversion, installation and verification tools are available for the optional Kotoba NPU encoder. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [performance limits](docs/PERFORMANCE-KOTOBA.md). On the development PC's old NPU driver, full encoder compilation did not finish within 30 minutes, so genuine NPU inference remains unverified and CUDA remains available.
+Native C++ Kotoba NPU conversion and installation calibration are available. Repeated genuine NPU inference was observed with OpenVINO 2026.4.1. The installer checks real encoder calls, stability and latency; automatic mode uses NPU only for a qualified model/device combination, otherwise GPU then CPU. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [measured limits](docs/PERFORMANCE-KOTOBA.md). Korean translation uses the latest buffered original context while translating only the target cue.
 
 Features include libVLC disc menus/remote/title/chapter controls; libmpv GPU Next file playback; separate source captions, Japanese Hangul readings and Korean translation; timed long-caption pages and wrapping; SRT/ASS/SSA/VTT/SMI import with AI fallback; per-file/disc-title resume; and dark/light Noto-based controls. The floating 74 px fullscreen bar and cursor hide after five inactive seconds without moving the video, including when the pointer rests over the bar. File-only motion options target 24–360 fps processing, without promising realtime 360 fps display.
 
@@ -133,6 +133,6 @@ Windows requires Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, N
 
 For the CUDA ZIP, run both `install-asr-cuda.ps1 -Development` and `install-translation-cuda.ps1 -Development`, then `package-windows.ps1 -BuildDirectory build-next -IncludeCuda`, as shown above. Omitting `-IncludeCuda` preserves the core flavor. The release workflow's manual `include_cuda` input defaults to `true`; final archive size, hashes and native results remain in the release record.
 
-AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Capture exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Prior alpha.3 observations showed black video with visible UI/transport. This is not absolute capture prevention. Final HDR/lossless, CI and package status belongs in the [alpha.5 record](docs/releases/0.1.0-alpha.5.md).
+AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.6.md) for actual HDR/lossless, CI and packaging status.
 
 See the [changelog](CHANGELOG.md), [version policy](docs/VERSIONING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The application is GPL-3.0-or-later, Whisper/Turbo is MIT, optional Qwen3-4B/Hy-MT2 weights are Apache 2.0, and optional CUDA keeps its separate NVIDIA terms. Unmodified Noto fonts retain SIL OFL 1.1 notices.

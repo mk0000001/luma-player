@@ -15,7 +15,7 @@
 - 고정 Kotoba SHA-256 `4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658`, 537819875 bytes.
 - NPU 성공은 명시 NPU에서 실제 추론한 경우에만 기록. 조용한 CPU 대체를 합격으로 세지 않음.
 - 최소 10초 준비와 60초 선행·기존 수동 일시정지 유지.
-- Python 실행 의존성, 드라이버·전원·보안 설정 변경 없음.
+- Python 실행 의존성 없음. 드라이버 변경은 사용자가 별도로 승인·완료한 공식 NPU 업데이트만 기록하며, 전원·보안 설정은 변경하지 않음.
 - 공개 자료에 보호 디스크 키·인증서·영상·음성·메뉴·인식 자막 없음. 한국어 다음 영어.
 
 ## Review Focus
@@ -74,4 +74,4 @@ Files: `src/media/playback.*`, relevant native/media tests and playback guide as
 
 ## English
 
-Execute the five tasks above: native encoder export/correctness; timing and precision-aware compute evidence; verified NPU-first installation with fallback; evidence-led AACS recovery; full validation, independent review and a new immutable release. Model identity, genuine NPU execution, strict caption coverage, no Python runtime/driver changes, and private-disc exclusion are binding constraints.
+Execute the five tasks above: native encoder export/correctness; timing and precision-aware compute evidence; verified installation with fallback; evidence-led AACS recovery; full validation, independent review and a new immutable release. Model identity, genuine NPU execution, strict caption coverage, no Python runtime and private-disc exclusion remain binding constraints. Record only the official NPU driver update separately authorized and completed by the user; do not change power/security settings. Continue with the [caption/context/calibration plan](2026-11-06-caption-context-and-install-calibration.md).

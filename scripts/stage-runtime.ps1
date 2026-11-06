@@ -6,6 +6,7 @@ if ($IncludeCuda) {
 }
 if ($SkipLocalAi -and $IncludeAsrCuda) { throw 'IncludeAsrCuda requires the own local ASR runtime.' }
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$dependencyLock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if (![IO.Path]::IsPathRooted($Destination)) { $Destination = Join-Path $projectRoot $Destination }
 $runtime = Join-Path $Destination 'runtime'
 foreach ($folder in 'vlc','mpv','whisper','models','tools') { New-Item -ItemType Directory -Path (Join-Path $runtime $folder) -Force | Out-Null }
@@ -28,7 +29,7 @@ foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error
 }
 $model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
 if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
-$highQualityModel=(Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json).highQualityModel
+$highQualityModel=$dependencyLock.highQualityModel
 if ($highQualityModel) {
     if ($highQualityModel.file -notmatch '^[A-Za-z0-9_.-]+\.bin$' -or $highQualityModel.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid pinned high-quality ASR model metadata.' }
     $highQualityPath=Join-Path $projectRoot ('.deps/models/'+$highQualityModel.file)
@@ -46,7 +47,15 @@ if (!$SkipLocalAi) {
     Copy-Item -Path (Join-Path $projectRoot '.deps/ipadic/*') -Destination (Join-Path $runtime 'reading/ipadic') -Force
     [IO.File]::WriteAllText((Join-Path $runtime 'reading/mecabrc'),'', [Text.UTF8Encoding]::new($false))
     Copy-Item -Path "$nativeAi/*.dll","$nativeAi/luma-whisper-worker.exe","$nativeAi/luma-whisper-encoder.exe" -Destination (Join-Path $runtime 'ai') -Force
-    $openVino = Join-Path $projectRoot '.deps/openvino/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64'
+    $openVinoDependency = @($dependencyLock.native | Where-Object id -EQ 'openvino')
+    if ($openVinoDependency.Count -ne 1) { throw 'Exactly one pinned OpenVINO SDK is required.' }
+    $openVinoConfig = Join-Path $projectRoot ('.deps/'+$openVinoDependency[0].target+'/'+$openVinoDependency[0].marker)
+    if (!(Test-Path -LiteralPath $openVinoConfig -PathType Leaf)) { throw 'Run bootstrap-windows.ps1 to install the pinned OpenVINO SDK.' }
+    $openVino = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $openVinoConfig))
+    foreach ($name in 'openvino.dll','openvino_c.dll','openvino_ir_frontend.dll','openvino_intel_npu_plugin.dll','openvino_intel_npu_compiler.dll','openvino_intel_npu_compiler_loader.dll','openvino_intel_npu_vm_runtime.dll') {
+        if (!(Test-Path -LiteralPath (Join-Path $openVino ('runtime/bin/intel64/Release/'+$name)) -PathType Leaf)) { throw "Pinned OpenVINO runtime is incomplete: $name" }
+    }
+    # Preserve the SDK's flat NPU plugin/compiler/loader/VM layout in the ASR folder.
     Copy-Item -Path "$openVino/runtime/bin/intel64/Release/*.dll" -Destination (Join-Path $runtime 'ai') -Force
     Get-ChildItem -LiteralPath "$openVino/runtime/3rdparty/tbb/bin" -Filter '*.dll' | Where-Object Name -NotMatch '_debug' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $runtime 'ai') -Force }
     foreach($name in 'ggml-base-encoder-openvino.xml','ggml-base-encoder-openvino.bin') {
@@ -76,3 +85,11 @@ $licenses = Join-Path $Destination 'licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'dependencies.lock.json') -Destination $licenses -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSES') -Destination $licenses -Recurse -Force
+if (!$SkipLocalAi) {
+    # Runtime binaries use Intel's Distribution License, with separate third-party terms.
+    # Copy the pinned SDK originals after repository notices so no stale SDK notice wins.
+    $openVinoLicenses = Join-Path $licenses 'LICENSES/OpenVINO'
+    New-Item -ItemType Directory -Path $openVinoLicenses -Force | Out-Null
+    Copy-Item -Path (Join-Path $openVino 'docs/licensing/*') -Destination $openVinoLicenses -Force
+    Copy-Item -LiteralPath (Join-Path $openVino 'runtime/3rdparty/tbb/TBB-LICENSE') -Destination $openVinoLicenses -Force
+}

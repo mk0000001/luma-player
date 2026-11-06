@@ -55,7 +55,7 @@ CP949와 Shift-JIS도 변환할 수 있습니다. SMI에 문자 인코딩이 명
 
 ### Windows 캡처 제외와 확인 범위
 
-**설정 → 보호 디스크의 Windows 캡처 차단**은 지원되는 Windows 캡처 제외 API를 영상 창과 자막 창에 적용합니다. **본창, 설정, 메뉴와 재생바는 캡처할 수 있게 유지**합니다. 화면의 적용 상태를 확인하세요. 이 기능은 DRM·HDCP 인증이나 모든 캡처 방법을 막는 보증과는 별개입니다.
+보호 디스크는 지원되는 Windows 캡처 제외 API를 영상 창과 자막 창에 기본 적용합니다. **본창, 설정, 메뉴와 재생바는 캡처할 수 있게 유지**합니다. Parsec 등에서 개발용 영상을 보려면 **설정 → 개발자 모드 → 개발용 영상 캡처 허용**을 사용합니다. 개발자 모드와 캡처 허용은 각각 안내·확인 체크·별도 동의가 필요하며 취소하면 허용되지 않습니다. 개발자 모드를 끄면 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 화면의 적용 상태를 확인하세요. 이 기능은 DRM·HDCP 인증이나 모든 캡처 방법을 막는 보증과는 별개입니다.
 
 2026-11-06 기준으로 구현과 확인 범위는 다음과 같이 구분합니다.
 
@@ -122,7 +122,7 @@ Disc history distinguishes disc metadata and main titles rather than relying onl
 
 ### Windows capture exclusion and verification
 
-**설정 → 보호 디스크의 Windows 캡처 차단** applies the supported Windows capture-exclusion API to the video and caption windows. **The main UI, settings, menus and transport remain capturable.** Check the displayed application status. This is separate from certified DRM/HDCP or a guarantee against every capture method.
+Protected discs request Windows capture exclusion for the video and caption windows by default. **The main UI, settings, menus and transport remain capturable.** For development through Parsec or capture software, use **설정 → 개발자 모드 → 개발용 영상 캡처 허용**. Developer mode and capture allowance require separately acknowledged dialogs; cancellation grants neither, and disabling developer mode revokes allowance. Notices explain lawful-use responsibilities without blanket legal immunity. Check the displayed status; this is separate from certified DRM/HDCP or a guarantee against every capture method.
 
 Implementation and verification as of 2026-11-06 are distinct:
 

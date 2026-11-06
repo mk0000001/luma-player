@@ -12,7 +12,7 @@ LumaPlayer 소스는 GPL-3.0-or-later입니다. 동적 라이브러리·모델·
 | whisper.cpp·GGML·Whisper base 및 OpenVINO 변환 인코더 | b5454 / 고정 모델 해시 | MIT, [Intel 변환 모델](https://huggingface.co/Intel/whisper.cpp-openvino-models), `LICENSES/Whisper-MIT.txt`·`LICENSES/OpenAI-Whisper-MIT.txt` 유지 |
 | Whisper large-v3-turbo Q5 모델 | `ggml-large-v3-turbo-q5_0.bin`, `dependencies.lock.json`의 고정 revision/hash | MIT, [고정 GGML 변환 원본](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1), 원본 OpenAI Whisper MIT 고지 유지 |
 | 선택 Kotoba-Whisper v2.0 Q5 일본어 모델 | Kotoba Technologies / Asahi Ushio, revision `e3a0cf6a62b95911703cfb97d819292e058f12c3` | Apache-2.0, [공식 GGML 모델 카드](https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/tree/e3a0cf6a62b95911703cfb97d819292e058f12c3), `LICENSES/Kotoba-Whisper-Apache-2.0.txt` 원문과 고정 해시 유지 |
-| OpenVINO·oneTBB·포함 플러그인 | 공식 2024.1 Windows 런타임 | Apache-2.0 및 포함 외부 구성요소·재배포 조건, `LICENSES/OpenVINO` 원문 전체 포함 |
+| OpenVINO·oneTBB·NPU 플러그인/컴파일러 | 공식 2026.4.1.22982 Windows SDK, `dependencies.lock.json`의 고정 URL/SHA-256 | 런타임 바이너리는 Intel OpenVINO Distribution License(Version May 2021)와 `redist.txt`, 헤더·해당 오픈소스 구성요소는 Apache-2.0 및 각 제3자 조건. 배포 시 SDK의 `docs/licensing` 전체와 `TBB-LICENSE` 원문 보존 |
 | MeCab·IPADIC | 61b90ba6e669dc2d7d533d4a80d206f3b31d52b1 | MeCab BSD 선택 라이선스, IPADIC 원본 COPYING·AUTHORS 유지; [정확한 소스](https://github.com/taku910/mecab/tree/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1) |
 | Noto Sans·Noto Sans CJK KR/JP | 고정된 수정 없는 원본 폰트 | SIL OFL 1.1, 상업적 앱에 포함·임베딩 가능. 폰트 단독 판매 제한과 저작권·라이선스 유지; `LICENSES/NotoSans*-OFL.txt` |
 | 로컬 한국어 번역 | llama.cpp b12125 / 선택 Qwen3-4B·Hy-MT2-7B Q4_K_M | 실행기 MIT, 두 모델 Apache-2.0. `LICENSES/translation/Qwen3-4B-Apache-2.0.txt`·`Hy-MT2-7B-Apache-2.0.txt` 원문 유지 |
@@ -23,6 +23,10 @@ LumaPlayer 소스는 GPL-3.0-or-later입니다. 동적 라이브러리·모델·
 Noto 폰트는 시스템에 설치하지 않고 앱에서 로드합니다. 이름과 폰트 라이선스를 변경하지 않습니다. 로고·아이콘·미리보기 그림과 예문은 이 프로젝트에서 독립적으로 작성했습니다. Dolby 상표·인증, 독점 DRM SDK, 그래픽 드라이버 사용 권리를 이 소스 라이선스로 부여하지 않습니다.
 
 선택 CUDA 설치기는 고정한 공식 실행기·재배포 파일을 앱 폴더에 넣으며 시스템 드라이버를 설치하거나 바꾸지 않습니다. NVIDIA 원문 EULA와 해시를 보존하고, CUDA 파일을 GPL/MIT/Apache로 다시 허가한다고 표시하지 않습니다. EULA 사본은 소스의 `LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html`, 포터블의 `licenses/LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html`에 있습니다. 번역 가중치 두 종류도 선택 설치이며 원래 모델 라이선스를 따릅니다.
+
+ASR은 OpenVINO SDK의 헤더·import library·런타임을 같은 2026.4.1 핀으로 사용합니다. 수정 없는 Release DLL과 비디버그 oneTBB DLL만 `runtime/ai`에 복사하며, NPU 플러그인·컴파일러·로더·VM 런타임의 같은 폴더 배치를 유지합니다. 번역의 `runtime/translation/*`와 DLL을 섞지 않습니다. SDK의 재배포 목록은 Windows `runtime/bin/intel64/Release/*`와 `runtime/3rdparty/tbb/bin/*`를 포함합니다. SDK 전체가 Apache 또는 앱의 GPL로 재허가된다는 뜻은 아닙니다.
+
+2026.4.1의 EULA 세 형식·재배포 목록·주요 제3자 고지는 기존 `LICENSES/OpenVINO` 포함본과 SHA-256가 같음을 확인했습니다. 배포 단계는 SDK의 최신 원문 전체를 `licenses/LICENSES/OpenVINO`에 복사하고 별도의 `TBB-LICENSE`도 보존합니다. 이 경로에는 Intel EULA, Apache 원문, runtime·oneDNN·oneTBB·문서 제3자 고지와 `redist.txt`가 포함됩니다. 헤더·import library·샘플·Python·디버그 DLL·컴파일 캐시는 포터블 런타임에 넣지 않습니다. 최종 패키지의 파일·라이선스 목록은 배포 전에 다시 확인합니다.
 
 ## English
 
@@ -39,7 +43,7 @@ LumaPlayer is GPL-3.0-or-later. The portable package includes dynamically loaded
 | Whisper large-v3-turbo Q5 model | ggml-large-v3-turbo-q5_0.bin, revision 5359861c739e955e79d9a303bcbc70fb988958b1 and hash pinned in `dependencies.lock.json` | MIT; [pinned GGML conversion](https://huggingface.co/ggerganov/whisper.cpp/tree/5359861c739e955e79d9a303bcbc70fb988958b1), raw `LICENSES/OpenAI-Whisper-MIT.txt` preserved |
 | Optional Kotoba-Whisper v2.0 Q5 Japanese model | Kotoba Technologies / Asahi Ushio, revision `e3a0cf6a62b95911703cfb97d819292e058f12c3` | Apache-2.0; [official GGML card](https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/tree/e3a0cf6a62b95911703cfb97d819292e058f12c3), original `LICENSES/Kotoba-Whisper-Apache-2.0.txt` and hash retained |
 | OpenVINO encoder model | Intel conversion pinned in `dependencies.lock.json` | MIT; [official model card](https://huggingface.co/Intel/whisper.cpp-openvino-models) |
-| OpenVINO and oneTBB | official 2024.1 runtime | Apache-2.0 and bundled dependency/redistribution terms; complete upstream notices in `LICENSES/OpenVINO` |
+| OpenVINO, oneTBB and NPU plugin/compiler | official 2026.4.1.22982 Windows SDK; exact URL/SHA-256 in `dependencies.lock.json` | Runtime binaries: Intel OpenVINO Distribution License (Version May 2021) and `redist.txt`. Headers/applicable open-source components: Apache-2.0 and component-specific terms. Preserve all SDK `docs/licensing` originals and `TBB-LICENSE` when distributing |
 | MeCab and IPADIC | source commit 61b90ba6e669dc2d7d533d4a80d206f3b31d52b1, native MSVC build | MeCab BSD option; IPADIC COPYING/AUTHORS preserved; [source](https://github.com/taku910/mecab/tree/61b90ba6e669dc2d7d533d4a80d206f3b31d52b1) |
 | Noto Sans, Noto Sans CJK KR/JP | unmodified files pinned in `dependencies.lock.json` | SIL OFL 1.1 permits commercial application bundling/embedding with its conditions; `LICENSES/NotoSans-OFL.txt` and `NotoSansCJK-OFL.txt` |
 | llama.cpp and optional Qwen3-4B / Hy-MT2-7B models | b12125 / official Q4_K_M files, pinned translation lock | Runtime MIT; both models Apache-2.0. Preserve raw `LICENSES/translation/Qwen3-4B-Apache-2.0.txt` and `Hy-MT2-7B-Apache-2.0.txt` |
@@ -54,3 +58,7 @@ Windows packages may also include Microsoft runtime/D3D redistributables deploye
 VC143 redistributable DLLs are copied unchanged beside native child executables as well as the application; see [Microsoft's redistribution list](https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution). Noto remains under OFL and is loaded privately by the app. Branding, preview artwork and preview sentences are independently authored here. The package manifest records each distributed file, with optional translation weights separated from the core archive.
 
 Optional CUDA installers place pinned official executables/redistributables inside the app folder, preserving the original NVIDIA EULA and its hash. They do not install or modify system drivers. CUDA files are not relicensed as GPL, MIT or Apache. The source copy is `LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html`; the portable copy is `licenses/LICENSES/translation/cuda/NVIDIA-CUDA-12.4-EULA.html`. Both optional translation weight profiles retain their original model terms.
+
+ASR uses headers, import libraries and runtime from the same pinned OpenVINO 2026.4.1 SDK. Unmodified Release DLLs and non-debug oneTBB DLLs are copied to `runtime/ai`, retaining the flat NPU plugin/compiler/loader/VM layout. Translation DLLs remain isolated under `runtime/translation/*`. The vendor redistributable list includes Windows `runtime/bin/intel64/Release/*` and `runtime/3rdparty/tbb/bin/*`. This does not relicense the entire SDK as Apache or the application's GPL.
+
+The 2026.4.1 EULA's three formats, redistributable list and principal third-party notices were SHA-256-identical to the existing `LICENSES/OpenVINO` copies. Staging copies the pinned SDK's complete current originals into `licenses/LICENSES/OpenVINO` and preserves the separate `TBB-LICENSE`: Intel EULA, Apache license, runtime/oneDNN/oneTBB/documentation third-party notices and `redist.txt`. Headers, import libraries, samples, Python, debug DLLs and compiled caches are not portable-runtime payload. The final package file/license inventory is reviewed before release.

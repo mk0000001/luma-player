@@ -51,6 +51,14 @@ QString discFailureDetail(const QString &message){
     if(has("Your system BD+ decoding library does not work"))return QStringLiteral("이 디스크의 BD+ 처리를 시작하지 못했습니다.")+retry;
     return {};
 }
+QString videoOutputLossReason(const QString &message){
+    if(!message.contains("SwapChain Present failed",Qt::CaseInsensitive))return {};
+    static const QRegularExpression hresult(QStringLiteral("\\bhr\\s*=\\s*(0x887a000[57])\\b"),QRegularExpression::CaseInsensitiveOption);
+    const auto match=hresult.match(message);if(!match.hasMatch())return {};
+    const auto code=match.captured(1).toLower();
+    const auto name=code=="0x887a0005"?QStringLiteral("DXGI_ERROR_DEVICE_REMOVED"):QStringLiteral("DXGI_ERROR_DEVICE_RESET");
+    return QStringLiteral("영상 출력 장치를 사용할 수 없어 영상 출력을 다시 준비해야 합니다. (%1, %2)").arg(name,code);
+}
 }
 struct PlaybackEngine::Impl {
     PlaybackEngine *owner;
@@ -61,6 +69,7 @@ struct PlaybackEngine::Impl {
     PlaybackState state;
     QTimer timer;
     bool ready=false, errorSent=false;
+    bool videoOutputActive=false,videoOutputLossSent=false;
     bool managedSubtitle=false;
     MotionOptions motion;
     QString motionMetadata;
@@ -155,6 +164,12 @@ struct PlaybackEngine::Impl {
             if(generation!=o->d->generation.load() || o->d->stopping.load())return;emit o->logMessage(msg);
             if(msg.contains("Using D3D11VA"))o->d->state.hardwareDecoder="D3D11VA";
             else if(msg.contains("Using DXVA2"))o->d->state.hardwareDecoder="DXVA2";
+            const auto outputLoss=videoOutputLossReason(msg);
+            if(!outputLoss.isEmpty() && o->d->videoOutputActive && !o->d->state.failed && !o->d->videoOutputLossSent){
+                // 신호 수신자가 복구를 결정한다. 여기서는 전송 상태를 실패로 바꾸지 않는다.
+                // The receiver owns recovery; device-loss notification is not a fatal transport error.
+                o->d->videoOutputLossSent=true;emit o->videoOutputLost(outputLoss);
+            }
             const auto detail=discFailureDetail(msg);
             if(!detail.isEmpty()){
                 if(o->d->discError.isEmpty())o->d->discError=detail;
@@ -276,10 +291,12 @@ bool PlaybackEngine::open(const QString &source,WId surface){
         d->mpv_set_property_string(d->mpv,"interpolation","no");
         d->command({"loadfile",source.toUtf8(),"replace"});
     }
+    d->videoOutputActive=true;d->videoOutputLossSent=false;
     emit logMessage(QString("Opening with %1").arg(name()));return true;
 }
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
+    d->videoOutputActive=false;
     d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->fileLoaded=false;
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.

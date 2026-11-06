@@ -17,11 +17,14 @@ int main(int argc,char **argv){
     const auto value=[&](const QString &name){const auto index=args.indexOf(name);return index>=0&&index+1<args.size()?args[index+1]:QString();};
     const auto model=value("--model"),token=value("--api-key"),device=value("--device");
     if(value("--host")!="127.0.0.1"||!args.contains("--offline")||token.isEmpty())return 20;
-    if(qEnvironmentVariable("GGML_OPENVINO_DEVICE")=="NPU"||device=="Vulkan7"){
+    const bool npu=qEnvironmentVariable("GGML_OPENVINO_DEVICE")=="NPU";
+    const bool npuBudgetFixture=npu && model.contains("fixture-npu-budget");
+    if((npu && !npuBudgetFixture)||device=="Vulkan7"){
         std::fprintf(stderr,"OpenVINO NPU/device initialization failed: fixture unavailable device\n");return 1;
     }
     QFile started(model+".starts");if(started.open(QIODevice::Append)){started.write("started\n");started.close();}
-    if(device=="none")std::fprintf(stderr,"llama_context: CPU compute buffer size = 32 MiB\n");
+    if(npuBudgetFixture)std::fprintf(stderr,"OpenVINO: using device NPU\nmodel loaded\n");
+    else if(device=="none")std::fprintf(stderr,"llama_context: CPU compute buffer size = 32 MiB\n");
     else std::fprintf(stderr,"llama_prepare_model_devices: using device Vulkan0 (Fixture GPU)\nload_tensors: offloaded 29/29 layers to GPU\n");
     std::fflush(stderr);
     QTcpServer server;if(!server.listen(QHostAddress::LocalHost,value("--port").toUShort()))return 21;
@@ -41,12 +44,19 @@ int main(int argc,char **argv){
                 const auto messages=payload.value("messages").toArray();
                 const bool plain=!payload.contains("response_format");
                 auto source=messages.isEmpty()?QString():messages.last().toObject().value("content").toString();
-                if(plain){const auto separator=source.indexOf("\n\n");if(separator>=0)source=source.mid(separator+2);}
-                if(!health){QFile requests(model+".requests");if(requests.open(QIODevice::Append))requests.write(QJsonDocument(QJsonObject{{"source",source},{"plain",plain}}).toJson(QJsonDocument::Compact)+"\n");}
+                QJsonObject data;
+                if(plain){
+                    const QString prefix="[Background Information]\n",marker="\n\n[Source Text]\n";
+                    const auto background=QJsonDocument::fromJson(source.mid(prefix.size(),source.indexOf("\n\n")-prefix.size()).toUtf8()).object();
+                    const auto decoded=QJsonDocument::fromJson(("["+source.mid(source.lastIndexOf(marker)+marker.size())+"]").toUtf8()).array();
+                    data={{"context",background.value("context")},{"target",QJsonObject{{"start_ms",background.value("target_start_ms")},{"end_ms",background.value("target_end_ms")},{"text",decoded.isEmpty()?QJsonValue{}:decoded[0]}}}};
+                }else data=QJsonDocument::fromJson(source.toUtf8()).object();
+                if(data.value("target").toObject().value("text").isString())source=data.value("target").toObject().value("text").toString();
+                if(!health){QFile requests(model+".requests");if(requests.open(QIODevice::Append))requests.write(QJsonDocument(QJsonObject{{"source",source},{"plain",plain},{"npu",npu},{"data",data}}).toJson(QJsonDocument::Compact)+"\n");}
                 QPointer<QTcpSocket> safe(socket);
                 QTimer::singleShot(health&&model.contains("boot")?250:(source==QString::fromUtf8("遅い") || source=="delayed-invalid")?350:5,&app,[safe,health,source,plain]{
                     if(!safe||safe->state()!=QAbstractSocket::ConnectedState)return;
-                    const auto korean=source=="bad"?QString::fromUtf8("日本語です。"):plain?QString::fromUtf8("가지 않아도 돼."):QString::fromUtf8("안녕하세요.");
+                    const auto korean=source=="bad"?QString::fromUtf8("日本語です。"):source=="context-dump"?QString(200,QChar(0xac00)):plain?QString::fromUtf8("가지 않아도 돼."):QString::fromUtf8("안녕하세요.");
                     const auto content=plain?korean:QString::fromUtf8(QJsonDocument(QJsonObject{{"korean",korean}}).toJson(QJsonDocument::Compact));
                     const auto finish=source=="truncated" || source=="delayed-invalid"?"length":"stop";
                     auto result=health?QJsonObject{{"status","ok"}}:QJsonObject{{"choices",QJsonArray{QJsonObject{{"finish_reason",finish},{"message",QJsonObject{{"role","assistant"},{"content",content}}}}}}};

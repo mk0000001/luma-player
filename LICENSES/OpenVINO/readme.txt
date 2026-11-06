@@ -1,5 +1,5 @@
 ------------------------------------------------------------------------
-Intel(R) Distribution of OpenVINO(TM) tookit for Windows*
+Intel(R) Distribution of OpenVINO(TM) toolkit for Windows*
 
 Components and their licenses:
 * OpenVINO(TM) Runtime (Intel(R) OpenVINO(TM) Distribution License): <install_root>/runtime/bin/*
@@ -8,7 +8,7 @@ Components and their licenses:
 * Python API(Apache 2.0): <install_root>/python/*
 
 ------------------------------------------------------------------------
-Intel(R) Distribution of OpenVINO(TM) tookit for Linux*
+Intel(R) Distribution of OpenVINO(TM) toolkit for Linux*
 
 Components and their licenses:
 * OpenVINO(TM) Runtime (Intel(R) OpenVINO(TM) Distribution License): <install_root>/runtime/lib/*
@@ -17,7 +17,7 @@ Components and their licenses:
 * Python API(Apache 2.0): <install_root>/python/*
 
 ------------------------------------------------------------------------
-Intel(R) Distribution of OpenVINO(TM) tookit for macOS*
+Intel(R) Distribution of OpenVINO(TM) toolkit for macOS*
 
 Components and their licenses:
 * OpenVINO(TM) Runtime (Intel(R) OpenVINO(TM) Distribution License): <install_root>/runtime/lib/*
@@ -38,5 +38,5 @@ Third party programs:
 
 ------------------------------------------------------------------------
 Redistributable content:
-* Intel(R) Distribution of OpenVINO(TM) tookit: <install_root>/docs/licensing/redist.txt
+* Intel(R) Distribution of OpenVINO(TM) toolkit: <install_root>/docs/licensing/redist.txt
 

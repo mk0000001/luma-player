@@ -3,9 +3,10 @@
 #include <QStringList>
 #include <memory>
 #include "ai_backend.h"
+#include "core/subtitle.h"
 namespace luma {
 // Local native translation. Call from its owning Qt event-loop thread.
-// Source strings are immutable identifiers; timings/readings remain with the caller.
+// Timed cues identify repeated phrases; display timings/readings remain with the caller.
 class TranslationService : public QObject {
     Q_OBJECT
 public:
@@ -15,6 +16,9 @@ public:
     AiPreferences preferences()const;
     void setModel(QString model={});
     void request(const QStringList &nearestFirst);
+    // Replace the current session's raw source buffer, including newly available future cues.
+    void setContextCues(const QVector<SubtitleCue> &originals);
+    void requestCues(const QVector<SubtitleCue> &nearestFirst);
     void cancel();
     quint64 generation()const;
     QString selectedBackend()const;
@@ -22,8 +26,10 @@ public:
     void setTimeouts(int startupMs,int requestMs);
 signals:
     void translated(quint64 generation,QString source,QString korean);
+    void translatedCue(quint64 generation,QString cueKey,QString source,QString korean);
     // A rejected cue leaves the generation and remaining queue active.
     void skipped(quint64 generation,QString source,QString message);
+    void skippedCue(quint64 generation,QString cueKey,QString source,QString message);
     void progress(QString message);
     // Fatal model/runtime failure; callers may stop scheduling until retry.
     void failed(QString message);

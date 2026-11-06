@@ -28,13 +28,13 @@ protected:
 private:
     QWidget *surface_=nullptr,*welcome_=nullptr,*sidebar_=nullptr,*panel_=nullptr,*header_=nullptr,*transport_=nullptr,*transportTitleRow_=nullptr;
     QLabel *nowTitle_=nullptr,*status_=nullptr,*clock_=nullptr,*discLabel_=nullptr,*discDetails_=nullptr,*aiStatus_=nullptr,*codec_=nullptr,*accelerator_=nullptr;
-    QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr;
+    QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr,*npuStatus_=nullptr;
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
     QSlider *seek_=nullptr,*volume_=nullptr;
     QComboBox *titles_=nullptr,*audio_=nullptr,*subs_=nullptr,*rate_=nullptr,*language_=nullptr,*aiMode_=nullptr,*aiGpu_=nullptr,*videoGpu_=nullptr,*motionMode_=nullptr,*motionFps_=nullptr;
     QListWidget *chapters_=nullptr;
     QPlainTextEdit *log_=nullptr;
-    QCheckBox *aiEnabled_=nullptr,*originalEnabled_=nullptr,*readingEnabled_=nullptr,*translationEnabled_=nullptr,*captureEnabled_=nullptr;
+    QCheckBox *aiEnabled_=nullptr,*originalEnabled_=nullptr,*readingEnabled_=nullptr,*translationEnabled_=nullptr,*developerEnabled_=nullptr,*captureAllowed_=nullptr;
     CaptionOverlay *captions_=nullptr;
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
@@ -70,6 +70,12 @@ private:
     int pendingAudio_=-2,pendingChapter_=-2,pendingTitle_=-2,lastAudio_=-2;
     qint64 pendingControlAt_=0;
     std::optional<bool> requestedPlaying_;
+    int videoRecoveryCount_=0;
+    quint64 sourceGeneration_=0;
+    bool developerApproved_=false,captureApproved_=false,videoRecoveryExhausted_=false;
+    std::optional<bool> recoveryPlayback_;
+    int recoveryAudio_=-1,recoverySubtitle_=-1;
+    QVector<SubtitleCue> recoveryExternalCues_;
     bool wantsPlayback()const;
     bool captionTimelineAvailable()const;
     void selectChapter(int id);
@@ -77,6 +83,7 @@ private:
     void selectTitle(int id);
     void buildUi();
     void bindEngine(PlaybackEngine *engine);
+    void recoverVideoOutput(PlaybackEngine *engine,const QString &message);
     void discoverDisc();
     void refresh();
     void appendLog(const QString &message);
@@ -85,6 +92,7 @@ private:
     void applyCapturePolicy();
     void updateDisplayStatus();
     void updateAiPreferences();
+    void updateNpuStatus();
     void updateTranslationPreferences();
     void changeVideoAdapter();
     void updateMotionSettings();
