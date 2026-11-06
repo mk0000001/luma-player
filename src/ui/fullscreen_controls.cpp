@@ -33,7 +33,7 @@ void FullscreenControls::queueSync(){
 }
 void FullscreenControls::syncGeometry(){
     if(!window_ || !transport_ || !surface_)return;
-    const bool visible=wanted_ && window_->isVisible() && !window_->isMinimized() && surface_->isVisible();
+    const bool visible=wanted_ && window_->isVisible() && !window_->isMinimized() && surface_->isVisible() && !QApplication::activeModalWidget();
     if(visible){
         const QRect target(surface_->mapToGlobal(QPoint(0,surface_->height()-transport_->height())),QSize(surface_->width(),transport_->height()));
         const bool moved=transport_->geometry()!=target,shown=!transport_->isVisible();
@@ -102,6 +102,7 @@ bool FullscreenControls::eventFilter(QObject *object,QEvent *event){
     if(!widget || !window_)return false;
     bool owned=false;for(auto *owner=widget;owner;owner=owner->parentWidget())if(owner==window_){owned=true;break;}
     if(!owned)return false;
+    if(widget->windowModality()!=Qt::NonModal && (event->type()==QEvent::Show || event->type()==QEvent::Hide))queueSync();
     if(widget!=transport_ && widget->windowType()==Qt::Tool){
         if(event->type()==QEvent::WindowActivate)activity();
         else if(event->type()==QEvent::Show || event->type()==QEvent::ZOrderChange){raisePending_=true;queueSync();}

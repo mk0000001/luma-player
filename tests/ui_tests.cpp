@@ -25,6 +25,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
+#include <QScopeGuard>
 #include <QtEndian>
 #include <cmath>
 #include <optional>
@@ -63,6 +64,33 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void preparationEntryDoesNotStartPlayback(){
+        luma::MainWindow window;window.show();auto *prepare=window.findChild<QPushButton*>("prepareCaptions");QVERIFY(prepare);
+        QVERIFY(!window.diagnostics().contains("engine"));bool sawDialog=false;
+        QTimer::singleShot(0,&window,[&]{auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(dialog);sawDialog=dialog->objectName()=="captionPreparationDialog";QVERIFY(sawDialog);QVERIFY(!window.diagnostics().contains("engine"));auto *play=dialog->findChild<QPushButton*>("preparePlay");QVERIFY(play);QVERIFY(!play->isEnabled());auto *close=dialog->findChild<QPushButton*>("prepareCancel");QVERIFY(close);close->click();});
+        prepare->click();QVERIFY(sawDialog);QVERIFY(!window.diagnostics().contains("engine"));
+    }
+    void preparedNativePlaybackPreservesAiWithCompanionSubtitle(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(!project->request.source.disc);
+        const QFileInfo media(project->request.source.source);const auto companion=media.dir().filePath(media.completeBaseName()+".srt");if(QFileInfo::exists(companion))QSKIP("Use a fresh owned fixture without a companion subtitle.");
+        QSaveFile file(companion);QVERIFY(file.open(QIODevice::WriteOnly));QVERIFY(file.write("1\n00:00:00,000 --> 00:00:02,000\nOther companion\n")>0);QVERIFY(file.commit());const auto cleanup=qScopeGuard([companion]{QFile::remove(companion);});
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);
+        QVERIFY(window.diagnostics()["aiEnabled"].toBool());QVERIFY(QSettings().value("subtitles/aiEnabled").toBool());
+        QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(!window.diagnostics()["jobBusy"].toBool());
+    }
+    void preparedNativeSeekAndChapterDoNotWaitForLiveBuffer(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(!project->request.source.disc);
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["playing"].toBool(),5000);
+        const auto count=window.diagnostics()["translationCount"].toInt();auto *surface=window.findChild<QWidget*>("videoSurface");QVERIFY(surface);surface->setFocus();QTest::keyClick(surface,Qt::Key_Right);QTest::qWait(500);
+        QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());QVERIFY(window.diagnostics()["aiEnabled"].toBool());QVERIFY(!window.diagnostics()["jobBusy"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),count);
+        if(window.diagnostics()["chapterCount"].toInt()>1){QPushButton *next=nullptr;for(auto *candidate:window.findChildren<QPushButton*>())if(candidate->accessibleName()=="다음 챕터"){next=candidate;break;}QVERIFY(next);next->click();QTest::qWait(500);QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),count);}
+        QTemporaryDir missing;QVERIFY(!window.loadCaptionFile(missing.filePath("missing.srt")));QVERIFY(window.diagnostics()["aiEnabled"].toBool());QCOMPARE(window.diagnostics()["externalCueCount"].toInt(),0);QVERIFY(!window.diagnostics()["preparedCaptionsApplied"].toBool());
+    }
     void failedOpenDoesNotKeepPauseIntent(){
         QTemporaryDir media;luma::MainWindow window;window.show();
         auto *play=window.findChild<QPushButton*>("playButton");QVERIFY(play);
