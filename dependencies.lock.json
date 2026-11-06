@@ -59,6 +59,19 @@
     "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0.txt",
     "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
   },
+  "accurateModel": {
+    "id": "ggerganov/whisper.cpp",
+    "revision": "fb5ed9369c26eaf08392504d8446da431e0fffb9",
+    "file": "ggml-large-v3-q5_0.bin",
+    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/fb5ed9369c26eaf08392504d8446da431e0fffb9/ggml-large-v3-q5_0.bin",
+    "sha256": "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+    "bytes": 1081140203,
+    "language": "multilingual",
+    "optionalAtRuntime": true,
+    "license": "MIT",
+    "licenseFile": "OpenAI-Whisper-MIT.txt",
+    "licenseSha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
+  },
   "highQualityModel":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin","revision":"5359861c739e955e79d9a303bcbc70fb988958b1","sha256":"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2","bytes":574041195,"file":"ggml-large-v3-turbo-q5_0.bin","license":"MIT"},
   "encoder":{"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
   "model":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin","sha256":"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe","file":"ggml-base.bin"}

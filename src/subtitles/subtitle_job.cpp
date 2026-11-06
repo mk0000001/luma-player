@@ -1,6 +1,7 @@
 #include "subtitle_job.h"
 #include "runtime_environment.h"
 #include "pcm_buffer.h"
+#include "recognition_timing.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -47,6 +48,7 @@ SubtitleJob::SubtitleJob(QString runtime,QObject *parent):QObject(parent),runtim
     connect(pcmBuffer_.get(),&PcmBuffer::ready,this,&SubtitleJob::audioPrepared);
     connect(pcmBuffer_.get(),&PcmBuffer::failed,this,[this](const QString &message){if(stage_==1){timeout_.stop();stage_=0;emit failed(message);}});
     process_.setProcessChannelMode(QProcess::MergedChannels);
+    process_.setProcessEnvironment(localRuntimeEnvironment(runtime_));
     worker_.setProcessChannelMode(QProcess::MergedChannels);
     worker_.setProcessEnvironment(localRuntimeEnvironment(runtime_));
     connect(&worker_,&QProcess::readyReadStandardOutput,this,&SubtitleJob::workerOutput);
@@ -144,9 +146,9 @@ void SubtitleJob::nextRecognition(const QString &reason){
     }
     do{++backendIndex_;}while(backendIndex_<backends_.size() && rejected_.contains(backends_[backendIndex_].key));
     if(backendIndex_>=backends_.size()){stage_=0;emit failed("사용 가능한 로컬 음성인식 장치를 찾지 못했습니다.");return;}
-    const auto &backend=backends_[backendIndex_];resultPrefix_=temp_->filePath("result-"+backend.key);
+    const auto &backend=backends_[backendIndex_];resultPrefix_=temp_->filePath("result-"+QString::number(backendIndex_)+"-"+backend.key);
     auto command=recognitionCommand(runtime_,model_,request_.language,temp_->filePath("audio.wav"),resultPrefix_);command.program=backend.program;
-    if(backend.key=="CPU")command.arguments.append("-ng");
+    if(backend.key=="CPU" && backend.device.isEmpty())command.arguments.append("-ng");
     else if(!backend.device.isEmpty()){
         const auto cache=QStandardPaths::writableLocation(QStandardPaths::CacheLocation)+"/openvino";QDir().mkpath(cache);
         command.arguments.append({"--device",backend.device,"--cache",cache});
@@ -186,6 +188,12 @@ void SubtitleJob::completed(int code,QProcess::ExitStatus status){
     if(!confirmsBackend(backends_[backendIndex_],lastOutput_)){nextRecognition("가속 실행 확인 실패");return;}
     QFile file(resultPrefix_+".srt");if(!file.open(QIODevice::ReadOnly) || file.size()>8*1024*1024){nextRecognition("자막 결과 없음");return;}
     auto cues=parseSrt(QString::fromUtf8(file.readAll()));for(auto &cue:cues){cue.startMs+=request_.startMs;cue.endMs=std::min(cue.endMs+request_.startMs,request_.startMs+request_.durationMs);}
+    selectedAlignment_="segment";QFile timing(resultPrefix_+".timings.json");
+    if(timing.open(QIODevice::ReadOnly) && timing.size()<=1024*1024){
+        if(auto aligned=parseRecognitionTiming(timing.readAll(),request_.startMs,request_.durationMs)){
+            cues=std::move(aligned->cues);selectedAlignment_=aligned->alignment;
+        }
+    }
     const auto completedGeneration=generation_;selectedBackend_=backends_[backendIndex_].key;stage_=0;emit backendSelected(selectedBackend_);emit ready(completedGeneration,cues);
 }
 }

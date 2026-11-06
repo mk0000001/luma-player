@@ -4,6 +4,14 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.7 — 2026-11-06 프리뷰
+
+- 유효한 음성 토큰 시각을 자막 페이지에 전달. 긴 가사를 글자 수에 따라 다시 배분하지 않고 토큰·결합 문자 경계와 쉼을 보존하며, 무효/없는 정렬 정보는 기존 구간 시간으로 처리.
+- 선택 full Whisper large-v3 Q5 모델의 고정 다운로드·MIT 고지 추가. 이 구조의 native 자동 모드는 beam 5와 DTW를 사용하며 Kotoba/Turbo의 기존 자동 설정은 유지. CPU native 실행 뒤 독립 CLI 대체 경로도 보존.
+- 번역 중 새 원문 문맥이 도착하면 낡은 응답을 표시하지 않고 재요청. 미래의 완료 번역도 문맥에 맞게 갱신하고 현재 읽는 자막은 유지. 번역 입력은 인식된 원문 텍스트와 앞뒤 원문이며 음성 직접 번역을 사용하지 않음.
+- 공식 Qwen3-8B 후보는 12개 합성 원문 비교에서 부정·이름 오류가 있어 채택하지 않음. Hy-MT2 유지와 최신 문맥 처리 수정을 구분하며 [번역 기록](docs/translation-quality-validation.md)에 한계를 명시.
+- 전체 Qt 검사 22/22, native 검사 9/9 및 실제 CUDA/정렬 소비 검사 통과. 실물 디스크·최종 배포 상태는 [alpha.7 기록](docs/releases/0.1.0-alpha.7.md)을 따름. alpha.6 태그·ZIP은 보존.
+
 ### 0.1.0-alpha.6 — 2026-11-06 프리뷰 작업
 
 - 고정 Kotoba Q5 가중치에서 FP16 OpenVINO 인코더를 만드는 C++ 변환기·수치 비교·공유 정체성 검증 CLI 추가. 실제 인코더 호출 수·시간을 기록하며, 추론을 건너뛴 짧은 음성을 가속 성공으로 인정하지 않음.
@@ -59,6 +67,14 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.7 — preview, 2026-11-06
+
+- Carry validated speech-token times into caption pages. Preserve token/grapheme boundaries and pauses instead of redistributing long lyrics by character count; missing or invalid alignment retains coarse timing.
+- Add a pinned optional full Whisper large-v3 Q5 download and MIT notice. Native auto mode uses beam 5/DTW for that architecture while retaining Kotoba/Turbo auto settings. Preserve an independent legacy CLI after native CPU failure.
+- Requeue in-flight translations when new original context arrives, refresh completed future captions and keep currently displayed text stable. Translation receives recognized original text and neighboring originals, without direct audio translation.
+- Reject the official Qwen3-8B candidate after negation/name errors in twelve synthetic source comparisons. Retain Hy-MT2; context correctness is separate from model wording quality, as documented in the translation validation record.
+- Qt 22/22, native 9/9 and actual CUDA/timing-consumer checks passed. Follow the alpha.7 release record for physical-disc/final-package status. Earlier alpha.6 tags and archives remain immutable.
 
 ### 0.1.0-alpha.6 — preview work, 2026-11-06
 

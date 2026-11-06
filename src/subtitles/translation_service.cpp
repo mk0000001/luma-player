@@ -174,6 +174,11 @@ struct TranslationService::Impl {
             if(status==400 || status==413 || status==422){skipCue(task,"번역 실행기가 이 자막 요청을 처리하지 못해 건너뜁니다.");return;}
             if(networkError!=QNetworkReply::NoError || status!=200){nextBackend("로컬 번역 추론 요청이 실패했습니다.");return;}
             const auto body=response->readAll();if(body.size()>maximumResponseBytes){skipCue(task,"번역 응답이 너무 커서 이 자막을 건너뜁니다.");return;}
+            // Keep the timed target pending until its response matches the latest
+            // bounded source context. A stale response must not reach the cache/UI.
+            if(targets.contains(task.source) && fingerprint(payloadFor(task))!=activeFingerprint){
+                queue.release(task);active.reset();activeFingerprint.clear();queue.enqueue({task.source});schedule();return;
+            }
             const auto target=targets.constFind(task.source);const auto source=target==targets.cend()?task.source:target->text;
             QString error;const auto korean=parseTranslationResponse(body,&error,profile,source);
             if(korean.isEmpty()){skipCue(task,error);return;}
@@ -203,6 +208,12 @@ void TranslationService::request(const QStringList &sources){
     d->queue.enqueue(bounded);d->schedule();
 }
 void TranslationService::setContextCues(const QVector<SubtitleCue> &originals){d->contextCues=originals;}
+bool TranslationService::needsTranslation(const SubtitleCue &cue)const{
+    const auto key=translationCueKey(cue);
+    if(!d->targets.contains(key) || !d->queue.cached(key))return true;
+    const auto payload=d->payloadFor({d->queue.generation(),key});
+    return payload.isEmpty() || d->fingerprints.value(key)!=Impl::fingerprint(payload);
+}
 void TranslationService::requestCues(const QVector<SubtitleCue> &cues){
     const auto generation=d->queue.generation();QStringList keys;
     for(const auto &cue:cues){

@@ -231,6 +231,20 @@ private slots:
         overlay->setPosition(2100);QVERIFY(overlay->captionText().contains("두 번째 문맥"));QVERIFY(!overlay->captionText().contains("첫 번째 문맥"));
         window.openSource(folder.filePath("different-synthetic-video.mkv"));service->translatedCue(generation,first,"Same synthetic words","오래된 번역");QCOMPARE(window.diagnostics().value("translationCount").toInt(),0);
     }
+    void futureTranslationsRefreshAfterNewOriginalContext(){
+        QTemporaryDir folder;QSettings().setValue("ai/mode","cpu");QSettings().setValue("translation/model",folder.filePath("missing-fixture.gguf"));
+        luma::MainWindow window;window.openSource(folder.filePath("synthetic-video.mkv"));window.enableAutomaticSubtitles("ja");
+        auto *service=window.findChild<luma::TranslationService*>();auto *job=window.findChild<luma::SubtitleJob*>();auto *overlay=window.findChild<luma::CaptionOverlay*>();auto *enabled=window.findChild<QCheckBox*>("translationEnabled");QVERIFY(service);QVERIFY(job);QVERIFY(overlay);QVERIFY(enabled);enabled->setChecked(true);
+        job->ready(job->generation(),{{0,1000,"Current synthetic source"},{2000,3000,"Future synthetic source"}});
+        const auto generation=service->generation();const auto current=luma::translationCueKey({0,1000,"Current synthetic source"}),future=luma::translationCueKey({2000,3000,"Future synthetic source"});
+        service->translatedCue(generation,current,"Current synthetic source","현재 문장");service->translatedCue(generation,future,"Future synthetic source","문맥 전 문장");
+        QCOMPARE(window.diagnostics()["translationCount"].toInt(),2);QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),0);
+        job->ready(job->generation(),{{4000,5000,"New neighboring original source"}});
+        QCOMPARE(window.diagnostics()["translationCount"].toInt(),1);QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),2);
+        overlay->setPosition(100);QVERIFY(overlay->captionText().contains("현재 문장"));
+        service->translatedCue(generation,future,"Future synthetic source","새 문맥을 반영한 문장");QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),1);
+        overlay->setPosition(2100);QVERIFY(overlay->captionText().contains("새 문맥을 반영한 문장"));
+    }
     void diagnosticsRequirePersistedDeveloperMode(){
         luma::MainWindow window;auto *mode=window.findChild<QCheckBox*>("developerMode");auto *details=window.findChild<QWidget*>("developerDiagnostics");
         QVERIFY(mode);QVERIFY(details);QVERIFY(!mode->isChecked());QVERIFY(details->isHidden());

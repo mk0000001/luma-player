@@ -107,6 +107,35 @@ private slots:
         QCOMPARE(pages.size(),3);QCOMPARE(pages[0].text,QString("ABCD"));QCOMPARE(pages[1].text,QString("EFGH"));QCOMPARE(pages[2].text,QString("IJ"));
         QCOMPARE(pages[0].startMs,qint64(1000));QCOMPARE(pages[0].endMs,qint64(1400));QCOMPARE(pages[1].startMs,qint64(1400));QCOMPARE(pages[1].endMs,qint64(1800));QCOMPARE(pages[2].startMs,qint64(1800));QCOMPARE(pages[2].endMs,qint64(2000));
     }
+    void timedPagesFollowNonUniformSpokenTokens(){
+        SubtitleCue cue{1000,9000,"ABCDEFGH"};
+        cue.tokens={{0,2,1000,7000},{2,2,7000,7300},{4,2,7300,8800},{6,2,8800,9000}};
+        const auto pages=captionPages({cue},4,1);
+        QCOMPARE(pages.size(),2);QCOMPARE(pages[0].text,QString("ABCD"));QCOMPARE(pages[1].text,QString("EFGH"));
+        QCOMPARE(pages[0].startMs,qint64(1000));QCOMPARE(pages[0].endMs,qint64(7300));
+        QCOMPARE(pages[1].startMs,qint64(7300));QCOMPARE(pages[1].endMs,qint64(9000));
+        SubtitleTimeline timeline;const auto generation=timeline.reset();QVERIFY(timeline.attach(generation,pages));
+        QCOMPARE(timeline.at(7299),QString("ABCD"));QCOMPARE(timeline.at(7300),QString("EFGH"));
+    }
+    void timedPagesKeepTokenBoundariesAndSilentGaps(){
+        SubtitleCue cue{0,5000,"ABCDEFGH"};
+        cue.tokens={{0,5,800,2200},{5,3,3500,4600}};
+        const auto pages=captionPages({cue},4,1);
+        QCOMPARE(pages.size(),2);QCOMPARE(pages[0].text,QString("ABCDE"));QCOMPARE(pages[1].text,QString("FGH"));
+        QCOMPARE(pages[0].startMs,qint64(800));QCOMPARE(pages[0].endMs,qint64(2200));
+        QCOMPARE(pages[1].startMs,qint64(3500));QCOMPARE(pages[1].endMs,qint64(4600));
+    }
+    void invalidTokenTimingUsesLegacyCueBounds(){
+        SubtitleCue cue{1000,5000,"ABCDEFGH"};cue.tokens={{0,8,7000,8000}};
+        const auto pages=captionPages({cue},4,1);QCOMPARE(pages.size(),2);
+        QCOMPARE(pages[0].startMs,qint64(1000));QCOMPARE(pages[0].endMs,qint64(3000));
+    }
+    void timedPagesDoNotSplitATokenAcrossACombiningGrapheme(){
+        SubtitleCue cue{0,5000,QString::fromUtf8("AがBC")};
+        cue.tokens={{0,2,0,2000},{2,2,2000,4000},{4,1,4000,5000}};
+        const auto pages=captionPages({cue},1,1);
+        QCOMPARE(pages.size(),2);QCOMPARE(pages[0].text,QString::fromUtf8("AがB"));QCOMPARE(pages[0].endMs,qint64(4000));QCOMPARE(pages[1].text,QString("C"));
+    }
     void captionPagesPreferWholeSentencesAndWords(){
         const auto japanese=captionPages({{0,12000,QString::fromUtf8("あいうえお。かきくけこ。")}},16,900);
         QCOMPARE(japanese.size(),2);QCOMPARE(japanese[0].text,QString::fromUtf8("あいうえお。"));QCOMPARE(japanese[1].text,QString::fromUtf8("かきくけこ。"));QCOMPARE(japanese[0].endMs,qint64(6000));QCOMPARE(japanese[1].startMs,qint64(6000));

@@ -1,6 +1,6 @@
 # 자막과 재생 사용 안내 / Captions and playback guide
 
-`0.1.0-alpha.3` · 2026-11-06
+`0.1.0-alpha.7` · 2026-11-06
 
 ## 한국어
 
@@ -15,6 +15,10 @@
 ### 원문·독음·번역과 긴 자막
 
 **원문**, **일본어 한글 독음**, **한국어 번역**을 각각 켜거나 끌 수 있습니다. 독음과 번역은 원문과 별도로 보관됩니다. 음성 인식과 번역의 장치 설정도 독립적이며, 화면의 실제 사용 장치를 확인하세요. 음성 인식의 NPU 표시는 번역까지 NPU로 처리한다는 뜻이 아닙니다.
+
+처리 순서는 **음성 → 원문 인식 → 원문·문맥을 한국어로 번역**입니다. 번역 모델에 음성을 직접 보내지 않습니다. 앞뒤 60초 안에서 준비된 원문을 참고하고 대상 자막만 번역합니다. 새 원문이 도착하면 앞으로 표시할 번역을 갱신하며, 이미 읽고 있는 번역은 그 구간 동안 유지합니다. 인식한 원문이 틀리면 해석도 틀릴 수 있습니다.
+
+선택 full large-v3 모델은 native 음성 정렬 시각으로 페이지 시작·끝을 정합니다. 토큰 경계와 쉼을 보존하며, 정렬을 얻지 못한 구간과 일반 자막은 구간 시각으로 처리합니다. 가사 전용 강제 정렬이나 완벽한 노래 인식은 보장하지 않습니다. 설치·실측은 [모델 안내](asr-model-validation.md)를 참고하세요.
 
 긴 원문은 짧은 표시 페이지로 나누고, 원래 자막 시간 안에서 차례로 보여 줍니다. 선택한 독음과 번역도 같은 원문 페이지에 맞춥니다. 짧은 시간에 너무 많은 페이지가 번쩍이지 않도록 짧은 조각은 합칠 수 있습니다. 화면 폭을 넘으면 공백 없는 한글·일본어·긴 단어도 줄바꿈하며, 글자 수에 맞춰 배치를 조정합니다. 원본 파일을 잘라 덮어쓰지 않습니다. 결합 문자와 이모지는 하나의 글자 묶음으로 보존합니다.
 
@@ -86,6 +90,10 @@ Toggle **원문** (source), **일본어 한글 독음** (Japanese reading in Han
 Long source cues become shorter timed display pages within their original cue interval. Readings and translations follow the same source page. Very short pages may merge to avoid flashing. Text wraps to the available video width, including words without spaces, and layout adapts to fit. The source file remains intact. Combining marks and emoji stay together as grapheme clusters.
 
 **표시 자막 저장** saves the selected display combination as UTF-8 SRT. Check generated recognition, reading and translation against the source. A truncated or invalid translation can skip that cue and continue with later cues; model/runtime failures are reported separately. See the [translation installation guide](INSTALL-TRANSLATION.md) for the optional model.
+
+The pipeline is **audio → original-language recognition → original/context text translated into Korean**. Audio is never sent to the translation model. Bounded original captions within 60 seconds on either side inform only the target translation. Newly available originals refresh future translations; currently displayed text remains stable for its cue. Recognition errors can still cause translation errors.
+
+The optional full large-v3 native path carries validated token alignment into page start/end times, preserving token boundaries and pauses. Unaligned segments and external subtitles retain coarse timing. This is not supplied-lyrics forced alignment or a guarantee of singing accuracy. See the [model validation](asr-model-validation.md).
 
 ### External subtitle files
 

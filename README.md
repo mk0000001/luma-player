@@ -2,7 +2,7 @@
 
 ## 한국어
 
-C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.6` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 새 인코더·오류 처리 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.6.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.7` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 토큰 시간·원문 문맥 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.7.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
 
 선택 Kotoba 모델용 C++ NPU 인코더와 설치 검사를 제공합니다. OpenVINO 2026.4.1에서 실제 NPU 연속 추론을 확인했습니다. 설치기는 실제 인코더 호출·안정성·처리 시간을 검사하고, 적합한 모델·장치 조합만 자동 NPU를 사용하며 나머지는 GPU→CPU로 대체합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·검증 범위](docs/PERFORMANCE-KOTOBA.md)를 확인하세요.
 
@@ -47,7 +47,7 @@ AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 
 
 AACS/BD+ 라이브러리 연결, Windows 캡처 제외, 인증 DRM/HDCP 출력은 서로 다른 기능입니다. 키·인증서·상용 디스크 영상·음성·메뉴 이미지·생성 자막은 배포하지 않습니다. TUKI 한 장의 성공이 모든 디스크의 호환성을 뜻하지 않습니다.
 
-보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 확인하세요.
+보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.7.md)을 확인하세요.
 
 ### 소스에서 빌드
 
@@ -75,7 +75,7 @@ pwsh -File scripts/install-translation-cuda.ps1 -Development
 pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 ```
 
-출력 이름은 `LumaPlayer-0.1.0-alpha.6-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
+출력 이름은 `LumaPlayer-0.1.0-alpha.7-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
 
 Linux 개발 빌드:
 
@@ -97,7 +97,7 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 
 ## English
 
-LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.6`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.6.md) tracks the new encoder and error handling. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.7`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.7.md) tracks token timing and original-context translation. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
 
 Native C++ Kotoba NPU conversion and installation calibration are available. Repeated genuine NPU inference was observed with OpenVINO 2026.4.1. The installer checks real encoder calls, stability and latency; automatic mode uses NPU only for a qualified model/device combination, otherwise GPU then CPU. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [measured limits](docs/PERFORMANCE-KOTOBA.md). Korean translation uses the latest buffered original context while translating only the target cue.
 
@@ -133,6 +133,6 @@ Windows requires Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, N
 
 For the CUDA ZIP, run both `install-asr-cuda.ps1 -Development` and `install-translation-cuda.ps1 -Development`, then `package-windows.ps1 -BuildDirectory build-next -IncludeCuda`, as shown above. Omitting `-IncludeCuda` preserves the core flavor. The release workflow's manual `include_cuda` input defaults to `true`; final archive size, hashes and native results remain in the release record.
 
-AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.6.md) for actual HDR/lossless, CI and packaging status.
+AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.7.md) for actual HDR/lossless, CI and packaging status.
 
 See the [changelog](CHANGELOG.md), [version policy](docs/VERSIONING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The application is GPL-3.0-or-later, Whisper/Turbo is MIT, optional Qwen3-4B/Hy-MT2 weights are Apache 2.0, and optional CUDA keeps its separate NVIDIA terms. Unmodified Noto fonts retain SIL OFL 1.1 notices.

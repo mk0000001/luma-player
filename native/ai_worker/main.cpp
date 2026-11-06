@@ -4,6 +4,8 @@
 #include <ggml-backend.h>
 #include <openvino/openvino.hpp>
 #include "encoder_identity.h"
+#include "asr_options.h"
+#include "asr_timing.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -68,17 +70,23 @@ int run(const std::vector<std::string> &args){
             const auto &arg=args[i];if(arg=="-osrt" || arg=="-np")continue;if(arg=="--server"){server=true;continue;}if(arg=="--warmup"){warmup=true;continue;}
             if(i+1>=args.size())throw std::runtime_error("Missing option value");options[arg]=args[++i];
         }
-        const auto requested=options.at("--device");
-        const bool explicitOpenVino=requested.rfind("OpenVINO:",0)==0;
-        const auto device=explicitOpenVino?requested.substr(9):requested;
-        const bool npu=device.rfind("NPU",0)==0;
-        const bool explicitNative=device.rfind("Vulkan",0)==0 || device.rfind("CUDA",0)==0;
-        if(!npu && device!="GPU" && device.rfind("GPU.",0)!=0 && !explicitNative)throw std::runtime_error("Explicit NPU or GPU device required");
-        ov::Core core;const auto devices=core.get_available_devices();bool openVinoAvailable=false;
-        for(const auto &candidate:devices)if(candidate==device || candidate.rfind(device+".",0)==0)openVinoAvailable=true;
+        const auto deviceOptions=luma::asr::parseDevice(options.at("--device"));
+        const auto &requested=deviceOptions.requested,&device=deviceOptions.device;
+        const bool cpu=deviceOptions.cpu,explicitOpenVino=deviceOptions.explicitOpenVino,npu=deviceOptions.npu,explicitNative=deviceOptions.explicitNative;
+        bool openVinoAvailable=false;
+        if(!cpu){ov::Core core;for(const auto &candidate:core.get_available_devices())if(candidate==device || candidate.rfind(device+".",0)==0)openVinoAvailable=true;}
         if(npu && !openVinoAvailable){std::cerr<<"NPU is not available to OpenVINO\n";return 20;}
+        const auto quality=luma::asr::parseQuality(options.count("--quality")?options.at("--quality"):"auto");
+        std::ifstream modelHeader(std::filesystem::u8path(options.at("-m")),std::ios::binary);
+        if(!modelHeader)throw std::runtime_error("Cannot inspect Whisper model header");
+        const auto decodeOptions=luma::asr::selectDecodeOptions(quality,luma::asr::readModelArchitecture(modelHeader));
+        modelHeader.close();
         ggml_backend_load_all();
-        auto contextParams=whisper_context_default_params();contextParams.use_gpu=!npu && !explicitOpenVino;
+        auto contextParams=whisper_context_default_params();contextParams.use_gpu=deviceOptions.useGpu;
+        contextParams.flash_attn=decodeOptions.flashAttention;
+        contextParams.dtw_token_timestamps=decodeOptions.dtw!=luma::asr::DtwPreset::None;
+        if(decodeOptions.dtw==luma::asr::DtwPreset::LargeV3)contextParams.dtw_aheads_preset=WHISPER_AHEADS_LARGE_V3;
+        else if(decodeOptions.dtw==luma::asr::DtwPreset::LargeV3Turbo)contextParams.dtw_aheads_preset=WHISPER_AHEADS_LARGE_V3_TURBO;
         if(explicitNative || (device=="GPU" && !explicitOpenVino)){
             bool found=false;int gpuIndex=0;int fallback=-1;
             for(size_t i=0;i<ggml_backend_dev_count();++i){
@@ -98,7 +106,7 @@ int run(const std::vector<std::string> &args){
         const auto gpuDevice=luma_whisper_gpu_device(context.get()),gpuBackend=luma_whisper_gpu_backend(context.get());
         const std::string actualDevice=gpuDevice?gpuDevice:"",actualBackend=gpuBackend?gpuBackend:"";
         if(explicitNative && (!nativeGpu || actualDevice!=device)){std::cerr<<"Selected GPU initialization failed\n";return 20;}
-        if(!nativeGpu){
+        if(!nativeGpu && !cpu){
             if(!openVinoAvailable || options.find("--encoder")==options.end()){std::cerr<<"No usable explicit GPU/NPU backend\n";return 20;}
             if(contextParams.use_gpu){context.reset();contextParams.use_gpu=false;context.reset(whisper_init_from_file_with_params(options.at("-m").c_str(),contextParams));if(!context)throw std::runtime_error("Cannot initialize decoder");}
             const auto encoder=options.at("--encoder"),cache=options.at("--cache");
@@ -121,10 +129,11 @@ int run(const std::vector<std::string> &args){
         const auto canceled=[&](){std::error_code error;return std::filesystem::exists(cancelPath,error);};
         if(canceled()){std::cout<<"LUMA_ABORTED="<<options.at("-of")<<std::endl;if(!server || !nextRequest())break;continue;}
         const auto samples=readPcm(options.at("-f"));
-        auto params=whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+        auto params=whisper_full_default_params(decodeOptions.beamSearch?WHISPER_SAMPLING_BEAM_SEARCH:WHISPER_SAMPLING_GREEDY);
         params.n_threads=std::clamp(std::stoi(options.at("-t")),1,16);params.language=options.at("-l").c_str();
         params.translate=false;params.print_realtime=false;params.print_progress=false;params.print_timestamps=false;params.print_special=false;
-        params.max_len=48;params.token_timestamps=true;params.greedy.best_of=1;
+        params.max_len=decodeOptions.maxLength;params.token_timestamps=true;params.greedy.best_of=decodeOptions.bestOf;
+        if(decodeOptions.beamSearch)params.beam_search.beam_size=decodeOptions.beamSize;
         params.abort_callback=[](void *data){std::error_code error;return std::filesystem::exists(*static_cast<const std::filesystem::path*>(data),error);};params.abort_callback_user_data=const_cast<std::filesystem::path*>(&cancelPath);
         std::cout<<"LUMA_WORKING="<<options.at("-of")<<std::endl;
         whisper_reset_timings(context.get());
@@ -138,16 +147,37 @@ int run(const std::vector<std::string> &args){
         // Includes actual encode-call counts; reset above prevents resident totals
         // from being mistaken for a single request or a warmed first inference.
         whisper_print_timings(context.get());
+        std::vector<luma::asr::RawSegmentTiming> rawSegments;
+        for(int i=0;i<whisper_full_n_segments(context.get());++i){
+            luma::asr::RawSegmentTiming segment;
+            segment.startTicks=whisper_full_get_segment_t0(context.get(),i);segment.endTicks=whisper_full_get_segment_t1(context.get(),i);
+            segment.text=whisper_full_get_segment_text(context.get(),i);
+            for(int j=0;j<whisper_full_n_tokens(context.get(),i);++j){
+                const auto token=whisper_full_get_token_data(context.get(),i,j);
+                if(token.id>=whisper_token_eot(context.get()))continue;
+                const char *text=whisper_token_to_str(context.get(),token.id);
+                if(text)segment.tokens.push_back({text,token.t0,token.t1,token.t_dtw});
+            }
+            rawSegments.push_back(std::move(segment));
+        }
+        const auto alignment=contextParams.dtw_token_timestamps?luma::asr::Alignment::Dtw:luma::asr::Alignment::Token;
+        const auto timing=luma::asr::buildTimingDocument(rawSegments,static_cast<int64_t>(samples.size())*1000/WHISPER_SAMPLE_RATE,alignment);
         std::ofstream output(std::filesystem::u8path(options.at("-of")+".srt"),std::ios::binary);
         if(!output)throw std::runtime_error("Cannot create subtitle output");
-        int number=0;for(int i=0;i<whisper_full_n_segments(context.get());++i){
-            std::string text=whisper_full_get_segment_text(context.get(),i);const auto first=text.find_first_not_of(" \r\n\t");if(first==std::string::npos)continue;text=text.substr(first,text.find_last_not_of(" \r\n\t")-first+1);
-            output<<++number<<'\n'<<timestamp(whisper_full_get_segment_t0(context.get(),i))<<" --> "<<timestamp(whisper_full_get_segment_t1(context.get(),i))<<'\n'<<text<<"\n\n";
+        int number=0;for(const auto &segment:rawSegments){
+            const auto text=luma::asr::trimSegmentText(segment.text);if(text.empty())continue;
+            output<<++number<<'\n'<<timestamp(segment.startTicks)<<" --> "<<timestamp(segment.endTicks)<<'\n'<<text<<"\n\n";
         }
         output.close();if(!output)throw std::runtime_error("Subtitle output write failed");
+        std::ofstream timingOutput(std::filesystem::u8path(options.at("-of")+".timings.json"),std::ios::binary);
+        if(!timingOutput)throw std::runtime_error("Cannot create token timing output");
+        luma::asr::writeTimingJson(timingOutput,timing);timingOutput.close();
+        if(!timingOutput)throw std::runtime_error("Token timing output write failed");
+        if(canceled()){std::cout<<"LUMA_ABORTED="<<options.at("-of")<<std::endl;if(!server || !nextRequest())break;continue;}
         std::cout<<std::fixed<<std::setprecision(3)<<"LUMA_AUDIO_MS="<<samples.size()/16.0<<'\n'<<"LUMA_INFERENCE_MS="<<inferenceMs<<'\n';
         std::cout<<"LUMA_ENCODER_MS="<<encoderMs<<'\n'<<"LUMA_ENCODER_CALLS="<<encoderCalls<<'\n';
-        std::cout<<"LUMA_ACCELERATOR="<<(nativeGpu?actualBackend+" GPU":"OpenVINO encoder")<<'\n'<<"LUMA_BACKEND="<<(npu?"NPU":"GPU")<<'\n'<<"LUMA_DEVICE="<<(nativeGpu?actualDevice:requested)<<'\n'<<"LUMA_DONE="<<options.at("-of")<<std::endl;
+        std::cout<<"LUMA_ALIGNMENT="<<(alignment==luma::asr::Alignment::Dtw?"dtw":"token")<<'\n'<<"LUMA_DECODING="<<(decodeOptions.beamSearch?"beam5":"greedy")<<'\n';
+        std::cout<<"LUMA_ACCELERATOR="<<(cpu?"CPU encoder":nativeGpu?actualBackend+" GPU":"OpenVINO encoder")<<'\n'<<"LUMA_BACKEND="<<(cpu?"CPU":npu?"NPU":"GPU")<<'\n'<<"LUMA_DEVICE="<<(nativeGpu?actualDevice:requested)<<'\n'<<"LUMA_DONE="<<options.at("-of")<<std::endl;
         if(!server)break;
         if(!nextRequest())break;
         }while(server);

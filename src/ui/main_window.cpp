@@ -124,7 +124,9 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     updateResumeButton();
     connect(&job_,&SubtitleJob::progress,this,[this](const QString &message){aiStatus_->setText(message);});
     connect(&job_,&SubtitleJob::backendSelected,this,[this](const QString &backend){
-        accelerator_->setText(backend=="NPU"?"음성 인코더 · NPU (실행 확인)":backend=="GPU"?"음성 인식 · GPU (실행 확인)":"음성 인식 · "+backend+" (실행 확인)");
+        auto text=backend=="NPU"?QString("음성 인코더 · NPU (실행 확인)"):backend=="GPU"?QString("음성 인식 · GPU (실행 확인)"):QString("음성 인식 · ")+backend+" (실행 확인)";
+        if(job_.selectedAlignment()=="dtw")text+=" · 음성 시점 정렬";
+        accelerator_->setText(text);
     });
     connect(&job_,&SubtitleJob::failed,this,[this](const QString &message){
         coverage_.cancel();aiFailed_=true;appendLog(message);
@@ -601,7 +603,16 @@ QVector<SubtitleCue> MainWindow::displayCues()const{
 }
 void MainWindow::rebuildManagedCaptions(){
     if(!captions_)return;
-    if(presentationDirty_){presentationCues_=captionPages(originalCues());presentationDirty_=false;}
+    if(presentationDirty_){
+        presentationCues_=captionPages(originalCues());presentationDirty_=false;
+        // Reconsider future interpretations after new raw originals arrive.
+        // Completed text already on screen stays stable for that entire cue.
+        if(translation_){
+            translation_->setContextCues(originalCues());
+            const auto position=active_?(pendingSeek_>=0?pendingSeek_:active_->state().positionMs):0;
+            for(const auto &cue:presentationCues_){const auto key=translationCueKey(cue);if(cue.startMs>position && translations_.contains(key) && translation_->needsTranslation(cue))translations_.remove(key);}
+        }
+    }
     if(readingEnabled_->isChecked())for(const auto &cue:presentationCues_)if(!readings_.contains(cue.text))readings_.insert(cue.text,reading_.reading(cue.text));
     captions_->setCues(displayCues());if(active_)captions_->setPosition(active_->state().positionMs);scheduleTranslations();
 }
@@ -667,6 +678,7 @@ void MainWindow::clearTranslationSkips(){translationSkipped_.clear();translation
 QJsonObject MainWindow::diagnostics()const{
     QJsonObject result{{"version",LUMA_VERSION},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()},{"aiBackend",job_.selectedBackend()},{"aiEnabled",aiEnabled_->isChecked()},{"aiRetryCount",aiRetryCount_},{"aiRetryAt",nextAiAttemptMs_},{"captionBufferHolding",bufferHolding_},{"captionResumeRequested",bufferResume_},{"captionBufferBypass",bufferBypass_},{"hangulReadings",readingEnabled_->isChecked()},{"readingRuntime",reading_.available()},{"originalCaptions",originalEnabled_->isChecked()},{"koreanTranslations",translationEnabled_->isChecked()},{"translationCount",translations_.size()},{"translationBackend",translation_?translation_->selectedBackend():QString{}},{"bundledFonts",qApp->property("lumaFontsLoaded").toBool()},{"externalCueCount",externalCues_.size()},{"theme",playerUsesDarkTheme()?"dark":"light"},{"fullscreen",full_},{"transportVisible",transport_->isVisible()},{"transportHeight",transport_->height()},{"developerMode",developerApproved_},{"captureAllowed",captureApproved_},{"videoRecoveryCount",videoRecoveryCount_},{"videoRecoveryExhausted",videoRecoveryExhausted_}};
     result.insert("translationSkippedCount",translationSkipped_.size());result.insert("translationPendingCount",translationPending_.size());result.insert("translationFailed",translationFailed_);
+    result.insert("aiTiming",job_.selectedAlignment());
     const auto request=job_.currentRequest();
     if(active_)result.insert("navigationTitle",active_->state().navigationTitle);
     result.insert("pendingAudioTrack",pendingAudio_);result.insert("pendingChapter",pendingChapter_);result.insert("pendingTitle",pendingTitle_);

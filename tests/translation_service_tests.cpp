@@ -54,7 +54,8 @@ private slots:
             service.setContextCues({first,past,target});service.requestCues({first,target});
             QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
             service.setContextCues({first,past,target,future});
-            QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),2,2000);
+            // The active timed cue also gained context and must be retried first.
+            QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),3,2000);
             const auto request=QJsonDocument::fromJson(contents(model+".requests").trimmed().split('\n').last()).object();
             const auto data=request.value("data").toObject();QCOMPARE(data.value("target").toObject().value("text").toString(),target.text);
             QStringList context;for(const auto &cue:data.value("context").toArray())context.append(cue.toObject().value("text").toString());
@@ -73,6 +74,59 @@ private slots:
         service.requestCues({repeated});QTRY_COMPARE_WITH_TIMEOUT(results.count(),4,2000);QCOMPARE(contents(model+".requests").count('\n'),3);
         QVERIFY(results[2][1].toString()!=results[3][1].toString());QCOMPARE(results[2][2].toString(),results[3][2].toString());QCOMPARE(errors.count(),0);
     }
+    void completedTimedTranslationNeedsOnlyChangedBoundedContext(){
+        for(const bool plain:{false,true}){
+            QTemporaryDir dir;auto model=prepare(dir);if(plain){const auto quality=dir.filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");QVERIFY(QFile::copy(model,quality));model=quality;}
+            TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+            const auto &state=service;
+            QSignalSpy results(&service,&TranslationService::translatedCue),errors(&service,&TranslationService::failed);
+            const SubtitleCue target{5000,6000,QString::fromUtf8("それを渡して。")},past{2000,3000,QString::fromUtf8("箱の話です。")},future{7000,8000,QString::fromUtf8("赤い箱を使います。")},outside{67000,68000,QString::fromUtf8("範囲外の文脈です。")};
+            service.setContextCues({past,target});QVERIFY(state.needsTranslation(target));service.requestCues({target});
+            QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);QVERIFY(!state.needsTranslation(target));
+            QVERIFY(state.needsTranslation({15000,16000,target.text}));
+            service.setContextCues({outside,target,past,past});QVERIFY(!state.needsTranslation(target));
+            service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,1000);QCOMPARE(contents(model+".requests").count('\n'),1);
+            service.setContextCues({future,past,target});QVERIFY(state.needsTranslation(target));service.requestCues({target});
+            QTRY_COMPARE_WITH_TIMEOUT(results.count(),3,2000);QVERIFY(!state.needsTranslation(target));QCOMPARE(contents(model+".requests").count('\n'),2);QCOMPARE(errors.count(),0);
+            service.cancel();QVERIFY(state.needsTranslation(target));
+        }
+    }
+    void inFlightContextChangePublishesOnlyTheLatestTimedResult(){
+        for(const bool plain:{false,true}){
+            QTemporaryDir dir;auto model=prepare(dir);if(plain){const auto quality=dir.filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");QVERIFY(QFile::copy(model,quality));model=quality;}
+            TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+            QSignalSpy results(&service,&TranslationService::translatedCue),skips(&service,&TranslationService::skippedCue),errors(&service,&TranslationService::failed);
+            const SubtitleCue target{5000,6000,QString::fromUtf8("遅い")},future{7000,8000,QString::fromUtf8("新しい手掛かりです。")};
+            service.setContextCues({target});const auto generation=service.generation();service.requestCues({target});
+            QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
+            service.setContextCues({target,future});
+            QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),2,2000);
+            QCOMPARE(results.count(),0);
+            const auto request=QJsonDocument::fromJson(contents(model+".requests").trimmed().split('\n').last()).object().value("data").toObject();
+            QCOMPARE(request.value("target").toObject().value("text").toString(),target.text);
+            QCOMPARE(request.value("context").toArray().size(),1);QCOMPARE(request.value("context").toArray().first().toObject().value("text").toString(),future.text);
+            QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,2000);QVERIFY(!service.busy());QCOMPARE(skips.count(),0);QCOMPARE(errors.count(),0);
+            QCOMPARE(results.first()[0].toULongLong(),generation);QCOMPARE(results.first()[1].toString(),translationCueKey(target));QCOMPARE(results.first()[2].toString(),target.text);
+        }
+    }
+    void inFlightContextOutsideTheBoundedPayloadDoesNotRepeatInference(){
+        QTemporaryDir dir;const auto model=prepare(dir);TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translatedCue),skips(&service,&TranslationService::skippedCue),errors(&service,&TranslationService::failed);
+        const SubtitleCue target{5000,6000,QString::fromUtf8("遅い")},outside{67000,68000,QString::fromUtf8("範囲外の文脈です。")};
+        service.setContextCues({target});service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
+        service.setContextCues({outside,target,target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,2000);
+        QCOMPARE(contents(model+".requests").count('\n'),1);QVERIFY(!service.busy());QCOMPARE(skips.count(),0);QCOMPARE(errors.count(),0);
+    }
+    void cancellationAfterAnInFlightContextRefreshDropsTheRetriedResult(){
+        QTemporaryDir dir;const auto model=prepare(dir);TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translatedCue),skips(&service,&TranslationService::skippedCue),errors(&service,&TranslationService::failed);
+        const SubtitleCue old{5000,6000,QString::fromUtf8("遅い")},future{7000,8000,QString::fromUtf8("新しい手掛かりです。")},current{10000,11000,QString::fromUtf8("新しい字幕")};
+        service.setContextCues({old});service.requestCues({old});QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
+        service.setContextCues({old,future});QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),2,2000);QCOMPARE(results.count(),0);
+        const auto generation=service.generation();service.cancel();service.setContextCues({current});service.requestCues({current});
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,2000);QTest::qWait(400);QCOMPARE(results.count(),1);QCOMPARE(skips.count(),0);QCOMPARE(errors.count(),0);QVERIFY(!service.busy());
+        QVERIFY(service.generation()>generation);QCOMPARE(results.first()[0].toULongLong(),service.generation());QCOMPARE(results.first()[1].toString(),translationCueKey(current));
+    }
     void generationAndModelChangesClearRawContext_data(){
         QTest::addColumn<QString>("change");QTest::newRow("cancel-seek-session")<<QString("cancel");QTest::newRow("model")<<QString("model");QTest::newRow("preferences")<<QString("preferences");
     }
@@ -80,9 +134,9 @@ private slots:
         QFETCH(QString,change);QTemporaryDir dir;const auto model=prepare(dir);TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
         QSignalSpy results(&service,&TranslationService::translatedCue),errors(&service,&TranslationService::failed);
         const SubtitleCue target{5000,6000,QString::fromUtf8("これは何ですか。")},context{7000,8000,QString::fromUtf8("前の動画の原文です。")};
-        service.setContextCues({target,context});service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);const auto before=service.generation();
+        service.setContextCues({target,context});service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,3000);QVERIFY(!service.needsTranslation(target));const auto before=service.generation();
         if(change=="model")service.setModel(model);else if(change=="preferences")service.setPreferences({"gpu","Vulkan0"});else service.cancel();
-        QVERIFY(service.generation()>before);service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,3000);
+        QVERIFY(service.generation()>before);QVERIFY(service.needsTranslation(target));service.requestCues({target});QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,3000);QVERIFY(!service.needsTranslation(target));
         QCOMPARE(contents(model+".requests").count('\n'),2);const auto request=QJsonDocument::fromJson(contents(model+".requests").trimmed().split('\n').last()).object();
         QCOMPARE(request.value("data").toObject().value("context").toArray().size(),0);QCOMPARE(errors.count(),0);
     }
