@@ -1,6 +1,9 @@
 #include <QtTest>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QDialog>
+#include <QLabel>
+#include <QTimer>
 #include <QFile>
 #include "ui/caption_overlay.h"
 #include "ui/theme.h"
@@ -30,10 +33,28 @@
 #include "ui/video_surface.h"
 #include "core/resume_history.h"
 #include "subtitles/translation_service.h"
+#include "subtitles/translation_support.h"
 #include "subtitles/subtitle_file.h"
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
+    bool answerConsent(luma::MainWindow &window,const QString &name,bool accept){
+        bool seen=false;
+        QTimer::singleShot(0,&window,[&]{
+            auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+            if(!dialog)return;
+            seen=dialog->objectName()==name;
+            auto *ack=dialog->findChild<QCheckBox*>("consentAcknowledged");
+            auto *approve=dialog->findChild<QPushButton*>("consentApprove");
+            auto *cancel=dialog->findChild<QPushButton*>("consentCancel");
+            if(!seen || !ack || !approve || !cancel){dialog->reject();return;}
+            QVERIFY(!approve->isEnabled());
+            if(accept){ack->setChecked(true);QVERIFY(approve->isEnabled());approve->click();}else cancel->click();
+        });
+        auto *check=window.findChild<QCheckBox*>(name=="developerConsentDialog"?"developerMode":"captureAllowed");
+        if(!check)return false;
+        check->setChecked(true);QCoreApplication::processEvents();return seen;
+    }
 private slots:
     void initTestCase(){
         QCoreApplication::setOrganizationName("LumaPlayerTests");
@@ -42,6 +63,14 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void failedOpenDoesNotKeepPauseIntent(){
+        QTemporaryDir media;luma::MainWindow window;window.show();
+        auto *play=window.findChild<QPushButton*>("playButton");QVERIFY(play);
+        window.openSource(media.filePath("missing.mp4"));
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["failed"].toBool(),5000);
+        QTRY_VERIFY_WITH_TIMEOUT(play->accessibleName().startsWith("재생 ·"),2000);
+        QVERIFY(!window.diagnostics()["captionResumeRequested"].toBool());
+    }
     void darkIsDefaultAndLightPreferenceSurvivesThemeReinstall(){
         luma::installPlayerTheme();
         QWidget dark;dark.show();QCoreApplication::processEvents();
@@ -86,11 +115,11 @@ private slots:
         for(int i=0;i<3;++i){reading->setChecked(true);reading->setChecked(false);}
         original->setChecked(true);QCOMPARE(overlay->captionText(),QString("Original caption"));
         translation->setChecked(true);auto *service=window.findChild<luma::TranslationService*>();QVERIFY(service);
-        const auto generation=service->generation();service->translated(generation,"Original caption","한국어 번역");
+        const auto generation=service->generation();const auto cueKey=luma::translationCueKey({0,2000,"Original caption"});service->translatedCue(generation,cueKey,"Original caption","한국어 번역");
         QCOMPARE(overlay->captionText(),QString("Original caption\n한국어 번역"));
         original->setChecked(false);QCOMPARE(overlay->captionText(),QString("한국어 번역"));
         translation->setChecked(false);QVERIFY(overlay->captionText().isEmpty());
-        service->translated(generation,"Original caption","오래된 결과");
+        service->translatedCue(generation,cueKey,"Original caption","오래된 결과");
         original->setChecked(true);translation->setChecked(true);
         QCOMPARE(overlay->captionText(),QString("Original caption\n한국어 번역"));
     }
@@ -177,22 +206,35 @@ private slots:
         QVERIFY(service);QVERIFY(job);QVERIFY(overlay);QVERIFY(ai);QVERIFY(original);QVERIFY(reading);QVERIFY(translation);
         const bool originalChoice=original->isChecked(),readingChoice=reading->isChecked();
         job->ready(job->generation(),{{0,1000,"Synthetic source one"},{1000,2000,"Synthetic source two"}});
-        const auto generation=service->generation();service->skipped(generation,"Synthetic source one","Synthetic truncated cue");
+        const auto generation=service->generation();const auto first=luma::translationCueKey({0,1000,"Synthetic source one"});const auto second=luma::translationCueKey({1000,2000,"Synthetic source two"});
+        service->skippedCue(generation,first,"Synthetic source one","Synthetic truncated cue");
         QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),1);QCOMPARE(window.diagnostics().value("translationPendingCount").toInt(),1);
         QVERIFY(!window.diagnostics().value("translationFailed").toBool());QVERIFY(ai->isChecked());QVERIFY(translation->isChecked());
         QCOMPARE(original->isChecked(),originalChoice);QCOMPARE(reading->isChecked(),readingChoice);QCOMPARE(overlay->captionText(),QString("Synthetic source one"));
-        service->translated(generation,"Synthetic source two","다음 합성 자막");
+        service->translatedCue(generation,second,"Synthetic source two","다음 합성 자막");
         QCOMPARE(window.diagnostics().value("translationCount").toInt(),1);QCOMPARE(window.diagnostics().value("translationPendingCount").toInt(),0);
-        service->skipped(generation-1,"Old synthetic source","Stale synthetic error");QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),1);
+        service->skippedCue(generation-1,"old-key","Old synthetic source","Stale synthetic error");QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),1);
         auto *retry=window.findChild<QPushButton*>("retryCaptions");QVERIFY(retry);retry->click();QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),0);
-        service->skipped(service->generation(),"Synthetic source one","Synthetic retry failure");QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),1);
+        service->skippedCue(service->generation(),first,"Synthetic source one","Synthetic retry failure");QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),1);
         translation->setChecked(false);translation->setChecked(true);QCOMPARE(window.diagnostics().value("translationSkippedCount").toInt(),0);
         service->failed("Synthetic missing backend");QVERIFY(window.diagnostics().value("translationFailed").toBool());QVERIFY(ai->isChecked());QVERIFY(translation->isChecked());
+    }
+    void repeatedCaptionTextKeepsItsOwnContextualTranslation(){
+        QTemporaryDir folder;QSettings().setValue("translation/model",folder.filePath("missing-fixture.gguf"));
+        luma::MainWindow window;window.openSource(folder.filePath("synthetic-video.mkv"));
+        QFile file(folder.filePath("owned.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 00:00:01,000\nSame synthetic words\n\n2\n00:00:02,000 --> 00:00:03,000\nSame synthetic words\n");file.close();QVERIFY(window.loadCaptionFile(file.fileName()));
+        auto *service=window.findChild<luma::TranslationService*>();auto *overlay=window.findChild<luma::CaptionOverlay*>();auto *translation=window.findChild<QCheckBox*>("translationEnabled");QVERIFY(service);QVERIFY(overlay);QVERIFY(translation);translation->setChecked(true);
+        const auto first=luma::translationCueKey({0,1000,"Same synthetic words"}),second=luma::translationCueKey({2000,3000,"Same synthetic words"});
+        const auto generation=service->generation();service->translatedCue(generation,first,"Same synthetic words","첫 번째 문맥");service->translatedCue(generation,second,"Same synthetic words","두 번째 문맥");
+        QCOMPARE(window.diagnostics().value("translationCount").toInt(),2);
+        overlay->setPosition(100);QVERIFY(overlay->captionText().contains("첫 번째 문맥"));QVERIFY(!overlay->captionText().contains("두 번째 문맥"));
+        overlay->setPosition(2100);QVERIFY(overlay->captionText().contains("두 번째 문맥"));QVERIFY(!overlay->captionText().contains("첫 번째 문맥"));
+        window.openSource(folder.filePath("different-synthetic-video.mkv"));service->translatedCue(generation,first,"Same synthetic words","오래된 번역");QCOMPARE(window.diagnostics().value("translationCount").toInt(),0);
     }
     void diagnosticsRequirePersistedDeveloperMode(){
         luma::MainWindow window;auto *mode=window.findChild<QCheckBox*>("developerMode");auto *details=window.findChild<QWidget*>("developerDiagnostics");
         QVERIFY(mode);QVERIFY(details);QVERIFY(!mode->isChecked());QVERIFY(details->isHidden());
-        mode->setChecked(true);QVERIFY(!details->isHidden());QVERIFY(QSettings().value("ui/developerMode").toBool());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!details->isHidden());QVERIFY(QSettings().value("ui/developerMode").toBool());
         luma::MainWindow restored;auto *restoredMode=restored.findChild<QCheckBox*>("developerMode");QVERIFY(restoredMode);QVERIFY(restoredMode->isChecked());
     }
     void motionChoicesPersistWithoutClaimingRequestedFpsAsOutput(){
@@ -203,7 +245,49 @@ private slots:
         mode->setFocus();QTest::keyClick(mode,Qt::Key_Down);QCOMPARE(QSettings().value("motion/mode").toString(),QString("optical"));
         fps->setFocus();QTest::keyClick(fps,Qt::Key_End);QCOMPARE(QSettings().value("motion/fps").toInt(),360);
     }
+    void captureAllowanceRequiresTwoSeparateAcknowledgments(){
+        luma::MainWindow window;
+        auto *mode=window.findChild<QCheckBox*>("developerMode");
+        auto *capture=window.findChild<QCheckBox*>("captureAllowed");
+        auto *panel=window.findChild<QWidget*>("developerDiagnostics");QVERIFY(mode);QVERIFY(capture);QVERIFY(panel);
+        QVERIFY(panel->isAncestorOf(capture));QVERIFY(!mode->isChecked());QVERIFY(!capture->isChecked());
+        QVERIFY(answerConsent(window,"developerConsentDialog",false));QVERIFY(!mode->isChecked());QVERIFY(panel->isHidden());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(mode->isChecked());QVERIFY(!capture->isChecked());
+        QVERIFY(answerConsent(window,"captureConsentDialog",false));QVERIFY(!capture->isChecked());
+        QVERIFY(answerConsent(window,"captureConsentDialog",true));QVERIFY(capture->isChecked());
+        {luma::MainWindow restored;QVERIFY(restored.findChild<QCheckBox*>("developerMode")->isChecked());QVERIFY(restored.findChild<QCheckBox*>("captureAllowed")->isChecked());}
+        mode->setChecked(false);QVERIFY(!capture->isChecked());QVERIFY(!QSettings().value("privacy/captureAllowed").toBool());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!capture->isChecked());
+    }
+    void legacyDeveloperAndCaptureSettingsDoNotBypassConsent(){
+        QSettings().setValue("ui/developerMode",true);QSettings().setValue("privacy/captureProtectedDisc",false);QSettings().setValue("privacy/captureAllowed",true);QSettings().setValue("privacy/captureConsentVersion",1);
+        luma::MainWindow window;
+        auto *mode=window.findChild<QCheckBox*>("developerMode");auto *capture=window.findChild<QCheckBox*>("captureAllowed");
+        QVERIFY(mode);QVERIFY(capture);QVERIFY(!mode->isChecked());QVERIFY(!capture->isChecked());
+        QVERIFY(!window.diagnostics().value("developerMode").toBool());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        luma::MainWindow restored;QVERIFY(!restored.findChild<QCheckBox*>("captureAllowed")->isChecked());
+    }
+    void captureRemainsBlockedWhileConsentDialogIsPending(){
+        luma::MainWindow window;QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        auto *capture=window.findChild<QCheckBox*>("captureAllowed");QVERIFY(capture);QTemporaryDir folder;
+        bool seen=false,blocked=false,allowed=false;
+        QTimer::singleShot(0,&window,[&]{
+            auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());if(!dialog)return;
+            seen=dialog->objectName()=="captureConsentDialog";
+            QUrl source=QUrl::fromLocalFile(folder.path());source.setScheme("bluray");window.openSource(source.toString(QUrl::FullyEncoded));
+            blocked=window.diagnostics().value("captureRequested").toBool();allowed=window.diagnostics().value("captureAllowed").toBool();dialog->reject();
+        });
+        capture->setChecked(true);QVERIFY(seen);QVERIFY2(blocked,"Opening or recovering a protected source during pending consent must not disable exclusion");QVERIFY(!allowed);QVERIFY(!capture->isChecked());
+    }
+    void queuedOutputLossCannotReopenANewerUserSource(){
+        QTemporaryDir folder;luma::MainWindow window;window.openSource(folder.filePath("first-owned.mkv"));
+        luma::PlaybackEngine *engine=nullptr;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("mpv",Qt::CaseInsensitive))engine=item;QVERIFY(engine);
+        QPointer<luma::PlaybackEngine> original=engine;engine->videoOutputLost("Synthetic previous-session device loss");window.openSource(folder.filePath("second-owned.mkv"));QTest::qWait(100);
+        QCOMPARE(window.diagnostics().value("videoRecoveryCount").toInt(),0);QVERIFY(!original.isNull());
+    }
     void protectedFolderUriRequestsCaptureExclusion(){
+        QSettings().setValue("privacy/captureProtectedDisc",true);
         QTemporaryDir folder;QVERIFY(folder.isValid());QDir root(folder.path());
         QVERIFY(root.mkpath("BDMV"));QVERIFY(root.mkpath("AACS"));
         QByteArray index(70,'\0');index.replace(0,8,"INDX0200");
@@ -230,6 +314,79 @@ private slots:
         luma::MainWindow restored;restored.show();restored.openSource(media);
         QTRY_VERIFY_WITH_TIMEOUT(std::abs(restored.diagnostics().value("positionMs").toDouble()-saved->positionMs)<1500,15000);
         auto *resume=restored.findChild<QPushButton*>("resumePlayback");QVERIFY(resume);QVERIFY(resume->isEnabled());
+    }
+    void realOwnedFileRecoversVideoOutputOnceAndPreservesPause_data(){
+        QTest::addColumn<int>("fraction");QTest::addColumn<bool>("paused");QTest::addColumn<bool>("toggleWhileLoading");
+        QTest::newRow("paused-middle")<<4000<<true<<false;QTest::newRow("playing-middle")<<4000<<false<<false;
+        QTest::newRow("paused-near-end")<<9400<<true<<false;QTest::newRow("playing-near-end")<<9400<<false<<false;
+        QTest::newRow("paused-then-play")<<4000<<true<<true;QTest::newRow("playing-then-pause")<<4000<<false<<true;
+    }
+    void realOwnedFileRecoversVideoOutputOnceAndPreservesPause(){
+        QFETCH(int,fraction);QFETCH(bool,paused);QFETCH(bool,toggleWhileLoading);
+        const auto media=qEnvironmentVariable("LUMA_UI_RESUME_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_RESUME_MEDIA to owned local video for renderer recovery verification.");
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);
+        luma::MainWindow window;window.show();window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("durationMs").toDouble()>=35000 && window.diagnostics().value("playing").toBool(),15000);
+        auto *play=window.findChild<QPushButton*>("playButton");auto *seek=window.findChild<QSlider*>("seekSlider");QVERIFY(play);QVERIFY(seek);play->click();
+        seek->setSliderDown(true);seek->setValue(fraction);seek->setSliderDown(false);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("playing").toBool() && std::abs(window.diagnostics().value("positionMs").toDouble()-window.diagnostics().value("durationMs").toDouble()*fraction/10000.)<1000,10000);
+        const auto position=window.diagnostics().value("positionMs").toDouble();const auto initialCues=window.diagnostics().value("aiCueCount").toInt();
+        luma::PlaybackEngine *engine=nullptr;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("mpv",Qt::CaseInsensitive))engine=item;QVERIFY(engine);
+        bool inputDuringRecovery=false;
+        QPointer<luma::PlaybackEngine> previous=engine;if(!paused)play->click();engine->videoOutputLost("Synthetic device removed notification");
+        if(toggleWhileLoading)QTimer::singleShot(0,&window,[&]{if(window.diagnostics().value("resumePending").toBool()){play->click();paused=!paused;inputDuringRecovery=true;}});
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("videoRecoveryCount").toInt(),1,10000);
+        if(toggleWhileLoading)QVERIFY(inputDuringRecovery);
+        QTRY_VERIFY_WITH_TIMEOUT(previous.isNull(),10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("resumePending").toBool() && window.diagnostics().value("playing").toBool()!=paused && std::abs(window.diagnostics().value("positionMs").toDouble()-position)<1000,15000);
+        QCOMPARE(window.diagnostics().value("aiCueCount").toInt(),initialCues);
+        engine=nullptr;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("mpv",Qt::CaseInsensitive))engine=item;QVERIFY(engine);
+        QPointer<luma::PlaybackEngine> replacement=engine;engine->videoOutputLost("Synthetic repeated removal");QTest::qWait(400);
+        QCOMPARE(window.diagnostics().value("videoRecoveryCount").toInt(),1);QVERIFY(!replacement.isNull());QVERIFY(!window.diagnostics().value("playing").toBool());
+        auto *status=window.findChild<QLabel*>("status");QVERIFY(status);QVERIFY(status->text().contains("다시 열어"));
+    }
+    void physicalDiscRecoveryPreservesImportedCaptions(){
+        const auto disc=qEnvironmentVariable("LUMA_UI_TEST_DISC");if(disc.isEmpty())QSKIP("Set LUMA_UI_TEST_DISC for native title/caption recovery verification.");
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);QSettings().setValue("subtitles/hangul",false);
+        luma::MainWindow window;window.show();window.openSource(disc);auto *titles=window.findChild<QComboBox*>("discTitles");
+        if(!titles)for(auto *box:window.findChildren<QComboBox*>())if(box->objectName()=="titles")titles=box;
+        QVERIFY(titles);QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("title").toInt(-1)==0 && window.diagnostics().value("playing").toBool(),45000);
+        const auto overlayReady=[&window]{for(const auto &message:window.diagnostics().value("recentMessages").toArray())if(message.toString().contains("Initializing overlay"))return true;return false;};QTRY_VERIFY_WITH_TIMEOUT(overlayReady(),15000);QTest::qWait(300);
+        QPushButton *activate=nullptr;for(auto *control:window.findChildren<QPushButton*>())if(control->accessibleName()==QString::fromUtf8("디스크 확인")){activate=control;break;}QVERIFY(activate);activate->click();
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("title").toInt()==1 && window.diagnostics().value("timelineReady").toBool() && window.diagnostics().value("playing").toBool(),20000);
+        auto *play=window.findChild<QPushButton*>("playButton");auto *seek=window.findChild<QSlider*>("seekSlider");QVERIFY(play);QVERIFY(seek);play->click();seek->setSliderDown(true);seek->setValue(500);seek->setSliderDown(false);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("playing").toBool() && std::abs(window.diagnostics().value("positionMs").toDouble()-window.diagnostics().value("durationMs").toDouble()*.05)<1500,10000);
+        const auto position=window.diagnostics().value("positionMs").toDouble();QTemporaryDir folder;QFile file(folder.filePath("owned.srt"));QVERIFY(file.open(QIODevice::WriteOnly));file.write("1\n00:00:00,000 --> 03:00:00,000\nOwned synthetic recovery subtitle\n");file.close();QVERIFY(window.loadCaptionFile(file.fileName()));
+        luma::PlaybackEngine *engine=nullptr;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("VLC",Qt::CaseInsensitive))engine=item;QVERIFY(engine);engine->videoOutputLost("Synthetic device loss during physical disc playback");
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("videoRecoveryCount").toInt(),1,10000);
+        bool recoveredOverlay=false;
+        for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("VLC",Qt::CaseInsensitive))connect(item,&luma::PlaybackEngine::logMessage,&window,[&](const QString &message){if(message.contains("Initializing overlay"))recoveredOverlay=true;});
+        QElapsedTimer restoreTime;restoreTime.start();bool activated=false,restored=false;int lastSecond=-1;
+        while(restoreTime.elapsed()<60000){
+            const auto state=window.diagnostics();
+            if(state.value("title").toInt(-1)==0 && recoveredOverlay && !activated){QTest::qWait(300);activate->click();activated=true;}
+            restored=!state.value("resumePending").toBool() && state.value("title").toInt()==1 && std::abs(state.value("positionMs").toDouble()-position)<1500;
+            if(restored)break;
+            const int seconds=int(restoreTime.elapsed()/1000);if(seconds/5!=lastSecond/5){qInfo()<<"Recovery observation"<<seconds<<"title"<<state.value("title").toInt()<<"position"<<state.value("positionMs").toDouble()<<"duration"<<state.value("durationMs").toDouble()<<"playing"<<state.value("playing").toBool()<<"timeline"<<state.value("timelineReady").toBool()<<"pending"<<state.value("resumePending").toBool();lastSecond=seconds;}
+            QTest::qWait(100);
+        }
+        QVERIFY2(restored,"Restore the physical disc position after its permitted menu action");
+        QCOMPARE(window.diagnostics().value("externalCueCount").toInt(),1);QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("playing").toBool(),5000);
+    }
+    void realOwnedFileRepeatedLossDuringRecoveryRemainsStopped(){
+        const auto media=qEnvironmentVariable("LUMA_UI_RESUME_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_RESUME_MEDIA for pending recovery exhaustion verification.");
+        QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);luma::MainWindow window;window.show();window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool() && window.diagnostics().value("durationMs").toDouble()>=35000,15000);
+        luma::PlaybackEngine *engine=nullptr;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("mpv",Qt::CaseInsensitive))engine=item;QVERIFY(engine);
+        bool injected=false,exhaustionObserved=false,pendingAtExhaustion=true;engine->videoOutputLost("Synthetic first device removal");
+        QTimer::singleShot(0,&window,[&]{if(!window.diagnostics().value("resumePending").toBool())return;for(auto *item:window.findChildren<luma::PlaybackEngine*>())if(item->name().contains("mpv",Qt::CaseInsensitive)){
+            injected=true;item->videoOutputLost("Synthetic replacement loss while loading");
+            // Model delayed native notifications: the queued loss must stop
+            // recovery before a later status update can reuse its play intent.
+            item->blockSignals(true);QTimer::singleShot(60,item,[item]{item->blockSignals(false);item->updated();});break;
+        }QTimer::singleShot(0,&window,[&]{exhaustionObserved=window.diagnostics().value("videoRecoveryExhausted").toBool();pendingAtExhaustion=window.diagnostics().value("resumePending").toBool();});});
+        QTRY_VERIFY_WITH_TIMEOUT(injected && exhaustionObserved,2000);QVERIFY(!pendingAtExhaustion);QTest::qWait(700);
+        QVERIFY(!window.diagnostics().value("resumePending").toBool());QVERIFY(!window.diagnostics().value("playing").toBool());QVERIFY(!window.diagnostics().value("requestedPlaying").toBool());QCOMPARE(window.diagnostics().value("videoRecoveryCount").toInt(),1);
     }
     void realAudioSwitchPreservesImportedCaptions(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_MEDIA");if(media.isEmpty())QSKIP("Set LUMA_UI_TEST_MEDIA to the owned two-audio video.");

@@ -16,7 +16,18 @@ int main(int argc,char **argv){
     if(!prefix.empty()){
         if(!device.empty())if(const auto log=std::getenv("LUMA_FIXTURE_ASR_STARTS")){std::ofstream starts(log,std::ios::app);starts<<"start\n";}
         const auto nextRequest=[&](){std::string line;if(!std::getline(std::cin,line))return false;const auto tab=line.find('\t');if(tab==std::string::npos)return false;wav=line.substr(0,tab);const auto end=line.find('\t',tab+1);prefix=line.substr(tab+1,end-tab-1);return true;};
-        if(warmup){if(std::getenv("LUMA_FIXTURE_WARMUP_FAIL"))return 20;if(const auto delay=std::getenv("LUMA_FIXTURE_WARMUP_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(std::stoi(delay)));std::cout<<"LUMA_READY"<<std::endl;if(!nextRequest())return 0;}
+        if(warmup){
+            if(std::getenv("LUMA_FIXTURE_WARMUP_FAIL"))return 20;
+            if(const auto gate=std::getenv("LUMA_FIXTURE_WARMUP_GATE")){
+                const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+                while(!std::filesystem::exists(gate)){
+                    if(std::chrono::steady_clock::now()>=deadline)return 24;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            }
+            if(const auto delay=std::getenv("LUMA_FIXTURE_WARMUP_DELAY"))std::this_thread::sleep_for(std::chrono::milliseconds(std::stoi(delay)));
+            std::cout<<"LUMA_READY"<<std::endl;if(!nextRequest())return 0;
+        }
         int request=0;do{
         std::ifstream input(wav,std::ios::binary);std::string payload(128,'\0');input.read(payload.data(),128);input.close();
         const auto requestNumber=++request;

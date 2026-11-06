@@ -53,6 +53,7 @@ signals:
     void updated();
     void logMessage(QString message);
     void errorOccurred(QString message);
+    void videoOutputLost(QString message);
 private:
     struct Impl;
     std::unique_ptr<Impl> d;

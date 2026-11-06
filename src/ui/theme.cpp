@@ -40,7 +40,7 @@ void installPlayerTheme(){
       QPushButton{background:%3;border:1px solid transparent;border-radius:17px;padding:8px 14px;font-weight:600;min-height:18px;}
       QPushButton:hover{background:%7;border-color:%6;} QPushButton:pressed{background:%6;}
       QPushButton:focus{border-color:#2189ff;} QPushButton:disabled{color:%5;}
-      QPushButton#primary{background:#2189ff;color:#fff;border:1px solid #2189ff;} QPushButton#primary:hover{background:#459cff;}
+      QPushButton#primary,QPushButton#consentApprove:enabled{background:#2189ff;color:#fff;border:1px solid #2189ff;} QPushButton#primary:hover,QPushButton#consentApprove:enabled:hover{background:#459cff;}
       QPushButton#subtle{background:transparent;border:1px solid %6;}
       QPushButton#themeToggle{background:transparent;border:1px solid %6;min-width:74px;}
       QPushButton#iconButton{background:transparent;border:1px solid transparent;border-radius:17px;padding:0;min-height:0;}

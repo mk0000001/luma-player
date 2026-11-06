@@ -43,9 +43,14 @@ if (!$SkipRecognition) {
     }
     if (!$env:VULKAN_SDK -and (Test-Path -LiteralPath 'C:/VulkanSDK/Bin/glslc.exe')) { $env:VULKAN_SDK = 'C:/VulkanSDK' }
     if (!$env:VULKAN_SDK) { throw 'Vulkan SDK is required. Run bootstrap-windows.ps1 or set VULKAN_SDK.' }
-    $openVino = Join-Path $projectRoot '.deps/openvino/w_openvino_toolkit_windows_2024.1.0.15008.f4afc983258_x86_64/runtime/cmake'
+    $dependencyLock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $openVinoDependency = @($dependencyLock.native | Where-Object id -EQ 'openvino')
+    if ($openVinoDependency.Count -ne 1) { throw 'Exactly one pinned OpenVINO SDK is required.' }
+    $openVinoConfig = Join-Path $projectRoot ('.deps/'+$openVinoDependency[0].target+'/'+$openVinoDependency[0].marker)
+    if (!(Test-Path -LiteralPath $openVinoConfig -PathType Leaf)) { throw 'Run bootstrap-windows.ps1 to install the pinned OpenVINO SDK.' }
+    $openVino = Split-Path -Parent $openVinoConfig
     $workerBuild = Join-Path $projectRoot '.deps/build-ai'
-    & cmake -S (Join-Path $projectRoot 'native/ai_worker') -B $workerBuild -G Ninja "-DCMAKE_CXX_COMPILER=$((Get-Command cl).Source)" "-DCMAKE_C_COMPILER=$((Get-Command cl).Source)" "-DCMAKE_PREFIX_PATH=$env:VULKAN_SDK" "-DVulkan_INCLUDE_DIR=$env:VULKAN_SDK/Include" "-DVulkan_LIBRARY=$env:VULKAN_SDK/Lib/vulkan-1.lib" "-DVulkan_GLSLC_EXECUTABLE=$env:VULKAN_SDK/Bin/glslc.exe" -DCMAKE_BUILD_TYPE=Release "-DOpenVINO_DIR=$openVino" "-DWHISPER_SOURCE=$projectRoot/.deps/whisper-source/whisper.cpp-b5454"
+    & cmake -S (Join-Path $projectRoot 'native/ai_worker') -B $workerBuild -G Ninja "-DCMAKE_CXX_COMPILER=$((Get-Command cl).Source)" "-DCMAKE_C_COMPILER=$((Get-Command cl).Source)" "-DCMAKE_PREFIX_PATH=$env:VULKAN_SDK" "-DVulkan_INCLUDE_DIR=$env:VULKAN_SDK/Include" "-DVulkan_LIBRARY=$env:VULKAN_SDK/Lib/vulkan-1.lib" "-DVulkan_GLSLC_EXECUTABLE=$env:VULKAN_SDK/Bin/glslc.exe" -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF "-DOpenVINO_DIR=$openVino" "-DWHISPER_SOURCE=$projectRoot/.deps/whisper-source/whisper.cpp-b5454"
     if ($LASTEXITCODE) { throw 'Local AI worker configuration failed' }
     & cmake --build $workerBuild --parallel 6
     if ($LASTEXITCODE) { throw 'Local AI worker build failed' }

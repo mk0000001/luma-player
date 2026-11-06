@@ -180,7 +180,7 @@ try {
             Write-PackageFixture (Join-Path $directory ('dummy'+$extension)) 'owned dummy fixture'
             Expect-PackageFailure { Assert-LumaPackagePublicFiles -Directory $directory } "Private extension accepted: $extension"
         }
-        foreach($name in 'KEYDB.cfg','HostKeyCertificate.txt','ProcessingDeviceKeysSimple.txt') {
+        foreach($name in 'KEYDB.cfg','HostKeyCertificate.txt','ProcessingDeviceKeysSimple.txt','ggml-kotoba-whisper-v2.0-q5_0-encoder-openvino.npu-profile.json') {
             $directory=Join-Path $packageTestRoot ([guid]::NewGuid().ToString('N'))
             Write-PackageFixture (Join-Path $directory $name) 'owned dummy fixture'
             Expect-PackageFailure { Assert-LumaPackagePublicFiles -Directory $directory } "Private name accepted: $name"

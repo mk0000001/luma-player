@@ -37,14 +37,39 @@ bool discTimelineReady(qint64 liveDurationMs,qint64 titleDurationMs,bool navigat
     const auto difference=liveDurationMs>titleDurationMs?liveDurationMs-titleDurationMs:titleDurationMs-liveDurationMs;
     return difference<=2000;
 }
+namespace {
+QString discFailureDetail(const QString &message){
+    const auto has=[&](const char *text){return message.contains(QString::fromLatin1(text),Qt::CaseInsensitive);};
+    const auto retry=QStringLiteral(" 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
+    if(has("Missing AACS configuration file"))return QStringLiteral("이번 재생에서 AACS 설정을 불러오지 못했습니다.")+retry;
+    if(has("needs a library for AACS decoding"))return QStringLiteral("AACS 읽기 라이브러리를 불러오지 못했습니다. 설치 파일과 개발자 모드의 진단을 확인하세요.");
+    if(has("No valid processing key found in AACS config file"))return QStringLiteral("이 디스크에 사용할 수 있는 AACS 처리 키를 확인하지 못했습니다. 개발자 모드의 진단을 확인하세요.");
+    if(has("No valid host certificate found in AACS config file"))return QStringLiteral("유효한 AACS 호스트 인증서를 확인하지 못했습니다. 개발자 모드의 진단을 확인하세요.");
+    if(has("AACS Host certificate revoked"))return QStringLiteral("AACS 호스트 인증서가 폐기되어 이번 재생을 시작하지 못했습니다. 개발자 모드의 진단을 확인하세요.");
+    if(has("AACS MMC failed"))return QStringLiteral("AACS 처리 중 디스크 드라이브와 통신하지 못했습니다.")+retry;
+    if(has("needs a library for BD+ decoding"))return QStringLiteral("BD+ 읽기 라이브러리를 불러오지 못했습니다. 설치 파일과 개발자 모드의 진단을 확인하세요.");
+    if(has("Your system BD+ decoding library does not work"))return QStringLiteral("이 디스크의 BD+ 처리를 시작하지 못했습니다.")+retry;
+    return {};
+}
+QString videoOutputLossReason(const QString &message){
+    if(!message.contains("SwapChain Present failed",Qt::CaseInsensitive))return {};
+    static const QRegularExpression hresult(QStringLiteral("\\bhr\\s*=\\s*(0x887a000[57])\\b"),QRegularExpression::CaseInsensitiveOption);
+    const auto match=hresult.match(message);if(!match.hasMatch())return {};
+    const auto code=match.captured(1).toLower();
+    const auto name=code=="0x887a0005"?QStringLiteral("DXGI_ERROR_DEVICE_REMOVED"):QStringLiteral("DXGI_ERROR_DEVICE_RESET");
+    return QStringLiteral("영상 출력 장치를 사용할 수 없어 영상 출력을 다시 준비해야 합니다. (%1, %2)").arg(name,code);
+}
+}
 struct PlaybackEngine::Impl {
     PlaybackEngine *owner;
     Kind kind;
     QLibrary lib;
     QString error;
+    QString discError;
     PlaybackState state;
     QTimer timer;
     bool ready=false, errorSent=false;
+    bool videoOutputActive=false,videoOutputLossSent=false;
     bool managedSubtitle=false;
     MotionOptions motion;
     QString motionMetadata;
@@ -105,7 +130,15 @@ struct PlaybackEngine::Impl {
 #endif
     }
     template<class T> bool resolve(T &f,const char *name) { f=reinterpret_cast<T>(lib.resolve(name)); if(!f) error=QString("Media runtime symbol missing: %1").arg(name); return f!=nullptr; }
-    void fail(const QString &text) { error=text; state.failed=true; if(!errorSent){errorSent=true; emit owner->errorOccurred(text);} }
+    void fail(const QString &text) {
+        const bool detailed=kind==Kind::Disc && !discError.isEmpty();
+        const auto message=detailed?discError:(kind==Kind::Disc && errorSent?error:text);
+        const bool changed=error!=message;
+        error=message;state.failed=true;state.playing=false;state.timelineReady=false;
+        // 첫 상세 원인은 세션 종료까지 유지하고, 늦게 도착하면 일반 오류를 승격한다.
+        // Keep the first detailed reason for this session and upgrade a prior generic error.
+        if(!errorSent || (detailed && changed)){errorSent=true;emit owner->errorOccurred(message);}
+    }
     int command(const QList<QByteArray> &args) {
         if(!mpv) return MPV_ERROR_UNINITIALIZED;
         QVector<const char *> pointers; for(const auto &s:args) pointers.append(s.constData()); pointers.append(nullptr);
@@ -131,7 +164,18 @@ struct PlaybackEngine::Impl {
             if(generation!=o->d->generation.load() || o->d->stopping.load())return;emit o->logMessage(msg);
             if(msg.contains("Using D3D11VA"))o->d->state.hardwareDecoder="D3D11VA";
             else if(msg.contains("Using DXVA2"))o->d->state.hardwareDecoder="DXVA2";
-            if(msg.contains("Your input can't be opened") || msg.startsWith("VLC is unable to open"))o->d->fail(msg);
+            const auto outputLoss=videoOutputLossReason(msg);
+            if(!outputLoss.isEmpty() && o->d->videoOutputActive && !o->d->state.failed && !o->d->videoOutputLossSent){
+                // 신호 수신자가 복구를 결정한다. 여기서는 전송 상태를 실패로 바꾸지 않는다.
+                // The receiver owns recovery; device-loss notification is not a fatal transport error.
+                o->d->videoOutputLossSent=true;emit o->videoOutputLost(outputLoss);
+            }
+            const auto detail=discFailureDetail(msg);
+            if(!detail.isEmpty()){
+                if(o->d->discError.isEmpty())o->d->discError=detail;
+                o->d->fail(detail);
+            }else if(msg.contains("Your input can't be opened") || msg.startsWith("VLC is unable to open"))
+                o->d->fail("Blu-ray 재생을 시작할 수 없습니다. 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
         },Qt::QueuedConnection);
     }
 };
@@ -221,7 +265,7 @@ QString PlaybackEngine::name()const{return d->kind==Kind::Disc?"libVLC · Blu-ra
 const PlaybackState &PlaybackEngine::state()const{return d->state;}
 bool PlaybackEngine::open(const QString &source,WId surface){
     if(!available()){d->fail(d->error);return false;}
-    stop();++d->generation;d->state={};d->errorSent=false;d->managedSubtitle=false;d->managedMpvSubtitle=-1;
+    stop();++d->generation;d->state={};d->errorSent=false;d->error.clear();d->discError.clear();d->managedSubtitle=false;d->managedMpvSubtitle=-1;
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     if(d->kind==Kind::Disc){
         QString url=source;
@@ -247,10 +291,12 @@ bool PlaybackEngine::open(const QString &source,WId surface){
         d->mpv_set_property_string(d->mpv,"interpolation","no");
         d->command({"loadfile",source.toUtf8(),"replace"});
     }
+    d->videoOutputActive=true;d->videoOutputLossSent=false;
     emit logMessage(QString("Opening with %1").arg(name()));return true;
 }
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
+    d->videoOutputActive=false;
     d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->fileLoaded=false;
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.
@@ -311,7 +357,7 @@ void PlaybackEngine::poll(){
         d->state.currentTitle=d->libvlc_media_player_get_title(d->player);d->state.currentChapter=d->libvlc_media_player_get_chapter(d->player);
         d->state.currentAudio=d->libvlc_audio_get_track(d->player);d->state.currentSubtitle=d->libvlc_video_get_spu(d->player);
         libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;d->state.droppedVideoFrames=stats.i_lost_pictures;d->state.lostAudioBuffers=stats.i_lost_abuffers;}
-        if(d->libvlc_media_player_get_state(d->player)==libvlc_Error)d->fail("Blu-ray 재생 오류: AACS/BD+ 설정과 진단 로그를 확인하세요.");
+        if(d->libvlc_media_player_get_state(d->player)==libvlc_Error)d->fail("Blu-ray 재생 중 오류가 발생했습니다. 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
         d->state.audioTracks=d->descriptions(d->libvlc_audio_get_track_description(d->player));
         d->state.subtitleTracks=d->descriptions(d->libvlc_video_get_spu_description(d->player));
         d->state.chapters.clear(); const int chapters=d->libvlc_media_player_get_chapter_count(d->player);
@@ -364,6 +410,7 @@ void PlaybackEngine::poll(){
         const int chapters=std::clamp(int(d->number("chapter-list/count")),0,10000);d->state.chapters.clear();
         for(int i=0;i<chapters;++i)d->state.chapters.append({i,d->prop((QByteArray("chapter-list/")+QByteArray::number(i)+"/title").constData())});
     }
+    if(d->state.failed){d->state.playing=false;d->state.timelineReady=false;}
     const auto codec=d->state.audioCodec.toLower();d->state.losslessAudio=codec=="flac" || codec=="alac" || codec=="truehd" || codec.startsWith("pcm") || codec=="bpcm" || codec=="mlp" || codec=="s16l" || codec=="s24l";
     emit updated();
 }
