@@ -30,6 +30,27 @@ function Receive-LumaTranslationModelFile {
  [IO.File]::WriteAllBytes($TemporaryPath,$bytes);return $bytes.Length
 }
 try{
+ Test-AsrCase 'accurate full model has its own MIT profile and destination' {
+  $fixture=New-AsrFixture 'accurate-profile'
+  $model=$fixture.Manifest.japaneseModel | ConvertTo-Json | ConvertFrom-Json
+  $model.id='ggerganov/whisper.cpp';$model.file='ggml-owned-accurate.bin';$model.license='MIT';$model.language='multilingual'
+  $model.url='https://huggingface.co/ggerganov/whisper.cpp/resolve/'+$model.revision+'/'+$model.file
+  $fixture.Manifest | Add-Member -NotePropertyName accurateModel -NotePropertyValue $model;Save-AsrFixture $fixture
+  $spec=Get-LumaAsrModelSpec -Directory $fixture.Directory -Profile accurate
+  Assert-Asr ($spec.file -eq 'ggml-owned-accurate.bin' -and $spec.license -eq 'MIT') 'Accurate profile must use its own pinned full model.'
+  $script:asrTransportMode='valid';$script:asrTransportCalls=0;$installed=Install-LumaAsrModel -Directory $fixture.Directory -Profile accurate
+  Assert-Asr ($script:asrTransportCalls -eq 1 -and (Test-Path -LiteralPath $installed.ModelPath)) 'Accurate profile must install verified bytes.'
+  Assert-Asr ((Split-Path -Leaf $installed.ModelPath) -eq 'ggml-owned-accurate.bin') 'Accurate profile silently installed another model.'
+ }
+ Test-AsrCase 'accurate profile never falls back to Japanese model or license' {
+  $fixture=New-AsrFixture 'accurate-missing';$failed=$false
+  try{Get-LumaAsrModelSpec -Directory $fixture.Directory -Profile accurate|Out-Null}catch{$failed=$true}
+  Assert-Asr $failed 'Missing accurate profile must not fall back.'
+  $model=$fixture.Manifest.japaneseModel | ConvertTo-Json | ConvertFrom-Json
+  $fixture.Manifest | Add-Member -NotePropertyName accurateModel -NotePropertyValue $model;Save-AsrFixture $fixture;$failed=$false
+  try{Get-LumaAsrModelSpec -Directory $fixture.Directory -Profile accurate|Out-Null}catch{$failed=$true}
+  Assert-Asr $failed 'Accurate profile must reject the wrong license and language.'
+ }
  Test-AsrCase 'missing lock fails with bilingual error' {
   $message='';try{Get-LumaAsrModelSpec -Directory $asrTestsRoot|Out-Null}catch{$message=$_.Exception.Message}
   Assert-Asr ($message -match 'Missing' -and $message -match '/') 'Missing pinned metadata must be explained in Korean and English.'

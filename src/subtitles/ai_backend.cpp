@@ -179,10 +179,13 @@ QVector<AiBackend> recognitionBackends(const QString &runtime,const QString &mod
 #ifndef Q_OS_WIN
     if(!QFileInfo::exists(cpu))cpu=QStandardPaths::findExecutable("whisper-cli");
 #endif
-    result.append({"CPU",cpu,{},{}});return result;
+    if(QFileInfo::exists(worker))result.append({"CPU",worker,"CPU",{}});
+    // A native loader/runtime failure must not remove the independent CLI fallback.
+    if(QFileInfo::exists(cpu) || !QFileInfo::exists(worker))result.append({"CPU",cpu,{},{}});
+    return result;
 }
 bool confirmsBackend(const AiBackend &backend,const QString &output){
-    if(backend.key=="CPU")return true;
+    if(backend.key=="CPU" && backend.device.isEmpty())return true;
     return QRegularExpression("(?:^|[\\r\\n])LUMA_BACKEND="+QRegularExpression::escape(backend.key)+"(?:[\\r\\n]|$)").match(output).hasMatch();
 }
 }

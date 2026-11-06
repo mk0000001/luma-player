@@ -5,7 +5,12 @@
 #include <QMetaType>
 #include <optional>
 namespace luma {
-struct SubtitleCue { qint64 startMs = 0, endMs = 0; QString text; };
+struct SubtitleTokenTiming {
+    qsizetype textStart=0,textLength=0;
+    qint64 startMs=0,endMs=0;
+    bool operator==(const SubtitleTokenTiming &)const=default;
+};
+struct SubtitleCue { qint64 startMs = 0, endMs = 0; QString text; QVector<SubtitleTokenTiming> tokens; };
 QVector<SubtitleCue> parseSrt(const QString &text);
 QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits=60,qint64 minPageMs=900);
 class CaptionCoverage {

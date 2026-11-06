@@ -18,6 +18,8 @@ public:
     void request(const QStringList &nearestFirst);
     // Replace the current session's raw source buffer, including newly available future cues.
     void setContextCues(const QVector<SubtitleCue> &originals);
+    // Read-only: a completed timed result is reusable only for the current bounded payload.
+    bool needsTranslation(const SubtitleCue &cue)const;
     void requestCues(const QVector<SubtitleCue> &nearestFirst);
     void cancel();
     quint64 generation()const;

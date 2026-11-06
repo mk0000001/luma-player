@@ -3,6 +3,18 @@
 #include <QTextBoundaryFinder>
 #include <algorithm>
 namespace luma {
+namespace {
+bool validTokenTimings(const SubtitleCue &cue){
+    if(cue.tokens.isEmpty())return false;
+    qsizetype next=0;qint64 previousEnd=cue.startMs;
+    for(const auto &token:cue.tokens){
+        if(token.textStart!=next || token.textLength<=0 || token.textLength>cue.text.size()-next || token.startMs<previousEnd || token.endMs<=token.startMs || token.endMs>cue.endMs)return false;
+        next+=token.textLength;previousEnd=token.endMs;
+        if(next<cue.text.size() && cue.text[next].isLowSurrogate())return false;
+    }
+    return next==cue.text.size();
+}
+}
 std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs){
     if(pending_ || positionMs<0 || positionMs>=durationMs || bufferedAhead(positionMs,durationMs)>=std::min(prefetchMs,durationMs-positionMs))return {};
     const auto ahead=bufferedAhead(positionMs,durationMs);
@@ -52,6 +64,7 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
     QVector<SubtitleCue> result;maxUnits=std::max(1,maxUnits);minPageMs=std::max<qint64>(1,minPageMs);
     for(const auto &cue:cues){
         if(cue.endMs<=cue.startMs || cue.text.trimmed().isEmpty())continue;
+        const bool timed=validTokenTimings(cue);
         QVector<Grapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
         while((end=finder.toNextBoundary())>=0){
             const auto text=cue.text.mid(start,end-start);int units=1;
@@ -75,17 +88,46 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
             // one unbounded presentation page.
             static const QString closing=QString::fromUtf8("。，、！？!?;；:：,.)]}」』】〉》〕”’»…");
             for(int extra=0;last<characters.size() && extra<4 && closing.contains(cue.text.at(characters[last].start));++extra)++last;
+            while(timed && last<characters.size()){
+                const auto boundary=characters[last-1].end;
+                bool expanded=false;
+                for(const auto &token:cue.tokens)if(token.textStart<boundary && token.textStart+token.textLength>boundary){
+                    const auto tokenEnd=token.textStart+token.textLength;
+                    while(last<characters.size() && characters[last-1].end<tokenEnd)++last;
+                    expanded=true;
+                    break;
+                }
+                if(!expanded)break;
+            }
             ranges.append({first,last});first=last;
         }
         QVector<qint64> cumulative{0};for(const auto &character:characters)cumulative.append(cumulative.last()+character.units);
         const auto timeAt=[&](qsizetype index){return index==characters.size()?cue.endMs:cue.startMs+qint64((static_cast<long double>(cue.endMs-cue.startMs)*cumulative[index])/cumulative.last());};
+        const auto startAt=[&](qsizetype index){
+            if(timed){const auto boundary=characters[index].start;for(const auto &token:cue.tokens)if(token.textStart+token.textLength>boundary)return token.startMs;}
+            return timeAt(index);
+        };
+        const auto endAt=[&](qsizetype index){
+            if(timed){const auto boundary=characters[index-1].end;for(auto token=cue.tokens.crbegin();token!=cue.tokens.crend();++token)if(token->textStart<boundary)return token->endMs;}
+            return timeAt(index);
+        };
         // A short tail is merged with its neighbor rather than becoming a flash.
         for(qsizetype index=0;index<ranges.size() && ranges.size()>1;){
-            if(timeAt(ranges[index].second)-timeAt(ranges[index].first)>=minPageMs){++index;continue;}
+            if(endAt(ranges[index].second)-startAt(ranges[index].first)>=minPageMs){++index;continue;}
             if(index>0){ranges[index-1].second=ranges[index].second;ranges.removeAt(index);--index;}
             else{ranges[1].first=ranges[0].first;ranges.removeFirst();}
         }
-        for(const auto &range:ranges){const auto begin=characters[range.first].start,finish=characters[range.second-1].end;result.append({timeAt(range.first),timeAt(range.second),cue.text.mid(begin,finish-begin).trimmed()});}
+        for(const auto &range:ranges){
+            auto begin=characters[range.first].start,finish=characters[range.second-1].end;
+            while(begin<finish && cue.text[begin].isSpace())++begin;while(finish>begin && cue.text[finish-1].isSpace())--finish;
+            if(begin==finish)continue;
+            SubtitleCue page{startAt(range.first),endAt(range.second),cue.text.mid(begin,finish-begin)};
+            if(timed)for(const auto &token:cue.tokens){
+                const auto tokenStart=std::max(begin,token.textStart),tokenEnd=std::min(finish,token.textStart+token.textLength);
+                if(tokenEnd>tokenStart)page.tokens.append({tokenStart-begin,tokenEnd-tokenStart,token.startMs,token.endMs});
+            }
+            result.append(std::move(page));
+        }
     }
     return result;
 }

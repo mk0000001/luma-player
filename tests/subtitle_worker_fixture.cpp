@@ -44,6 +44,10 @@ int main(int argc,char **argv){
         if(canceled){std::cout<<"LUMA_ABORTED="<<prefix<<std::endl;if(!server || !nextRequest())return 0;continue;}
         if(device=="NPU" && payload.find("npu-fails")!=std::string::npos)return 20;
         std::ofstream out(prefix+".srt");out<<"1\n00:00:00,000 --> 00:00:01,000\nFixture transcription request "<<requestNumber<<"\n\n";out.close();
+        if(const auto timing=std::getenv("LUMA_FIXTURE_TOKEN_TIMINGS");timing && (std::string(timing)!="native-only" || !device.empty())){
+            std::ofstream sidecar(prefix+".timings.json");
+            sidecar<<"{\"schema\":1,\"format\":\"luma-asr-timing-v1\",\"alignment\":\"dtw\",\"audioMs\":2000,\"segments\":[{\"startMs\":200,\"endMs\":2000,\"text\":\"ABCDEFGH\",\"tokens\":[{\"byteStart\":"<<(std::string(timing)=="invalid"?1:0)<<",\"byteEnd\":4,\"startMs\":200,\"endMs\":1800},{\"byteStart\":4,\"byteEnd\":8,\"startMs\":1800,\"endMs\":2000}]}]}";
+        }
         if(!device.empty() && payload.find("silent-cpu")==std::string::npos)std::cout<<"LUMA_BACKEND="<<device<<std::endl;
         if(!out)return 1;
         if(!server)return 0;

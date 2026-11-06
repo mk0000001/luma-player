@@ -31,10 +31,64 @@ private slots:
         const auto text=writeSrt({{61200,63400,QString::fromUtf8("こんにちは\n안녕하세요")}});
         QVERIFY(text.contains("00:01:01,200 --> 00:01:03,400"));const auto parsed=parseSrt(text);QCOMPARE(parsed.size(),1);QCOMPARE(parsed[0].startMs,61200);
     }
+    void nativeTokenTimesReachThePlayer_data(){QTest::addColumn<QString>("mode");QTest::newRow("valid")<<QString("valid");QTest::newRow("invalid-falls-back")<<QString("invalid");}
+    void nativeTokenTimesReachThePlayer(){
+        QFETCH(QString,mode);QTemporaryDir dir;QVERIFY(QDir(dir.path()).mkpath("tools"));QVERIFY(QDir(dir.path()).mkpath("whisper"));
+#ifdef Q_OS_WIN
+        const QString suffix=".exe";
+#else
+        const QString suffix;
+#endif
+        const auto fixture=QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
+        for(const auto &tool:{"tools/ffmpeg","whisper/whisper-cli"})QVERIFY(QFile::copy(fixture,dir.filePath(QString(tool)+suffix)));
+        QFile model(dir.filePath("model.bin"));QVERIFY(model.open(QIODevice::WriteOnly));model.write("fixture");model.close();
+        qputenv("LUMA_FIXTURE_TOKEN_TIMINGS",mode.toUtf8());const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_TOKEN_TIMINGS");});
+        SubtitleJob job(dir.path());job.setPreferences({"cpu",{}});QSignalSpy ready(&job,&SubtitleJob::ready),errors(&job,&SubtitleJob::failed);
+        RecognitionRequest request;request.source="speech.wav";request.startMs=60000;request.durationMs=3000;job.start(request,model.fileName());
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(),1,3000);QCOMPARE(errors.count(),0);const auto cues=qvariant_cast<QVector<SubtitleCue>>(ready[0][1]);QCOMPARE(cues.size(),1);
+        if(mode=="valid"){
+            QCOMPARE(cues[0].text,QString("ABCDEFGH"));QCOMPARE(cues[0].startMs,qint64(60200));QCOMPARE(cues[0].endMs,qint64(62000));QCOMPARE(cues[0].tokens.size(),2);
+            QCOMPARE(cues[0].tokens[1],(SubtitleTokenTiming{4,4,61800,62000}));
+        }else{QVERIFY(cues[0].text.startsWith("Fixture transcription"));QCOMPARE(cues[0].startMs,qint64(60000));QVERIFY(cues[0].tokens.isEmpty());}
+    }
     void missingModelAndCancellation() {
         QTemporaryDir dir;SubtitleJob job(dir.path());QSignalSpy errors(&job,&SubtitleJob::failed);
         RecognitionRequest r;r.source="missing.mkv";job.start(r,"missing-model.bin");QCOMPARE(errors.count(),1);QVERIFY(!job.busy());
         const auto old=job.generation();job.cancel();QVERIFY(job.generation()>old);QVERIFY(!job.busy());
+    }
+    void nativeCpuPreservesTimedOutputWithoutLegacyCli(){
+        QTemporaryDir dir;QVERIFY(QDir(dir.path()).mkpath("tools"));QVERIFY(QDir(dir.path()).mkpath("ai"));
+#ifdef Q_OS_WIN
+        const QString suffix=".exe";
+#else
+        const QString suffix;
+#endif
+        const auto fixture=QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
+        for(const auto &tool:{"tools/ffmpeg","ai/luma-whisper-worker"})QVERIFY(QFile::copy(fixture,dir.filePath(QString(tool)+suffix)));
+        QFile model(dir.filePath("model.bin"));QVERIFY(model.open(QIODevice::WriteOnly));model.write("fixture");model.close();
+        qputenv("LUMA_FIXTURE_TOKEN_TIMINGS","valid");const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_TOKEN_TIMINGS");});
+        SubtitleJob job(dir.path());job.setPreferences({"cpu",{}});QSignalSpy ready(&job,&SubtitleJob::ready),errors(&job,&SubtitleJob::failed);
+        RecognitionRequest request;request.source="speech.wav";request.durationMs=3000;job.start(request,model.fileName());
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(),1,3000);QCOMPARE(errors.count(),0);QCOMPARE(job.selectedBackend(),QString("CPU"));
+        const auto cues=qvariant_cast<QVector<SubtitleCue>>(ready[0][1]);QCOMPARE(cues[0].text,QString("ABCDEFGH"));QCOMPARE(cues[0].tokens.size(),2);
+    }
+    void nativeCpuFailureUsesCleanLegacyOutput(){
+        QTemporaryDir dir;for(const auto &folder:{"tools","whisper","ai"})QVERIFY(QDir(dir.path()).mkpath(folder));
+#ifdef Q_OS_WIN
+        const QString suffix=".exe";
+#else
+        const QString suffix;
+#endif
+        const auto fixture=QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
+        for(const auto &tool:{"tools/ffmpeg","whisper/whisper-cli","ai/luma-whisper-worker"})QVERIFY(QFile::copy(fixture,dir.filePath(QString(tool)+suffix)));
+        QFile model(dir.filePath("model.bin"));QVERIFY(model.open(QIODevice::WriteOnly));model.write("fixture");model.close();
+        qputenv("LUMA_FIXTURE_TOKEN_TIMINGS","native-only");const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_TOKEN_TIMINGS");});
+        SubtitleJob job(dir.path());job.setPreferences({"cpu",{}});QSignalSpy ready(&job,&SubtitleJob::ready),errors(&job,&SubtitleJob::failed);
+        RecognitionRequest request;request.source="silent-cpu.wav";request.durationMs=3000;job.start(request,model.fileName());
+        QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty() || !errors.isEmpty(),3000);QCOMPARE(errors.size(),0);QCOMPARE(ready.size(),1);
+        const auto cues=qvariant_cast<QVector<SubtitleCue>>(ready[0][1]);QCOMPARE(cues.size(),1);
+        QVERIFY(cues[0].text.startsWith("Fixture transcription"));QVERIFY(cues[0].tokens.isEmpty());QCOMPARE(job.selectedAlignment(),QString("segment"));
+        QCOMPARE(job.selectedBackend(),QString("CPU"));
     }
     void runningCancellationAndDeadline() {
         QTemporaryDir dir;QDir(dir.path()).mkpath("tools");QDir(dir.path()).mkpath("whisper");
@@ -69,13 +123,14 @@ private slots:
         const auto fixture=QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
         for(const auto &tool:{"tools/ffmpeg","whisper/whisper-cli","ai/luma-whisper-worker"})QVERIFY(QFile::copy(fixture,dir.filePath(QString(tool)+suffix)));
         for(const auto &name:{"ggml-base.bin","ggml-base-encoder-openvino.xml","ggml-base-encoder-openvino.bin"}){QFile file(dir.filePath("models/"+QString(name)));QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");}
+        // Persistent workers inherit their environment once, before their first launch.
+        const auto working=dir.filePath("cancel-working");qputenv("LUMA_FIXTURE_ASR_WORKING",QFile::encodeName(working));
+        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_WORKING");});
         SubtitleJob job(dir.path());job.setStageTimeouts(1500,1500);job.setAcceleratorTimeout(1200);
         QSignalSpy errors(&job,&SubtitleJob::failed),results(&job,&SubtitleJob::ready),selection(&job,&SubtitleJob::backendSelected);
         RecognitionRequest request;request.source=source;const auto generation=job.start(request);
         QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,4000);QCOMPARE(errors.count(),0);QCOMPARE(selection.count(),1);QCOMPARE(selection[0][0].toString(),backend);QCOMPARE(job.selectedBackend(),backend);QCOMPARE(results[0][0].toULongLong(),generation);QVERIFY(!job.busy());
         // Cancel after the fixture acknowledges in-flight inference on every backend.
-        const auto working=dir.filePath("cancel-working");qputenv("LUMA_FIXTURE_ASR_WORKING",QFile::encodeName(working));
-        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_WORKING");});
         request.source="cancel-running.wav";job.start(request);
         QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(working).size()>0,3000);QVERIFY(job.busy());QCOMPARE(results.count(),1);job.cancel();
         request.source="accelerated.wav";const auto current=job.start(request);QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,4000);QCOMPARE(results[1][0].toULongLong(),current);

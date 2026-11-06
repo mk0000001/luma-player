@@ -5,6 +5,7 @@ param(
     [Parameter(Mandatory=$true)][string]$Wave,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [string]$Device='NPU', [string]$Encoder, [string]$Language='ja', [string]$CacheDirectory,
+    [ValidateSet('auto','fast','accurate')][string]$Quality='auto',
     [ValidateRange(1,16)][int]$Threads=6,
     [ValidateRange(2,20)][int]$Requests=4,
     [ValidateRange(1,900)][int]$TimeoutSeconds=300,
@@ -21,7 +22,7 @@ foreach($path in @($Worker,$Model,$Wave)){if(!(Test-Path -LiteralPath $path -Pat
 if($Encoder -and !(Test-Path -LiteralPath $Encoder -PathType Leaf)){throw 'Missing encoder XML.'}
 $root=[IO.Path]::GetFullPath($OutputDirectory);New-Item -ItemType Directory -Path $root -Force | Out-Null
 if(Test-Path -LiteralPath (Join-Path $root 'metrics.json')){throw 'Choose a new output directory; existing measurements are preserved.'}
-$arguments=@('--device',$Device,'-m',[IO.Path]::GetFullPath($Model),'--server','--warmup')
+$arguments=@('--device',$Device,'-m',[IO.Path]::GetFullPath($Model),'--quality',$Quality,'--server','--warmup')
 if($Encoder){
     $cache=if($CacheDirectory){[IO.Path]::GetFullPath($CacheDirectory)}else{Join-Path $root 'cache'}
     $arguments+=@('--encoder',[IO.Path]::GetFullPath($Encoder),'--cache',$cache)

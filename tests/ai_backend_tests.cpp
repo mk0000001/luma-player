@@ -199,6 +199,28 @@ private slots:
         QVERIFY(confirmsBackend(gpu,"LUMA_BACKEND=GPU\n"));
         QVERIFY(confirmsBackend(cpu,{}));
     }
+    void nativeCpuRequiresItsOwnExecutionAcknowledgment(){
+        QTemporaryDir root;QVERIFY(QDir(root.path()).mkpath("ai"));
+#ifdef Q_OS_WIN
+        const auto worker=root.filePath("ai/luma-whisper-worker.exe");
+#else
+        const auto worker=root.filePath("ai/luma-whisper-worker");
+#endif
+        QFile file(worker);QVERIFY(file.open(QIODevice::WriteOnly));file.write("fixture");file.close();
+        const auto backends=recognitionBackends(root.path(),root.filePath("model.bin"),{"cpu",{}});QVERIFY(backends.size()==1 || backends.size()==2);
+        QCOMPARE(backends[0].program,worker);QCOMPARE(backends[0].device,QString("CPU"));
+        QVERIFY(!confirmsBackend(backends[0],"LUMA_BACKEND=GPU\n"));QVERIFY(confirmsBackend(backends[0],"LUMA_BACKEND=CPU\n"));
+        if(backends.size()==2){QCOMPARE(backends[1].key,QString("CPU"));QVERIFY(backends[1].device.isEmpty());QVERIFY(backends[1].program!=worker);}
+        QVERIFY(QDir(root.path()).mkpath("whisper"));
+#ifdef Q_OS_WIN
+        const auto legacy=root.filePath("whisper/whisper-cli.exe");
+#else
+        const auto legacy=root.filePath("whisper/whisper-cli");
+#endif
+        QFile cli(legacy);QVERIFY(cli.open(QIODevice::WriteOnly));cli.write("fixture");cli.close();
+        const auto withLegacy=recognitionBackends(root.path(),root.filePath("model.bin"),{"cpu",{}});QCOMPARE(withLegacy.size(),2);
+        QCOMPARE(withLegacy[0].program,worker);QCOMPARE(withLegacy[1].program,legacy);QVERIFY(withLegacy[1].device.isEmpty());
+    }
 };
 QTEST_GUILESS_MAIN(AiBackendTests)
 #include "ai_backend_tests.moc"
