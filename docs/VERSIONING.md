@@ -2,7 +2,7 @@
 
 ## 한국어
 
-- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 현재 준비 대상은 `0.1.0-alpha.9`, 공개 예정 태그는 `v0.1.0-alpha.9`입니다.
+- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 현재 준비 대상은 `0.1.0-alpha.10`, 공개 예정 태그는 `v0.1.0-alpha.10`입니다.
 - **배포한 버전**마다 SemVer의 annotated Git 태그, GitHub Release, 소스 스냅샷, Windows 포터블 ZIP, SHA-256, `docs/releases/`의 변경·검증 기록을 보관합니다. 모든 임시 컴파일을 릴리스로 만들지는 않습니다.
 - 공개 태그를 이동하거나 이미 공개한 바이너리를 교체하지 않습니다. 수정은 새 버전으로 공개하고 이전 자료를 보존합니다.
 - 릴리스 워크플로는 기존 annotated 태그를 지정해 수동 실행하며 초안만 만듭니다. 공개 배포는 실제 포터블 실행 검증 뒤 진행합니다. 태그를 푸는 것만으로 미검증 바이너리를 자동 공개하지 않습니다.
@@ -13,11 +13,11 @@
 - 릴리스 기록에는 통과, 실패, 미검증을 유지합니다. 새 모델 준비 방식이나 출력 옵션이 구현됐다는 이유만으로 지연·HDR·무손실·캡처 검사를 통과로 바꾸지 않습니다.
 - 공개 문서는 한국어 섹션 다음 영어 섹션으로 작성합니다. 키·인증서·상용 영상·음성·메뉴 이미지·생성 자막·개인 경로를 업로드하지 않습니다.
 
-[릴리스 목록](https://github.com/mk0000001/luma-player/releases) · [변경 기록](../CHANGELOG.md) · [alpha.9 검증 상태](releases/0.1.0-alpha.9.md)
+[릴리스 목록](https://github.com/mk0000001/luma-player/releases) · [변경 기록](../CHANGELOG.md) · [alpha.10 검증 상태](releases/0.1.0-alpha.10.md)
 
 ## English
 
-`VERSION` controls the executable, diagnostics, package and release version. The next target is `0.1.0-alpha.9`, with intended release tag `v0.1.0-alpha.9`.
+`VERSION` controls the executable, diagnostics, package and release version. The next target is `0.1.0-alpha.10`, with intended release tag `v0.1.0-alpha.10`.
 
 Every **distributed version**, rather than every scratch compilation, receives an annotated SemVer tag, GitHub Release, source snapshot, Windows portable ZIP, SHA-256 and a release/validation record. Never move published tags or replace published binaries; corrections require a new version while preserving history.
 

@@ -426,14 +426,21 @@ void MainWindow::discoverDisc(){
 }
 void MainWindow::showCaptionPreparation(){
     const auto initialFile=active_==fileEngine_.get()?source_:QString{};
+    const auto preparationDiscRoot=active_==discEngine_.get()?source_:discPath_;
     CaptionPreparationRequest defaults;defaults.model=model_;defaults.source.language=language_->currentData().toString();defaults.recognitionPreferences=job_.preferences();defaults.translationPreferences=translation_->preferences();defaults.translate=translationEnabled_->isChecked();
+    if(active_==discEngine_.get()){
+        const auto &state=active_->state();const auto playlist=matchDiscPlaylist(discInfo_,state.durationMs);
+        if(!state.failed && state.timelineReady && !state.navigationTitle && state.currentTitle>=0 && !playlist.isEmpty()){
+            int ordinal=0;for(const auto &track:state.audioTracks){if(track.id<0)continue;if(track.id==state.currentAudio && ordinal<64){defaults.source.source=source_;defaults.source.disc=true;defaults.source.playlist=playlist;defaults.source.audioIndex=ordinal;defaults.durationMs=state.durationMs;break;}++ordinal;}
+        }
+    }
     const auto root=QCoreApplication::applicationDirPath()+"/runtime/translation/models/";
     const auto quality=root+"Hy-MT2-7B-Q4_K_M.gguf";
     defaults.translationModel=QSettings().value("translation/model",QFileInfo::exists(quality)?quality:root+"Qwen3-4B-Q4_K_M.gguf").toString();
     savePlaybackProgress(true);preparedCaptions_.reset();preparedApplied_=false;resetSubtitleSession();job_.shutdown();translation_->setModel(defaults.translationModel);
     releaseCaptionBuffer(false);if(active_)active_->stop();active_=nullptr;pendingResume_.reset();requestedPlaying_=false;
     static_cast<VideoSurface*>(surface_)->setVideoActive(false);welcome_->show();applyCapturePolicy();status_->setText("영상 재생 없이 전체 자막을 준비합니다.");
-    CaptionPreparationDialog dialog(defaults,discPath_,initialFile,this);preparationDialog_=&dialog;
+    CaptionPreparationDialog dialog(defaults,preparationDiscRoot,initialFile,this);preparationDialog_=&dialog;
     const int result=dialog.exec();preparationDialog_.clear();
     if(result==QDialog::Accepted)if(auto prepared=dialog.prepared())playPreparedCaptions(std::move(*prepared));
 }
