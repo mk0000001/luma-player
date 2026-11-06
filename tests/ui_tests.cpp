@@ -81,6 +81,47 @@ private slots:
         QVERIFY(window.diagnostics()["aiEnabled"].toBool());QVERIFY(QSettings().value("subtitles/aiEnabled").toBool());
         QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(!window.diagnostics()["jobBusy"].toBool());
     }
+    void physicalPreparedDiscOpensThePreparedPlaylist(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARED_DISC_PROJECT");if(path.isEmpty())QSKIP("Set a completed private physical-disc project for selected-playlist validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(project->request.source.disc);
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));
+        const auto report=qScopeGuard([&]{const auto output=qEnvironmentVariable("LUMA_UI_PREPARED_DISC_REPORT");if(!output.isEmpty()){QSaveFile file(output);if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(window.diagnostics()).toJson());file.commit();}}});
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),25000);
+        QCOMPARE(window.diagnostics()["durationMs"].toInteger(),project->request.durationMs);QVERIFY(!window.diagnostics()["navigationTitle"].toBool());QVERIFY(window.diagnostics().contains("discMenus"));QVERIFY(!window.diagnostics()["discMenus"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["playing"].toBool(),10000);const auto start=window.diagnostics()["positionMs"].toInteger();
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["positionMs"].toInteger()>=start+1000,5000);QVERIFY(window.diagnostics()["displayedPictures"].toInt()>0);
+        auto *surface=window.findChild<QWidget*>("videoSurface");QVERIFY(surface);surface->setFocus();const auto beforeSeek=window.diagnostics()["positionMs"].toInteger();QTest::keyClick(surface,Qt::Key_Right);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["positionMs"].toInteger()>=beforeSeek+8000,10000);QVERIFY(window.diagnostics()["preparedCaptionsApplied"].toBool());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
+    }
+    void preparedNativeSwitchKeepsItsProjectInHistory(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);
+        auto *surface=window.findChild<QWidget*>("videoSurface");QVERIFY(surface);surface->setFocus();QTest::keyClick(surface,Qt::Key_Right);QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["positionMs"].toInteger()>=9000,10000);QTest::qWait(600);
+        QTemporaryDir missing;window.openSource(missing.filePath("other-missing.mkv"));luma::ResumeHistory history;const auto saved=history.latest();QVERIFY(saved.has_value());QCOMPARE(saved->preparedProject,project->projectFile);
+    }
+    void preparedNativeChangedSourceRecoveryFailsWithoutCrash(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);
+        const auto source=project->request.source.source;const auto original=QFileInfo(source).lastModified();QFile media(source);QVERIFY(media.open(QIODevice::ReadWrite));
+        const auto restore=qScopeGuard([&]{media.setFileTime(original,QFileDevice::FileModificationTime);});QVERIFY(media.setFileTime(original.addSecs(2),QFileDevice::FileModificationTime));
+        luma::PlaybackEngine *engine=nullptr;for(auto *candidate:window.findChildren<luma::PlaybackEngine*>())if(candidate->name().contains("mpv"))engine=candidate;QVERIFY(engine);QMetaObject::invokeMethod(engine,"videoOutputLost",Qt::DirectConnection,Q_ARG(QString,"Owned changed-source recovery fixture"));
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["videoRecoveryExhausted"].toBool(),5000);QVERIFY(!window.diagnostics().value("playing").toBool());
+    }
+    void preparedNativeRecoveryPreservesFrozenProject(){
+        const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
+        QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(!project->request.source.disc);
+        QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);
+        luma::PlaybackEngine *engine=nullptr;for(auto *candidate:window.findChildren<luma::PlaybackEngine*>())if(candidate->name().contains("mpv"))engine=candidate;QVERIFY(engine);
+        QMetaObject::invokeMethod(engine,"videoOutputLost",Qt::DirectConnection,Q_ARG(QString,"Owned prepared recovery fixture"));
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics()["videoRecoveryCount"].toInt(),1,5000);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(window.diagnostics()["aiEnabled"].toBool());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
+    }
     void preparedNativeSeekAndChapterDoNotWaitForLiveBuffer(){
         const auto path=qEnvironmentVariable("LUMA_UI_PREPARATION_PROJECT");if(path.isEmpty())QSKIP("Set a completed owned-file preparation project for native UI validation.");
         QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(!project->request.source.disc);

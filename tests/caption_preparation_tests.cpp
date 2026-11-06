@@ -7,6 +7,8 @@
 #include <QJsonObject>
 #include <QThread>
 #include <QtEndian>
+#include <QElapsedTimer>
+#include <cstdio>
 #ifdef LUMA_CAPTION_PREPARATION_FIXTURE
 // CPU-only wire/file fixture. It never decodes media or loads model weights.
 int main(int argc,char **argv){
@@ -14,6 +16,7 @@ int main(int argc,char **argv){
     const auto option=[&](const QString &key,const QString &fallback=QString()){const auto i=args.indexOf(key);return i>=0&&i+1<args.size()?args[i+1]:fallback;};
     const auto log=[&](const QJsonObject &record){QFile f(qEnvironmentVariable("LUMA_PREPARATION_FIXTURE_LOG"));if(f.open(QIODevice::Append))f.write(QJsonDocument(record).toJson(QJsonDocument::Compact)+'\n');};
     if(args.contains("-i")){
+        if(!args.contains("-c:a")){std::fprintf(stderr,"Duration: 00:01:05.000, start: 0.0, bitrate: 128 kb/s\nStream #0:0(ja): Audio: synthetic, 16000 Hz\nAt least one output file must be specified\n");return 1;}
         const auto source=option("-i");const auto start=qRound64(option("-ss","0").toDouble()*1000),duration=qRound64(option("-t","30").toDouble()*1000);
         log({{"event","extract"},{"start_ms",start},{"duration_ms",duration},{"throttled",args.contains("-readrate")}});
         if(start>=30000 && QFileInfo::exists(source+".fail-once")){QFile::remove(source+".fail-once");return 9;}
@@ -33,6 +36,8 @@ int main(int argc,char **argv){
     QFile audio(option("-f"));if(!audio.open(QIODevice::ReadOnly))return 2;auto audioBytes=audio.readAll();QJsonObject data;
     if(audioBytes.startsWith("RIFF")){data=QJsonDocument::fromJson(audioBytes.mid(44).split('\n').first()).object();data["duration"]=(audioBytes.size()-44)/32;}else data=QJsonDocument::fromJson(audioBytes).object();
     const auto start=data.value("start").toInteger(),duration=data.value("duration").toInteger();const auto mode=data.value("mode").toString();
+    if(option("--device")=="GPU"){log({{"event","gpu-rejected"},{"start_ms",start}});return 20;}
+    if(mode=="retry-gated"&&start>=30000){log({{"event","cpu-waiting"},{"start_ms",start}});QElapsedTimer timer;timer.start();while(!QFileInfo::exists(qEnvironmentVariable("LUMA_PREPARATION_FIXTURE_GATE"))){if(timer.elapsed()>10000)return 30;QThread::msleep(10);}}
     log({{"event","recognize"},{"start_ms",start}});QFile srt(option("-of")+".srt");if(!srt.open(QIODevice::WriteOnly))return 3;
     const auto stamp=[](qint64 ms){return QString("00:00:%1,%2").arg(ms/1000,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));};
     if(mode=="dense"){
@@ -42,7 +47,8 @@ int main(int argc,char **argv){
     srt.write(("1\n"+stamp(0)+" --> "+stamp(end)+'\n'+text+"\n\n").toUtf8());srt.close();
     const QJsonArray tokens{QJsonObject{{"byteStart",0},{"byteEnd",6},{"startMs",0},{"endMs",end/2}},QJsonObject{{"byteStart",6},{"byteEnd",text.toUtf8().size()},{"startMs",end/2},{"endMs",end}}};
     QFile timing(option("-of")+".timings.json");if(!timing.open(QIODevice::WriteOnly))return 4;
-    timing.write(QJsonDocument(QJsonObject{{"schema",1},{"format","luma-asr-timing-v1"},{"alignment","token"},{"audioMs",duration},{"segments",QJsonArray{QJsonObject{{"startMs",0},{"endMs",end},{"text",text},{"tokens",tokens}}}}}).toJson(QJsonDocument::Compact));return 0;
+    timing.write(QJsonDocument(QJsonObject{{"schema",1},{"format","luma-asr-timing-v1"},{"alignment","token"},{"audioMs",duration},{"segments",QJsonArray{QJsonObject{{"startMs",0},{"endMs",end},{"text",text},{"tokens",tokens}}}}}).toJson(QJsonDocument::Compact));
+    if(option("--device")=="CPU")std::fprintf(stdout,"LUMA_BACKEND=CPU\n");return 0;
 }
 #else
 #include <QtTest>
@@ -85,6 +91,23 @@ private slots:
     void initTestCase(){qRegisterMetaType<CaptionPreparationProgress>();qRegisterMetaType<CaptionPreparationResult>();}
     void init(){QTest::failOnWarning(QRegularExpression("QProcess: Destroyed while process.*|QTemporaryDir: Unable to remove.*"));}
     void cleanup(){qunsetenv("LUMA_PREPARATION_FIXTURE_LOG");}
+    void controlledAcceleratorRejectionReachesPreparationProgress_data(){
+        QTest::addColumn<QString>("message");QTest::addColumn<QString>("notice");
+        QTest::newRow("GPU-timeout")<<QString("GPU 사용 불가 (시간 초과) · 다음 장치로 전환 중…")<<QString("GPU 사용 불가 (시간 초과)");
+        QTest::newRow("NPU-failure")<<QString("NPU 사용 불가 (처리 실패) · 다음 장치로 전환 중…")<<QString("NPU 사용 불가 (처리 실패)");
+    }
+    void controlledAcceleratorRejectionReachesPreparationProgress(){
+        QFETCH(QString,message);QFETCH(QString,notice);
+        QTemporaryDir dir;const auto request=prepare(dir);CaptionPreparationService service(dir.path());QSignalSpy progress(&service,&CaptionPreparationService::progress);
+        bool injected=false;int before=0,after=0;
+        connect(&service,&CaptionPreparationService::progress,this,[&](quint64,const CaptionPreparationProgress &){
+            if(injected)return;auto *child=service.findChild<SubtitleJob*>();if(!child)return;injected=true;before=progress.count();
+            child->progress("GPU 사용 불가 (Synthetic private source text) · 다음 장치로 전환 중…");QCOMPARE(progress.count(),before);
+            child->progress(message);after=progress.count();service.cancel();
+        });
+        service.start(request);QTRY_VERIFY_WITH_TIMEOUT(injected,3000);QCOMPARE(after,before+1);
+        const auto forwarded=qvariant_cast<CaptionPreparationProgress>(progress.last()[1]);QCOMPARE(forwarded.recognitionNotice,notice);QVERIFY(!forwarded.canRetryAccelerator);
+    }
     void recognizesWholeRangeWithoutPlaybackAndPreservesTokens(){
         QTemporaryDir dir;const auto request=prepare(dir);CaptionPreparationService service(dir.path());QSignalSpy ready(&service,&CaptionPreparationService::ready),failed(&service,&CaptionPreparationService::failed),progress(&service,&CaptionPreparationService::progress);
         const auto generation=service.start(request);QTRY_VERIFY_WITH_TIMEOUT(!ready.isEmpty()||!failed.isEmpty(),10000);QCOMPARE(failed.count(),0);QCOMPARE(ready.count(),1);QCOMPARE(ready.first()[0].toULongLong(),generation);QVERIFY(!service.busy());

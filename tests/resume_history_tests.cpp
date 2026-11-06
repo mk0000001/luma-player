@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -68,6 +69,74 @@ private slots:
         history.save(identity,{source,false,-1,2999,120000});QVERIFY(!history.find(identity));
         history.save(identity,{source,false,-1,3000,8000});QVERIFY(history.find(identity));
         history.save(identity,{source,false,-1,3001,8000});QVERIFY(!history.find(identity));
+    }
+    void directTitleZeroAndOptionalProjectRoundTrip(){
+        QTemporaryDir root;auto disc=ownedDisc();const auto identity=resumeIdentity(disc.root,&disc),settingsFile=root.filePath("history.ini");
+        const auto project=root.filePath(QString::fromUtf8("아직 없는 日本語 🎵 프로젝트.json"));QVERIFY(!QFileInfo::exists(project));
+        {ResumeHistory history(settingsFile);history.save(identity,{disc.root,true,0,20000,120000,false,project});}
+        ResumeHistory reloaded(settingsFile);const auto point=reloaded.find(identity,0,false);QVERIFY(point);
+        QCOMPARE(point->title,0);QCOMPARE(point->positionMs,qint64(20000));QVERIFY(!point->discMenus);QCOMPARE(point->preparedProject,project);
+        QVERIFY(!reloaded.find(identity));QVERIFY(reloaded.latest());QCOMPARE(reloaded.latest()->title,0);QCOMPARE(reloaded.latestIdentity(),identity);
+        reloaded.save(identity,{disc.root,true,-1,25000,120000,false,project});QCOMPARE(reloaded.find(identity,0,false)->positionMs,qint64(20000));
+    }
+    void legacyEntriesDefaultToMenusAndFilesIgnoreModeFilter(){
+        QTemporaryDir root;const auto settingsFile=root.filePath("history.ini"),discId=QString(64,'a'),fileId=QString(64,'b');
+        const QJsonArray entries{QJsonObject{{"identity",discId},{"source","X:/"},{"disc",true},{"title",1},{"positionMs","15000"},{"durationMs","120000"}},
+            QJsonObject{{"identity",fileId},{"source","owned.mkv"},{"disc",false},{"title",-1},{"positionMs","25000"},{"durationMs","180000"}}};
+        QSettings settings(settingsFile,QSettings::IniFormat);settings.setValue("resumeHistory/v1",QJsonDocument(QJsonObject{{"version",1},{"entries",entries}}).toJson());settings.sync();
+        ResumeHistory history(settingsFile);const auto legacy=history.find(discId,1);QVERIFY(legacy);QVERIFY(legacy->discMenus);QVERIFY(legacy->preparedProject.isEmpty());
+        QVERIFY(!history.find(discId,1,false));QVERIFY(history.find(fileId,-1,false));QVERIFY(history.find(fileId));QVERIFY(history.find(fileId)->preparedProject.isEmpty());
+        history.remove(fileId,-1,false);QVERIFY(!history.find(fileId));QVERIFY(history.find(discId));
+    }
+    void sameNativeTitleHasSeparateMenuAndDirectResumeRecords(){
+        QTemporaryDir root;auto disc=ownedDisc();const auto identity=resumeIdentity(disc.root,&disc),settingsFile=root.filePath("history.ini");
+        {ResumeHistory history(settingsFile);history.save(identity,{disc.root,true,1,10000,120000,true});history.save(identity,{disc.root,true,1,20000,120000,false,"prepared.json"});}
+        ResumeHistory history(settingsFile);QVERIFY(history.find(identity,1));QVERIFY(history.find(identity,1,false));
+        QCOMPARE(history.find(identity,1)->positionMs,qint64(10000));QCOMPARE(history.find(identity,1,false)->positionMs,qint64(20000));
+        QVERIFY(!history.latest()->discMenus);QCOMPARE(history.latest()->preparedProject,QString("prepared.json"));
+        history.remove(identity,1);QVERIFY(!history.find(identity,1));QVERIFY(history.find(identity,1,false));
+        history.save(identity,{disc.root,true,1,30000,120000,true});history.save(identity,{disc.root,true,0,40000,120000,false});
+        history.remove(identity,-1,false);QVERIFY(!history.find(identity,-1,false));QVERIFY(history.find(identity,1));QCOMPARE(history.latest()->positionMs,qint64(30000));QVERIFY(history.latest()->discMenus);
+    }
+    void approachingEndRemovesOnlyTheSavedDiscMode(){
+        QTemporaryDir root;auto disc=ownedDisc();const auto identity=resumeIdentity(disc.root,&disc);ResumeHistory history(root.filePath("history.ini"));
+        history.save(identity,{disc.root,true,1,20000,120000,true});history.save(identity,{disc.root,true,1,30000,120000,false,"prepared.json"});
+        history.save(identity,{disc.root,true,1,116000,120000,false,"prepared.json"});QVERIFY(history.find(identity,1));QVERIFY(!history.find(identity,1,false));
+        history.save(identity,{disc.root,true,0,40000,120000,false});history.save(identity,{disc.root,true,0,116000,120000,false});
+        QVERIFY(!history.find(identity,0,false));QCOMPARE(history.find(identity,1)->positionMs,qint64(20000));
+    }
+    void fileResumeDedupeDoesNotDependOnDiscMode(){
+        QTemporaryDir root;const auto source=ownedFile(root.path(),"owned.mkv"),identity=resumeIdentity(source);ResumeHistory history(root.filePath("history.ini"));
+        history.save(identity,{source,false,-1,10000,120000,false,"first.json"});history.save(identity,{source,false,-1,20000,120000,true,"second.json"});
+        QCOMPARE(history.find(identity)->positionMs,qint64(20000));QCOMPARE(history.find(identity,-1,false)->preparedProject,QString("second.json"));
+        history.remove(identity,-1,false);QVERIFY(!history.find(identity));QVERIFY(!history.latest());
+    }
+    void invalidNewStoredFieldsCannotBecomeAResumeRequest_data(){
+        QTest::addColumn<QString>("field");QTest::addColumn<QJsonValue>("value");
+        QTest::newRow("mode-string")<<QString("discMenus")<<QJsonValue("false");
+        QTest::newRow("mode-number")<<QString("discMenus")<<QJsonValue(0);
+        QTest::newRow("mode-null")<<QString("discMenus")<<QJsonValue(QJsonValue::Null);
+        QTest::newRow("project-bool")<<QString("preparedProject")<<QJsonValue(false);
+        QTest::newRow("project-number")<<QString("preparedProject")<<QJsonValue(123);
+        QTest::newRow("project-null")<<QString("preparedProject")<<QJsonValue(QJsonValue::Null);
+        QTest::newRow("project-array")<<QString("preparedProject")<<QJsonValue(QJsonArray{});
+        QTest::newRow("project-too-long")<<QString("preparedProject")<<QJsonValue(QString(32769,'x'));
+        QTest::newRow("project-nul")<<QString("preparedProject")<<QJsonValue(QString("project")+QChar(0)+".json");
+        QTest::newRow("project-unpaired-surrogate")<<QString("preparedProject")<<QJsonValue(QString(QChar(0xd800))+".json");
+    }
+    void invalidNewStoredFieldsCannotBecomeAResumeRequest(){
+        QFETCH(QString,field);QFETCH(QJsonValue,value);QTemporaryDir root;const auto settingsFile=root.filePath("history.ini");
+        QJsonObject entry{{"identity",QString(64,'a')},{"source","X:/"},{"disc",true},{"title",1},{"positionMs","15000"},{"durationMs","120000"}};entry.insert(field,value);
+        QSettings settings(settingsFile,QSettings::IniFormat);settings.setValue("resumeHistory/v1",QJsonDocument(QJsonObject{{"version",1},{"entries",QJsonArray{entry}}}).toJson());settings.sync();
+        ResumeHistory history(settingsFile);QVERIFY(!history.latest());
+    }
+    void invalidProjectOnSaveCannotEraseOrReplaceAValidPoint(){
+        QTemporaryDir root;auto disc=ownedDisc();const auto identity=resumeIdentity(disc.root,&disc);ResumeHistory history(root.filePath("history.ini"));
+        history.save(identity,{disc.root,true,1,20000,120000});
+        for(const auto &project:QStringList{QString(32769,'x'),QString(QChar(0xd800)),QString("bad")+QChar(0)}){
+            history.save(identity,{disc.root,true,1,30000,120000,true,project});QCOMPARE(history.find(identity,1)->positionMs,qint64(20000));
+            history.save(identity,{disc.root,true,1,116000,120000,true,project});QVERIFY(history.find(identity,1));
+        }
     }
     void malformedStoredDataCannotBecomeAResumeRequest(){
         QTemporaryDir root;const auto settingsFile=root.path()+"/history.ini";QSettings settings(settingsFile,QSettings::IniFormat);

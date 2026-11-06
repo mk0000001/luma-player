@@ -89,7 +89,8 @@ private:
     void selectAudio(int id);
     void selectTitle(int id);
     void buildUi();
-    void openSourceImpl(const QString &source,bool preparedOpen);
+    void openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);
+    qint64 discTargetDurationMs_=0;
     void bindEngine(PlaybackEngine *engine);
     void recoverVideoOutput(PlaybackEngine *engine,const QString &message);
     void discoverDisc();
@@ -126,7 +127,7 @@ private:
     void cancelSubtitleWork();
     void rebuildManagedCaptions();
     void showCaptionPreparation();
-    void playPreparedCaptions(CaptionPreparationResult result);
+    bool playPreparedCaptions(CaptionPreparationResult result);
     void applyPreparedCaptions();
     QVector<SubtitleCue> originalCues()const;
     QVector<SubtitleCue> displayCues()const;

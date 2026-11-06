@@ -4,6 +4,13 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.9 — 2026-11-06 프리뷰
+
+- 준비한 Blu-ray 타이틀을 메뉴 없는 실제 native 목록에서 길이로 선택하고, 선택·길이가 확인될 때까지 일시정지. 모호하거나 맞지 않는 타이틀에는 자막을 강제로 적용하지 않음. 일반 메뉴 재생 유지.
+- 직접 재생의 본편 index 0을 지원하고 메뉴/직접 모드·완성 프로젝트를 이어보기에 저장. 미디어 전환·영상 출력 복구 때 완성 원문·번역을 유지하고 변경된 원본은 충돌 없이 거부.
+- 사전 생성의 제어된 가속 대체 사유와 마지막 장치 표시, 동일 조건·저장 구간을 유지하는 가속 재시도. 최초 GPU 대체 원인은 미확정으로 유지.
+- 실물 104분 전체 생성 완료와 준비 타이틀의 영상 진행·탐색을 확인. [alpha.9 검증](docs/releases/0.1.0-alpha.9.md) 및 [Qwen3 네이티브 비교와 미채택 근거](docs/research/qwen3-asr-native-evaluation.md). alpha.8 이하 태그·파일은 보존.
+
 ### 0.1.0-alpha.8 — 2026-11-06 프리뷰
 
 - 파일·연결된 Blu-ray의 선택 타이틀 전체를 영상 재생 없이 원문 인식한 뒤 원문 문맥으로 한국어 번역. 진행률·취소·중간 저장·같은 조건의 이어하기 제공.
@@ -74,6 +81,13 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.9 — preview, 2026-11-06
+
+- Select the prepared Blu-ray feature through the actual menu-free native title list, pausing until unique duration/selection acknowledgment. Never force captions onto ambiguous or mismatched titles; retain ordinary authored menus.
+- Support direct-mode content index 0 and mode/project-aware resume. Preserve completed originals/translations across source switches and video-output recovery; reject changed sources without a crash.
+- Show controlled preparation fallback reasons and last-used devices, with checkpoint-preserving same-request accelerator retry. The initial GPU rejection cause remains unconfirmed.
+- Observed complete 104-minute preparation and matching-feature video progress/seek. See alpha.9 validation and the native Qwen3 comparison/retention decision. Earlier tags and files remain immutable.
 
 ### 0.1.0-alpha.8 — preview, 2026-11-06
 
