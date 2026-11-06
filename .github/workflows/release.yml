@@ -59,6 +59,7 @@ jobs:
           ./tests/translation_cuda_installer_tests.ps1
           ./tests/asr_cuda_installer_tests.ps1
           ./tests/asr_model_installer_tests.ps1
+          ./tests/windows_installer_tests.ps1
       - name: Package portable player
         shell: pwsh
         run: |

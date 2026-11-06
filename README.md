@@ -2,6 +2,8 @@
 
 ## 한국어
 
+Windows 설치형은 [설치 빌드 1](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-alpha.10-installer.1)을 사용하세요. CUDA·관련 라이브러리·기본 Turbo를 포함하고, full-v3·한국어 번역 모델을 선택하면 설치 중 자동 다운로드·SHA-256 검증합니다. [설치·제거 안내](docs/WINDOWS-INSTALLER.md).
+
 C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.10` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 준비 타이틀 선택과 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.10.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
 
 선택 Kotoba 모델용 C++ NPU 인코더와 설치 검사를 제공합니다. OpenVINO 2026.4.1에서 실제 NPU 연속 추론을 확인했습니다. 설치기는 실제 인코더 호출·안정성·처리 시간을 검사하고, 적합한 모델·장치 조합만 자동 NPU를 사용하며 나머지는 GPU→CPU로 대체합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·검증 범위](docs/PERFORMANCE-KOTOBA.md)를 확인하세요.
@@ -99,6 +101,8 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 애플리케이션은 **GPL-3.0-or-later**입니다. Whisper/Turbo는 MIT, 선택 Qwen3-4B·Hy-MT2 모델은 Apache 2.0이며, 선택 CUDA는 별도 NVIDIA 원문 조건을 따릅니다. Noto는 수정 없이 SIL OFL 1.1·저작권 고지와 함께 포함합니다. 상용 플레이어의 비공개 코드·DLL·디자인 자산을 포함하지 않습니다.
 
 ## English
+
+Use [Windows installer build 1](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-alpha.10-installer.1) for per-user installation. CUDA/dependencies and Turbo are included; optional full-v3/Korean translation models download automatically with SHA-256 verification. See the [installation guide](docs/WINDOWS-INSTALLER.md).
 
 LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.10`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.10.md) tracks preparation selection and validation. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
 
