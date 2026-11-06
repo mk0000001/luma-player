@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
+#include <QScopeGuard>
 #include "subtitles/pcm_buffer.h"
 #include "subtitles/subtitle_job.h"
 using namespace luma;
@@ -18,6 +19,19 @@ class PcmBufferTests:public QObject{
     }
     QByteArray read(const QString &path){QFile f(path);if(!f.open(QIODevice::ReadOnly))return {};return f.readAll();}
 private slots:
+    void offlineReaderIsUnthrottledAndDoesNotReuseLiveReader(){
+        QTemporaryDir root;tools(root);const auto log=root.filePath("arguments");qputenv("LUMA_FIXTURE_PCM_ARGUMENTS",QFile::encodeName(log));
+        const auto cleanup=qScopeGuard([]{qunsetenv("LUMA_FIXTURE_PCM_ARGUMENTS");});
+        PcmBuffer buffer(root.path());QSignalSpy ready(&buffer,&PcmBuffer::ready),errors(&buffer,&PcmBuffer::failed);
+        RecognitionRequest request;request.source="buffered-pcm.wav";request.disc=true;request.playlist="00001";request.durationMs=5000;
+        buffer.prepare(request,root.filePath("live.wav"));QTRY_COMPARE_WITH_TIMEOUT(ready.count(),1,3000);
+        const auto live=read(log).trimmed().split('\n');QCOMPARE(live.size(),1);QVERIFY(live.first().contains("-readrate\t1\t"));QVERIFY(live.first().contains("-readrate_initial_burst\t75\t"));
+        request.readAtFullSpeed=true;buffer.prepare(request,root.filePath("offline.wav"));QTRY_COMPARE_WITH_TIMEOUT(ready.count(),2,3000);
+        const auto modes=read(log).trimmed().split('\n');QCOMPARE(modes.size(),2);QVERIFY(!modes.last().contains("-readrate"));QCOMPARE(errors.count(),0);
+        QCOMPARE(read(root.filePath("live.wav")),read(root.filePath("offline.wav")));
+        request.readAtFullSpeed=false;buffer.prepare(request,root.filePath("live-again.wav"));QTRY_COMPARE_WITH_TIMEOUT(ready.count(),3,3000);
+        QCOMPARE(read(log).trimmed().split('\n').size(),3);
+    }
     void successfulShortAndSilentEof_data(){QTest::addColumn<QString>("source");QTest::newRow("partial")<<QString("short-pcm.wav");QTest::newRow("empty")<<QString("empty-pcm.wav");}
     void successfulShortAndSilentEof(){
         QFETCH(QString,source);QTemporaryDir root;tools(root);PcmBuffer buffer(root.path());QSignalSpy ready(&buffer,&PcmBuffer::ready),errors(&buffer,&PcmBuffer::failed);

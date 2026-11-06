@@ -41,6 +41,7 @@ void installPlayerTheme(){
       QPushButton:hover{background:%7;border-color:%6;} QPushButton:pressed{background:%6;}
       QPushButton:focus{border-color:#2189ff;} QPushButton:disabled{color:%5;}
       QPushButton#primary,QPushButton#consentApprove:enabled{background:#2189ff;color:#fff;border:1px solid #2189ff;} QPushButton#primary:hover,QPushButton#consentApprove:enabled:hover{background:#459cff;}
+      QPushButton[primary="true"]:enabled{background:#2189ff;color:#fff;border:1px solid #2189ff;} QPushButton[primary="true"]:enabled:hover{background:#459cff;}
       QPushButton#subtle{background:transparent;border:1px solid %6;}
       QPushButton#themeToggle{background:transparent;border:1px solid %6;min-width:74px;}
       QPushButton#iconButton{background:transparent;border:1px solid transparent;border-radius:17px;padding:0;min-height:0;}
@@ -56,6 +57,10 @@ void installPlayerTheme(){
       QWidget#welcome{background:%2;border-radius:18px;} QWidget#welcome QLabel{background:transparent;} QWidget#captionOverlay{background:transparent;}
       QWidget#transport{background:%1;border-top:1px solid %6;}
       QComboBox{background:%3;border:1px solid %6;border-radius:12px;padding:9px;min-height:18px;}
+      QLineEdit,QSpinBox{background:%3;border:1px solid %6;border-radius:10px;padding:8px;min-height:18px;selection-background-color:#2189ff;}
+      QLineEdit:focus,QSpinBox:focus{border-color:#2189ff;}
+      QProgressBar{background:%3;border:1px solid %6;border-radius:8px;min-height:16px;text-align:center;font-size:11px;}
+      QProgressBar::chunk{background:#2189ff;border-radius:7px;}
       QComboBox QAbstractItemView{background:%2;color:%4;selection-background-color:#2189ff;selection-color:white;padding:6px;}
       QListWidget{background:transparent;border:0;outline:0;} QListWidget::item{padding:9px;border-radius:8px;}
       QListWidget::item:selected{background:%3;color:%8;}

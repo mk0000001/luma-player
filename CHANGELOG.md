@@ -4,6 +4,13 @@
 
 공개 배포에는 불변 태그·GitHub Release·체크섬을 남깁니다. 로컬 시험 빌드와 실제 배포를 구분하며, 아래 프리뷰의 최종 검증은 각 릴리스 기록을 따릅니다.
 
+### 0.1.0-alpha.8 — 2026-11-06 프리뷰
+
+- 파일·연결된 Blu-ray의 선택 타이틀 전체를 영상 재생 없이 원문 인식한 뒤 원문 문맥으로 한국어 번역. 진행률·취소·중간 저장·같은 조건의 이어하기 제공.
+- 원문/한국어 SRT, 선택 독음 조합 SRT와 재사용 가능한 자막 프로젝트. 완성 프로젝트 재생·탐색은 실시간 AI 준비를 기다리지 않으며 타이틀·오디오가 달라지면 잘못된 자막을 적용하지 않음.
+- Blu-ray 사전 생성만 읽기 속도 제한 해제, 감상 중 기존 10초/60초 정책 유지. 이미 켜진 AI의 외부 자막 실패 전환을 수정.
+- [사용 안내](docs/PREPARE-CAPTIONS.md)와 [검증·배포 기록](docs/releases/0.1.0-alpha.8.md). 이전 태그·배포 파일 보존.
+
 ### 0.1.0-alpha.7 — 2026-11-06 프리뷰
 
 - 유효한 음성 토큰 시각을 자막 페이지에 전달. 긴 가사를 글자 수에 따라 다시 배분하지 않고 토큰·결합 문자 경계와 쉼을 보존하며, 무효/없는 정렬 정보는 기존 구간 시간으로 처리.
@@ -67,6 +74,13 @@
 ## English
 
 Published distributions receive immutable tags, GitHub Releases and checksums. Local test builds are distinct from distributed versions; each release record owns its final validation status.
+
+### 0.1.0-alpha.8 — preview, 2026-11-06
+
+- Prepare all original captions for a file or connected Blu-ray title without playback, then translate recognized text with original context. Progress, cancellation, checkpoints and compatible resume.
+- Original/Korean/display SRT exports and reusable caption projects. Completed-project playback/seeking avoids live AI holds and validates the title/audio before attachment.
+- Offline-only unthrottled disc reading; existing live ten/sixty-second policy retained. Fixed invalid-subtitle fallback when AI was already enabled.
+- See the preparation guide and alpha.8 validation/release record. Earlier tags and assets remain immutable.
 
 ### 0.1.0-alpha.7 — preview, 2026-11-06
 

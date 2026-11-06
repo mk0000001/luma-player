@@ -2,7 +2,7 @@
 
 ## 한국어
 
-C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.7` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 토큰 시간·원문 문맥 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.7.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.8` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 토큰 시간·원문 문맥 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.8.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
 
 선택 Kotoba 모델용 C++ NPU 인코더와 설치 검사를 제공합니다. OpenVINO 2026.4.1에서 실제 NPU 연속 추론을 확인했습니다. 설치기는 실제 인코더 호출·안정성·처리 시간을 검사하고, 적합한 모델·장치 조합만 자동 NPU를 사용하며 나머지는 GPU→CPU로 대체합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·검증 범위](docs/PERFORMANCE-KOTOBA.md)를 확인하세요.
 
@@ -10,6 +10,7 @@ C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레�
 - **파일:** libmpv GPU Next, AV1 등 엔진 지원 코덱, 파일 출력 GPU 선택. HDR/Dolby Vision 처리 경로와 실제 출력 검증은 구분합니다.
 - **로컬 자막:** 원문·일본어 한글 독음·한국어 번역을 분리하고, 긴 자막을 짧은 시간 페이지와 화면 폭에 맞게 표시합니다. 최소 10초 준비 후에도 60초 앞까지 계속 인식합니다. 한국어 번역은 최신 버퍼의 앞뒤 원문을 참고하고 현재 구간만 번역합니다. 실행 중 외부 API·계정·Python이 필요하지 않습니다.
 - **외부 자막·이어보기:** SRT/ASS/SSA/VTT/SMI, 같은 이름 자막 자동 검색, 불러오기 실패 시 현재 언어의 AI 전환. 파일별·디스크 본편 타이틀별 위치를 로컬에 저장합니다.
+- **재생 전 전체 자막:** 파일·Blu-ray 타이틀 전체의 원문을 먼저 인식한 뒤 문맥으로 한국어를 번역합니다. 취소·이어하기, 원문·독음·해석 SRT와 완성 프로젝트 재생을 제공합니다. [사전 생성 안내](docs/PREPARE-CAPTIONS.md).
 - **화면:** 기본 다크/선택 라이트, 자체 컨트롤과 Noto Sans. 영상 위의 74 px 전체화면 바는 영상 크기를 바꾸지 않고 5초 비활동 시 커서와 함께 숨습니다. alpha.4에는 이미 포커스된 VLC 영상에서 정지 포인터의 가운데 클릭이 재생바를 복원하지 못하는 [알려진 문제](docs/releases/0.1.0-alpha.4.md)가 남았습니다. alpha.5에서 창/전체화면 우클릭·가운데 클릭 복원과 유휴 숨김을 실물 디스크로 확인했습니다. 진단은 개발자 모드에서 표시합니다.
 - **선택 프레임 보간:** 파일용 디스플레이 동기 혼합과 실험적 CPU 광학 흐름(24~360 fps **목표**). 360 fps 실시간 표시를 보장하지 않습니다.
 
@@ -39,6 +40,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install-asr-mode
 
 파일을 열거나 **Blu-ray 재생**을 누른 뒤 **AI 자막** 탭에서 자동자막과 원문·독음·번역 표시를 선택합니다. **표시 자막 저장**으로 현재 선택한 내용을 SRT로 내보냅니다.
 
+미리 준비하려면 **AI 자막 → 재생 전 전체 자막 만들기**에서 파일 또는 연결된 Blu-ray를 선택하세요. 완료 후 **준비한 자막으로 재생**하거나 다음에 **미리 만든 자막 프로젝트 열기**를 사용합니다. 완성 자막은 탐색 후 실시간 인식 버퍼를 기다리지 않습니다. 선택한 전체 타이틀의 생성 시간과 임시 저장 공간이 필요합니다.
+
 AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 준비하고, 준비 후에도 60초 앞까지 작업을 계속합니다. 처리 단위로 목표를 조금 넘을 수 있습니다. 시작 안내·디스크 메뉴는 기다리지 않습니다. 수동 일시정지를 유지하고, 실패로 최소 버퍼를 자동 우회하지 않습니다. **자막 다시 시도** 또는 **자막 없이 계속**을 선택할 수 있습니다. 영상 출력·음성 인식·번역 장치는 각각 선택하며 실제 사용 백엔드를 표시합니다. 모델마다 지원 장치가 다르고 인식·독음·번역에는 오류가 있을 수 있습니다.
 
 재생 화면에서 Space: 재생/일시정지 · F/Enter/F11: 전체화면 · Esc: 해제 · ←/→: 10초 탐색 · ↑/↓: 음량 5% · M: 음소거. 디스크 메뉴는 Ctrl+방향키/Ctrl+Enter 또는 마우스·화면 리모컨으로 조작합니다. 입력 위젯의 기본 키는 유지합니다. [전체 사용 안내](docs/CAPTIONS-AND-PLAYBACK.md)를 참고하세요.
@@ -47,7 +50,7 @@ AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 
 
 AACS/BD+ 라이브러리 연결, Windows 캡처 제외, 인증 DRM/HDCP 출력은 서로 다른 기능입니다. 키·인증서·상용 디스크 영상·음성·메뉴 이미지·생성 자막은 배포하지 않습니다. TUKI 한 장의 성공이 모든 디스크의 호환성을 뜻하지 않습니다.
 
-보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.7.md)을 확인하세요.
+보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 확인하세요.
 
 ### 소스에서 빌드
 
@@ -75,7 +78,7 @@ pwsh -File scripts/install-translation-cuda.ps1 -Development
 pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 ```
 
-출력 이름은 `LumaPlayer-0.1.0-alpha.7-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
+출력 이름은 `LumaPlayer-0.1.0-alpha.8-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
 
 Linux 개발 빌드:
 
@@ -97,7 +100,7 @@ Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오�
 
 ## English
 
-LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.7`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.7.md) tracks token timing and original-context translation. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.8`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.8.md) tracks token timing and original-context translation. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
 
 Native C++ Kotoba NPU conversion and installation calibration are available. Repeated genuine NPU inference was observed with OpenVINO 2026.4.1. The installer checks real encoder calls, stability and latency; automatic mode uses NPU only for a qualified model/device combination, otherwise GPU then CPU. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [measured limits](docs/PERFORMANCE-KOTOBA.md). Korean translation uses the latest buffered original context while translating only the target cue.
 
@@ -123,6 +126,8 @@ For Japanese speech, optionally run `tools/install-asr-model.ps1 -Profile japane
 
 Open a file or disc, then enable automatic captions and choose source/reading/translation in the **AI 자막** tab. **표시 자막 저장** exports the selected display text to SRT.
 
+For full preparation before playback, select **AI 자막 → 재생 전 전체 자막 만들기**, choose a file or connected Blu-ray, and prepare all originals before contextual Korean translation. Cancel/resume, SRT exports and reusable projects are supported. Completed captions bypass live ASR buffering after seeks. See the [preparation guide](docs/PREPARE-CAPTIONS.md) for storage, model and source requirements.
+
 ASR requires ten seconds before playback/after seeking, shortened near EOF, then keeps working toward 60 seconds ahead. Chunk boundaries may exceed the target slightly. Disc navigation does not wait for main-title captions. Manual pause is preserved, and failure does not silently bypass minimum readiness: use retry or **자막 없이 계속**. Video, ASR and translation devices are separate and report actual backends; support varies by model. Recognition, readings and translation can be inaccurate.
 
 With playback focus: Space plays/pauses; F/Enter/F11 toggles fullscreen; Esc exits; Left/Right seeks ten seconds; Up/Down changes volume by 5%; M mutes/restores volume. Ctrl+arrows/Ctrl+Enter navigate disc menus, alongside mouse/onscreen controls. Editable/control widgets retain normal keys. See the [user guide](docs/CAPTIONS-AND-PLAYBACK.md).
@@ -133,6 +138,6 @@ Windows requires Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, N
 
 For the CUDA ZIP, run both `install-asr-cuda.ps1 -Development` and `install-translation-cuda.ps1 -Development`, then `package-windows.ps1 -BuildDirectory build-next -IncludeCuda`, as shown above. Omitting `-IncludeCuda` preserves the core flavor. The release workflow's manual `include_cuda` input defaults to `true`; final archive size, hashes and native results remain in the release record.
 
-AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.7.md) for actual HDR/lossless, CI and packaging status.
+AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.6.md) for actual HDR/lossless, CI and packaging status.
 
 See the [changelog](CHANGELOG.md), [version policy](docs/VERSIONING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The application is GPL-3.0-or-later, Whisper/Turbo is MIT, optional Qwen3-4B/Hy-MT2 weights are Apache 2.0, and optional CUDA keeps its separate NVIDIA terms. Unmodified Noto fonts retain SIL OFL 1.1 notices.
