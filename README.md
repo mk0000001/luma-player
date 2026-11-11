@@ -13,7 +13,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 ### Windows 베타 설치
 
-릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [설치·모델 선택 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/WINDOWS-INSTALLER.md)
+릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.4) · [설치·모델 선택 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -32,7 +32,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 **츠키 무도관 Blu-ray (TUKI NIPPON BUDOKAN BD)**로 메뉴, ALL PLAY 본편 재생, 탐색과 자막 표시를 테스트했습니다. [버전별 검증 기록](https://github.com/mk0000001/luma-player/releases)
 
-**권장 사양에 못 미치면 재생 전에 자막을 먼저 생성하세요.** **AI 자막 → 재생 전 전체 자막 만들기**에서 파일이나 Blu-ray 타이틀을 선택합니다. 생성이 끝나면 **미리 만든 자막 프로젝트 열기**로 열어 감상하세요. [미리 생성·이어하기 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/PREPARE-CAPTIONS.md)
+**권장 사양에 못 미치면 재생 전에 자막을 먼저 생성하세요.** **AI 자막 → 재생 전 전체 자막 만들기**에서 파일이나 Blu-ray 타이틀을 선택합니다. 생성이 끝나면 **미리 만든 자막 프로젝트 열기**로 열어 감상하세요. [미리 생성·이어하기 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/PREPARE-CAPTIONS.md)
 
 ### 문제가 생기면
 
@@ -43,13 +43,13 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 | 한국어 번역이 안 나옴 | **한국어 번역**을 켜고 **번역 모델 선택**에서 설치된 Hy-MT2 파일을 고르세요. |
 | Blu-ray 메뉴나 재생이 열리지 않음 | **새로 확인**으로 디스크를 감지한 뒤 **Blu-ray 재생**을 눌러 보세요. 계속 실패하면 개발자 모드의 진단에서 첫 오류를 확인하세요. |
 
-[재생·자막·단축키 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/INSTALL-TRANSLATION.md)
+[재생·자막·단축키 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/INSTALL-TRANSLATION.md)
 
 ### 기술과 개발
 
 LumaPlayer는 C++20과 Qt 6으로 만든 네이티브 앱입니다. Blu-ray 메뉴와 재생에는 libVLC, 일반 미디어에는 libmpv를 사용합니다. Whisper 계열 모델이 음성을 인식하고, 로컬 번역 모델이 인식된 텍스트와 문맥을 읽어 번역합니다. Windows를 먼저 개발하며 Linux 개발과 검증은 저장소에서 이어갑니다.
 
-[구현 결정](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/DECISIONS.md) · [선택 NPU 설정](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/INSTALL-KOTOBA-NPU.md) · [라이선스](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/LICENSE) · [포함 라이브러리와 고지](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/THIRD_PARTY_NOTICES.md)
+[구현 결정](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/DECISIONS.md) · [선택 NPU 설정](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/INSTALL-KOTOBA-NPU.md) · [라이선스](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/LICENSE) · [포함 라이브러리와 고지](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/THIRD_PARTY_NOTICES.md)
 
 ## English
 
@@ -64,7 +64,7 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 
 ### Install the Windows beta
 
-Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [Installation and model selection](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/WINDOWS-INSTALLER.md)
+Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.4) · [Installation and model selection](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 
@@ -83,7 +83,7 @@ For live recognition and Korean translation together, we recommend a system arou
 
 Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON BUDOKAN BD**. [Version-specific verification records](https://github.com/mk0000001/luma-player/releases)
 
-**If your system falls below the recommendation, prepare captions before playback.** Choose a file or Blu-ray title in **AI 자막 → 재생 전 전체 자막 만들기**, then open the completed project with **미리 만든 자막 프로젝트 열기**. [Preparation and resume guide](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/PREPARE-CAPTIONS.md)
+**If your system falls below the recommendation, prepare captions before playback.** Choose a file or Blu-ray title in **AI 자막 → 재생 전 전체 자막 만들기**, then open the completed project with **미리 만든 자막 프로젝트 열기**. [Preparation and resume guide](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/PREPARE-CAPTIONS.md)
 
 ### Troubleshooting
 
@@ -94,10 +94,10 @@ Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON
 | Korean translation is missing | Enable **한국어 번역** and select the installed Hy-MT2 file with **번역 모델 선택**. |
 | Disc menu or playback fails to open | Refresh disc detection with **새로 확인**, then retry **Blu-ray 재생**. If it still fails, check the first error in developer diagnostics. |
 
-[Playback, captions, and shortcuts](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/INSTALL-TRANSLATION.md)
+[Playback, captions, and shortcuts](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/INSTALL-TRANSLATION.md)
 
 ### Technology and development
 
 LumaPlayer is a native C++20 and Qt 6 application. It uses libVLC for Blu-ray menus and playback and libmpv for media files. Local Whisper-family models recognize speech, and local text models translate the recognized text with context. Windows development comes first, with Linux development and verification tracked in the repository.
 
-[Engineering decisions](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/DECISIONS.md) · [Optional NPU setup](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/docs/INSTALL-KOTOBA-NPU.md) · [License](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/LICENSE) · [Bundled libraries and notices](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.2/THIRD_PARTY_NOTICES.md)
+[Engineering decisions](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/DECISIONS.md) · [Optional NPU setup](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/docs/INSTALL-KOTOBA-NPU.md) · [License](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/LICENSE) · [Bundled libraries and notices](https://github.com/mk0000001/luma-player/blob/v0.1.0-beta.4/THIRD_PARTY_NOTICES.md)
