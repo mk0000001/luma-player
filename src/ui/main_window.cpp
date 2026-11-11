@@ -638,7 +638,14 @@ void MainWindow::seekTo(qint64 position){
 void MainWindow::holdForCaptionBuffer(){
     if(!liveCaptioningActive() || !active_ || bufferBypass_ || !captionTimelineAvailable())return;
     const auto &state=active_->state();
-    const auto position=pendingSeek_>=0?pendingSeek_:state.positionMs;if(position>=state.durationMs || coverage_.readyForPlayback(position,state.durationMs))return;
+    const auto position=pendingSeek_>=0?pendingSeek_:state.positionMs;
+    if(position>=state.durationMs)return;
+    // Require a larger lead to start or resume. Let active playback consume
+    // the existing captions without pausing at every crossing of that target.
+    constexpr qint64 rebufferLeadMs=2000;
+    const bool continuing=state.playing && !bufferHolding_ && pendingSeek_<0;
+    const auto needed=std::min(continuing?rebufferLeadMs:CaptionCoverage::lookAheadMs,state.durationMs-position);
+    if(coverage_.bufferedAhead(position,state.durationMs)>=needed)return;
     if(!bufferHolding_){const bool resume=wantsPlayback();bufferHolding_=true;bufferResume_=resume;}
     active_->setPaused(true);
 }

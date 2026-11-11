@@ -6,6 +6,7 @@
 
 - Windows Blu-ray에서 GPU 영상 디코딩을 우선 사용하고, 재생 중 영상 프레임이 멈추면 CPU 호환 디코딩으로 같은 위치를 복구합니다.
 - 실시간 자막용 Blu-ray 음성을 최대 75초 단위로 읽습니다. 디스크 읽기 대기와 자막 준비 상태를 구분해 표시합니다.
+- 시작·탐색은 자막 10초를 준비하고, 재생 중에는 남은 자막이 2초 미만일 때 다시 준비합니다.
 - 창을 옮기는 동안 영상·자막·재생 바의 위치를 함께 갱신합니다.
 - CUDA 포함 설치 EXE, 자동 모델 다운로드, 제품 소개, 권장·테스트 사양 및 문제 해결 안내를 제공합니다. [베타 기록](docs/releases/0.1.0-beta.1.md)
 
@@ -97,6 +98,7 @@
 
 - Prefer GPU video decoding for Blu-ray on Windows and recover a stalled picture at the same position with software decoding.
 - Read Blu-ray audio for live captions in windows of up to 75 seconds. Show disc buffering and caption preparation status.
+- Prepare ten seconds of captions at startup and after seeks. During playback, refill when less than two seconds remain.
 - Update the video, captions, and transport positions as the main window moves.
 - Provide a CUDA installer, automatic model downloads, a product introduction, hardware recommendations, and troubleshooting. [Beta record](docs/releases/0.1.0-beta.1.md)
 
