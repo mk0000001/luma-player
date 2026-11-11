@@ -1,4 +1,5 @@
 #include "video_surface.h"
+#include "native_playback_move.h"
 #include <QApplication>
 #include <QEvent>
 #include <QDropEvent>
@@ -18,7 +19,7 @@ VideoSurface::VideoSurface(QWidget *parent):QWidget(parent),video_(new QWidget(n
 }
 VideoSurface::~VideoSurface(){delete video_.data();}
 WId VideoSurface::videoWindowId(){syncWindow();return video_?video_->winId():0;}
-QWidget *VideoSurface::videoWindow()const{const_cast<VideoSurface*>(this)->syncWindow();return video_.data();}
+QWidget *VideoSurface::videoWindow()const{return video_.data();}
 void VideoSurface::setVideoActive(bool active){active_=active;syncWindow();}
 void VideoSurface::queueSync(){
     if(syncPending_)return;syncPending_=true;QTimer::singleShot(0,this,[this]{syncPending_=false;syncWindow();});
@@ -51,7 +52,7 @@ bool VideoSurface::eventFilter(QObject *object,QEvent *event){
     }
     if(object==this || object==host_){
         switch(event->type()){
-        case QEvent::Move:syncWindow();break;
+        case QEvent::Move:if(!playbackWindowsMoving(host_))syncWindow();break;
         case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::ParentChange:case QEvent::WindowStateChange:queueSync();break;
         default:break;
         }

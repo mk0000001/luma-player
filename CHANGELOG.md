@@ -2,6 +2,13 @@
 
 ## 한국어
 
+### 0.1.0-beta.5 — 2026-11-12 공개 베타
+
+- Windows에서 창을 끌 때 영상, 자막, 조작 바를 같은 이동 처리 단계에서 갱신합니다.
+- 항상 위에 뜨는 작은 화면(PiP)을 추가했습니다. 재생 바 또는 `Ctrl+Shift+P`로 전환하고 `Esc`로 돌아옵니다.
+- 탐색 바를 클릭해 위치를 바꾸고 자막 메뉴에서 번역 용어집을 열 수 있습니다.
+- 화면 구성, 재생, 자막, 입력 처리를 분리하고 Windows Qt를 6.11.3으로 올렸습니다. 라이브러리 검색, 자동 스크립트, 로컬 번역 응답 처리도 강화했습니다.
+
 ### 0.1.0-beta.4 — 2026-11-12 공개 베타
 
 - Blu-ray를 연 상태에서 저장한 번역 용어집을 디스크별로 기억합니다. 같은 디스크를 다시 열거나 전체 자막을 만들 때 자동으로 사용합니다.
@@ -106,6 +113,13 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.1.0-beta.5 — 2026-11-12 public beta
+
+- Update the video, caption, and transport windows during the same Windows drag event.
+- Add always-on-top picture-in-picture. Toggle it from the transport or with `Ctrl+Shift+P`, and return with `Esc`.
+- Click the seek track to jump and open the translation glossary from the captions menu.
+- Separate window construction, playback, captions, and input. Update Windows Qt to 6.11.3 and harden library search, automatic scripts, and local translation response handling.
 
 ### 0.1.0-beta.4 — 2026-11-12 public beta
 

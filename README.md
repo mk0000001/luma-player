@@ -9,26 +9,24 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 - **디스크를 감상하세요.** Blu-ray 메뉴에서 본편과 챕터를 고르고, 마지막으로 본 위치에서 이어볼 수 있습니다. 일반 동영상 파일도 열 수 있습니다.
 - **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 가지고 있는 자막 파일도 열 수 있고, 글꼴과 크기, 글자·배경 투명도를 조절할 수 있습니다.
 - **감상 전에 자막을 준비하세요.** 전체 영상의 자막과 번역을 저장해 두면, 다시 열거나 다른 장면으로 이동할 때 준비된 자막을 바로 쓸 수 있습니다.
-- **내 화면에 맞춰 감상하세요.** 다크·라이트 모드, 전체화면에서 자동으로 숨는 재생 바, 방향키 탐색과 볼륨 조절을 지원합니다.
+- **내 화면에 맞춰 감상하세요.** 전체화면이나 항상 위에 뜨는 작은 화면(PiP)으로 볼 수 있습니다. 탐색 바를 클릭하거나 방향키로 장면을 이동하고, 다크·라이트 모드를 고를 수 있습니다.
 
 ### Windows 베타 설치
 
-릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.4) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.5) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
-### 권장 사양과 실제 테스트
+### 최소·권장 사양과 실제 테스트
 
-실시간 원문 인식과 한국어 번역을 함께 사용할 때는 아래 테스트 환경 수준을 권장합니다.
+Windows 11 x64에서 1080p H.264 재생과 full-v3 Q5 음성 인식 + Hy-MT2-7B 한국어 번역의 부하를 따로 쟀습니다. 아래 최소 사양은 한 대의 실측을 바탕으로 한 추정치입니다. [측정값과 계산 근거](docs/testing/2026-11-12-beta5-performance-security.md)
 
-| 항목 | 권장 사양 | 실제 테스트 사양 |
+| 사용 방식 | 추정 최소 | 권장 |
 | --- | --- | --- |
-| 운영체제 | Windows 11 x64 | Windows 11 Home x64, 빌드 26300 |
-| CPU | Core Ultra 9 185H급 | Intel Core Ultra 9 185H |
-| GPU | VRAM 12 GB급 NVIDIA CUDA GPU | GeForce RTX 4080 Laptop GPU, 12 GB, 드라이버 617.42 |
-| 메모리 | 32 GB | 32 GB 장착, OS 인식 31.4 GiB |
-| 저장공간 | SSD에 16 GB 이상 여유 | SOLIDIGM SSDPFKKW020X7 NVMe SSD |
-| 디스크 | Blu-ray를 읽을 수 있는 드라이브 | PIONEER BD-ROM BDCTD03RS USB |
+| 1080p 재생·준비된 자막 | 4코어 CPU, RAM 8 GB, H.264 하드웨어 디코딩 GPU, SSD 여유 8 GB | 4코어 이상, RAM 16 GB, 하드웨어 디코딩 GPU, SSD 여유 8 GB |
+| 실시간 원문 인식 + 한국어 번역 | 6코어 CPU, RAM 16 GB, NVIDIA CUDA GPU VRAM 10 GB, SSD 여유 16 GB | Core Ultra 9 185H급, RAM 32 GB, RTX 4080 Laptop급 이상과 VRAM 12 GB 이상, SSD 여유 16 GB |
+
+테스트 PC는 Windows 11 Home x64 빌드 26300, Intel Core Ultra 9 185H(14코어·20스레드), RAM 32 GB, RTX 4080 Laptop GPU 12 GB(드라이버 617.42), SOLIDIGM NVMe SSD, PIONEER BD-ROM BDCTD03RS USB 드라이브입니다. Blu-ray에는 읽을 수 있는 광학 드라이브가 필요합니다.
 
 **츠키 무도관 Blu-ray (TUKI NIPPON BUDOKAN BD)**로 메뉴, ALL PLAY 본편 재생, 탐색과 자막 표시를 테스트했습니다. [버전별 검증 기록](https://github.com/mk0000001/luma-player/releases)
 
@@ -60,26 +58,24 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 - **Watch your discs.** Choose the main feature or a chapter from the Blu-ray menu, pick up where you left off, and open regular video files too.
 - **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Load your own subtitles and adjust the font, size, or text and background opacity.
 - **Prepare captions before watching.** Save captions and translation for a whole title, then reuse the completed project when you reopen it or seek to another scene.
-- **Make it fit your screen.** Use dark or light mode, fullscreen controls that hide when idle, and arrow keys for seeking and volume.
+- **Make it fit your screen.** Switch to fullscreen or always-on-top picture-in-picture. Click the seek track or use the arrow keys to jump, and choose dark or light mode.
 
 ### Install the Windows beta
 
-Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.4) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
+Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.5) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 
-### Recommended and tested hardware
+### Estimated minimum, recommended, and tested hardware
 
-For live recognition and Korean translation together, we recommend a system around the tested configuration below.
+We measured 1080p H.264 playback and live full-v3 Q5 recognition plus Hy-MT2-7B Korean translation separately on Windows 11 x64. The minimums below are estimates based on one measured machine. [Measurements and derivation](docs/testing/2026-11-12-beta5-performance-security.md)
 
-| Component | Recommended | Tested |
+| Workload | Estimated minimum | Recommended |
 | --- | --- | --- |
-| OS | Windows 11 x64 | Windows 11 Home x64, build 26300 |
-| CPU | Core Ultra 9 185H class | Intel Core Ultra 9 185H |
-| GPU | NVIDIA CUDA GPU with about 12 GB VRAM | GeForce RTX 4080 Laptop GPU, 12 GB, driver 617.42 |
-| Memory | 32 GB | 32 GB installed, 31.4 GiB visible to Windows |
-| Storage | SSD with 16 GB free | SOLIDIGM SSDPFKKW020X7 NVMe SSD |
-| Disc playback | Blu-ray drive | PIONEER BD-ROM BDCTD03RS USB |
+| 1080p playback with prepared captions | 4-core CPU, 8 GB RAM, hardware H.264 decode, 8 GB free SSD space | 4+ cores, 16 GB RAM, hardware video decode, 8 GB free SSD space |
+| Live recognition and Korean translation | 6-core CPU, 16 GB RAM, NVIDIA CUDA GPU with 10 GB VRAM, 16 GB free SSD space | Core Ultra 9 185H class, 32 GB RAM, RTX 4080 Laptop class or faster with 12 GB+ VRAM, 16 GB free SSD space |
+
+The test PC runs Windows 11 Home x64 build 26300 with a Core Ultra 9 185H (14 cores and 20 threads), 32 GB RAM, RTX 4080 Laptop GPU with 12 GB VRAM (driver 617.42), a SOLIDIGM NVMe SSD, and a PIONEER BD-ROM BDCTD03RS USB drive. Blu-ray playback requires a compatible optical drive.
 
 Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON BUDOKAN BD**. [Version-specific verification records](https://github.com/mk0000001/luma-player/releases)
 

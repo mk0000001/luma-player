@@ -46,7 +46,8 @@ jobs:
       - name: Verify bundled libraries
         shell: pwsh
         run: |
-          $env:PATH = "$pwd/.deps/qt/bin;$env:PATH"
+          $qt = (Get-Content dependencies.lock.json -Raw | ConvertFrom-Json).windows | Where-Object id -eq 'qt'
+          $env:PATH = "$pwd/.deps/$($qt.target)/bin;$env:PATH"
           $env:LUMA_TEST_RUNTIME = "$pwd/build/runtime"
           $env:LUMA_READING_RUNTIME = "$pwd/build/runtime"
           $env:LUMA_FONT_RUNTIME = "$pwd/build/runtime"

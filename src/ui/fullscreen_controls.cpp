@@ -1,4 +1,5 @@
 #include "fullscreen_controls.h"
+#include "native_playback_move.h"
 #include <QAbstractButton>
 #include <QAbstractSlider>
 #include <QApplication>
@@ -92,7 +93,7 @@ bool FullscreenControls::eventFilter(QObject *object,QEvent *event){
     if(object==transport_ && event->type()==QEvent::Close && window_){event->ignore();window_->close();return true;}
     if(object==window_ || object==surface_ || object==transport_){
         switch(event->type()){
-        case QEvent::Move:if(object!=transport_)syncGeometry();break;
+        case QEvent::Move:if(object!=transport_ && !playbackWindowsMoving(window_))syncGeometry();break;
         case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:case QEvent::ParentChange:
             if(object==window_ && (event->type()==QEvent::Show || event->type()==QEvent::WindowStateChange) && window_ && !window_->isMinimized()){wanted_=true;idle_.restart();window_->unsetCursor();if(surface_)surface_->unsetCursor();}
             queueSync();break;

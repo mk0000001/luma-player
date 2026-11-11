@@ -6,7 +6,13 @@
 #include <QTimer>
 #include "ui/main_window.h"
 #include "luma_version.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 int main(int argc,char **argv){
+#ifdef Q_OS_WIN
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+#endif
     QApplication app(argc,argv);QApplication::setApplicationName("LumaPlayer");QApplication::setOrganizationName("LumaPlayer");QApplication::setApplicationVersion(LUMA_VERSION);QApplication::setStyle("Fusion");
     QCommandLineParser parser;parser.addHelpOption();parser.addVersionOption();parser.addOption({"open","Open media file","file"});parser.addOption({"disc","Open Blu-ray drive/folder","path"});parser.addOption({"report","Write live diagnostic report and final report","path"});parser.addOption({"exit-after","Exit after N milliseconds (verification)","ms"});parser.addOption({"ai","Enable local original-language captions","language"});parser.addOption({"subtitle","Load UTF-8 SRT or external subtitles","file"});parser.addOption({"prepared-project","Play with a completed caption project","file"});parser.process(app);
     luma::MainWindow window;window.show();const auto source=parser.isSet("disc")?parser.value("disc"):parser.value("open");if(parser.isSet("prepared-project"))QTimer::singleShot(100,&window,[&window,&parser]{window.loadPreparedCaptionProject(parser.value("prepared-project"));});else if(!source.isEmpty())QTimer::singleShot(100,&window,[&window,source]{window.openSource(source);});

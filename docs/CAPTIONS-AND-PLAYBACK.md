@@ -59,7 +59,8 @@ AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적�
 | 키 | 동작 |
 | --- | --- |
 | F / Enter / F11 | 전체화면 전환 |
-| Esc | 전체화면 나가기 |
+| Ctrl+Shift+P | 작은 화면(PiP) 전환 |
+| Esc | 전체화면 또는 작은 화면 나가기 |
 | Space | 재생 / 일시정지 |
 | ← / → | 10초 뒤로 / 앞으로 |
 | ↑ / ↓ | 음량 5% 올리기 / 내리기 |
@@ -148,7 +149,8 @@ These keys apply with playback focus. Text fields, lists, selectors and sliders 
 | Key | Action |
 | --- | --- |
 | F / Enter / F11 | Toggle fullscreen |
-| Esc | Leave fullscreen |
+| Ctrl+Shift+P | Toggle picture-in-picture |
+| Esc | Leave fullscreen or picture-in-picture |
 | Space | Play / pause |
 | ← / → | Seek back / forward ten seconds |
 | ↑ / ↓ | Raise / lower volume by 5% |

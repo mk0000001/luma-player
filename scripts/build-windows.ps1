@@ -14,12 +14,18 @@ $env:VSLANG = '1033'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
 & chcp.com 65001 | Out-Null
-$qtRoot = Join-Path $projectRoot '.deps\qt'
+$lock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw | ConvertFrom-Json
+$qt = $lock.windows | Where-Object id -eq 'qt'
+$qtRoot = Join-Path $projectRoot ('.deps/'+$qt.target)
 $env:PATH = "$qtRoot\bin;$env:PATH"
 $appFlag = if ($CoreOnly) { 'OFF' } else { 'ON' }
 $compilerState = Get-ChildItem (Join-Path $buildRoot 'CMakeFiles/*/CMakeCXXCompiler.cmake') -ErrorAction SilentlyContinue | Select-Object -First 1
 $resetDependencies = $compilerState -and (Get-Content -LiteralPath $compilerState.FullName -Raw) -notmatch 'CMAKE_CXX_CL_SHOWINCLUDES_PREFIX "(Note: including file: |참고: 포함 파일: )'
-$configureArgs = @('-S',$projectRoot,'-B',$buildRoot,'-G','Ninja',"-DCMAKE_CXX_COMPILER=$((Get-Command cl).Source)","-DCMAKE_PREFIX_PATH=$qtRoot","-DCMAKE_BUILD_TYPE=$Configuration","-DLUMA_BUILD_APP=$appFlag")
+$cachedQt = Select-String -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt') -Pattern '^Qt6Core_DIR:[^=]+=(.+)$' -ErrorAction SilentlyContinue
+if ($cachedQt -and $cachedQt.Matches[0].Groups[1].Value.Replace('\','/') -ine ($qtRoot.Replace('\','/')+'/lib/cmake/Qt6Core')) {
+    $resetDependencies = $true
+}
+$configureArgs = @('-S',$projectRoot,'-B',$buildRoot,'-G','Ninja',"-DCMAKE_CXX_COMPILER=$((Get-Command cl).Source)","-DCMAKE_PREFIX_PATH=$qtRoot","-DQt6_DIR=$qtRoot/lib/cmake/Qt6","-DCMAKE_BUILD_TYPE=$Configuration","-DLUMA_BUILD_APP=$appFlag")
 if ($resetDependencies) { $configureArgs += '--fresh' }
 & cmake @configureArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

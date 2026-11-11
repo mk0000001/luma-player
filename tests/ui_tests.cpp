@@ -37,6 +37,9 @@
 #include "subtitles/translation_service.h"
 #include "subtitles/translation_support.h"
 #include "subtitles/subtitle_file.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
@@ -65,6 +68,84 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void seekTrackClickCommitsPosition(){
+        luma::MainWindow window;
+        window.show();
+        auto *seek=window.findChild<QSlider*>("seekSlider");
+        auto *transport=window.findChild<QWidget*>("transport");
+        auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
+        QVERIFY(seek && transport && surface);
+        QTRY_VERIFY(seek->isVisible());
+        QTRY_COMPARE(transport->width(),surface->width());
+        QTRY_COMPARE(seek->width(),transport->contentsRect().width()-36);
+        QSignalSpy released(seek,&QSlider::sliderReleased);
+        QTest::mouseClick(seek,Qt::LeftButton,Qt::NoModifier,QPoint(seek->width()*3/4,seek->height()/2));
+        QCOMPARE(released.size(),1);
+        QVERIFY2(seek->value()>7100 && seek->value()<7900,qPrintable(QString("seek value %1 / %2, width %3").arg(seek->value()).arg(seek->maximum()).arg(seek->width())));
+    }
+#ifdef Q_OS_WIN
+    void pictureInPictureKeepsVideoAndRestoresWindow(){
+        const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
+        if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
+            QSKIP("Requires the native Windows Qt backend and a local media fixture");
+        luma::MainWindow window;
+        window.show();
+        auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
+        auto *pip=window.findChild<QPushButton*>("pictureInPicture");
+        QVERIFY(surface && pip);
+        QTRY_VERIFY(window.isVisible());
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>300,10000);
+        const auto geometry=window.geometry();
+        const auto videoId=surface->videoWindowId();
+        const auto handle=reinterpret_cast<HWND>(window.winId());
+        const auto position=window.diagnostics().value("positionMs").toInteger();
+        QTest::keyClick(surface,Qt::Key_P,Qt::ControlModifier|Qt::ShiftModifier);
+        QVERIFY(window.diagnostics().value("pictureInPicture").toBool());
+        QTRY_VERIFY(GetWindowLongPtrW(handle,GWL_EXSTYLE)&WS_EX_TOPMOST);
+        QVERIFY(window.width()<geometry.width());
+        QCOMPARE(surface->videoWindowId(),videoId);
+        QTRY_VERIFY(window.diagnostics().value("positionMs").toInteger()>position+300);
+        QTest::keyClick(surface,Qt::Key_Escape);
+        QVERIFY(!window.diagnostics().value("pictureInPicture").toBool());
+        QTRY_VERIFY(!(GetWindowLongPtrW(handle,GWL_EXSTYLE)&WS_EX_TOPMOST));
+        QCOMPARE(window.geometry(),geometry);
+        QCOMPARE(surface->videoWindowId(),videoId);
+    }
+    void nativeDragMovesPlaybackWindowsBeforeReturning(){
+        if(QGuiApplication::platformName()!="windows")QSKIP("Requires the native Windows Qt backend");
+        BOOL fullDrag=FALSE;
+        if(!SystemParametersInfoW(SPI_GETDRAGFULLWINDOWS,0,&fullDrag,0)||!fullDrag)
+            QSKIP("Requires Windows to show contents while dragging");
+        luma::MainWindow window;
+        window.show();
+        auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
+        auto *caption=window.findChild<luma::CaptionOverlay*>("captionOverlay");
+        auto *transport=window.findChild<QWidget*>("transport");
+        QVERIFY(surface && caption && transport);
+        surface->setVideoActive(true);
+        caption->setCues({{0,1000,"Synthetic caption"}});
+        caption->setPosition(200);
+        QTRY_VERIFY(transport->isVisible());
+        auto *video=surface->videoWindow();
+        QVERIFY(video->isVisible() && caption->isVisible());
+        const std::array<QWidget*,4> group{&window,video,caption,transport};
+        std::array<RECT,4> before{};
+        for(size_t i=0;i<group.size();++i)
+            QVERIFY(GetWindowRect(reinterpret_cast<HWND>(group[i]->winId()),&before[i]));
+        RECT target=before[0];
+        OffsetRect(&target,37,29);
+        SendMessageW(reinterpret_cast<HWND>(window.winId()),WM_MOVING,0,reinterpret_cast<LPARAM>(&target));
+        for(size_t i=0;i<group.size();++i){
+            RECT after{};
+            QVERIFY(GetWindowRect(reinterpret_cast<HWND>(group[i]->winId()),&after));
+            QCOMPARE(after.left-before[i].left,37L);
+            QCOMPARE(after.top-before[i].top,29L);
+            QCOMPARE(after.right-before[i].right,37L);
+            QCOMPARE(after.bottom-before[i].bottom,29L);
+        }
+    }
+#endif
     void discGlossaryIsSelectedOnlyForItsDisc(){
         const QString firstDisc(64,'a'),secondDisc(64,'b');
         QSettings settings;

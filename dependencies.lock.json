@@ -20,7 +20,7 @@
     ]
   },
   "windows": [
-    {"id":"qt","archive":"qtbase.7z","url":"https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_683/qt6_683/qt.qt6.683.win64_msvc2022_64/6.8.3-0-202503201308qtbase-Windows-Windows_11_23H2-MSVC2022-Windows-Windows_11_23H2-X86_64.7z","sha256":"41688269fac0565db956c66d9eecae777d16197e0c02cd81b88640c1f5d73d3f","target":"qt","marker":"bin/qmake.exe"},
+    {"id":"qt","archive":"qtbase-6.11.3.7z","url":"https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6113/qt6_6113_msvc2022_64/qt.qt6.6113.win64_msvc2022_64/6.11.3-0-202610220312qtbase-Windows-Windows_11_24H2-MSVC2022-Windows-Windows_11_24H2-X86_64.7z","sha256":"68be61b613b963daf206834fdcc57dd3b84baff3082e50679e5846ca4a7a8b86","target":"qt-6.11.3","marker":"bin/qmake.exe"},
     {"id":"vlc","archive":"vlc.7z","url":"https://download.videolan.org/pub/videolan/vlc/3.0.24/win64/vlc-3.0.24-win64.7z","sha256":"1ed59c09152e78aff84663fa76efab26057716576db74332858810e5ef54ae1f","target":"vlc","marker":"vlc-3.0.24/libvlc.dll"},
     {"id":"mpv","archive":"mpv.7z","url":"https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20261105/mpv-dev-x86_64-20261105-git-3138fc8eea.7z","sha256":"f463cc69a7a1610937688b837be9f005cf163c26f2e35e50aec8cc7bde2894b4","target":"mpv","marker":"libmpv-2.dll"},
     {"id":"whisper","archive":"whisper.zip","url":"https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip","sha256":"6ba69e3482d7826214f90a6a9c84ca07782aec1e1d0c6a7c30c994fd5d816ccb","target":"whisper","marker":"Release/whisper-cli.exe"},

@@ -25,6 +25,7 @@ public:
     bool loadPreparedCaptionProject(const QString &path);
     QJsonObject diagnostics()const;
 protected:
+    bool nativeEvent(const QByteArray &eventType,void *message,qintptr *result)override;
     bool eventFilter(QObject *object,QEvent *event)override;
     void dragEnterEvent(QDragEnterEvent *event)override;
     void dropEvent(QDropEvent *event)override;
@@ -33,6 +34,11 @@ private:
     QLabel *nowTitle_=nullptr,*status_=nullptr,*clock_=nullptr,*discLabel_=nullptr,*discDetails_=nullptr,*aiStatus_=nullptr,*codec_=nullptr,*accelerator_=nullptr;
     QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr,*npuStatus_=nullptr;
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
+    QPushButton *pipButton_=nullptr;
+    QList<QWidget *> controlsHiddenInPip_;
+    QRect windowedGeometry_;
+    bool windowedMaximized_=false;
+    bool pictureInPicture_=false;
     QSlider *seek_=nullptr,*volume_=nullptr;
     QComboBox *titles_=nullptr,*audio_=nullptr,*subs_=nullptr,*rate_=nullptr,*language_=nullptr,*aiMode_=nullptr,*aiGpu_=nullptr,*videoGpu_=nullptr,*motionMode_=nullptr,*motionFps_=nullptr;
     QListWidget *chapters_=nullptr;
@@ -97,6 +103,9 @@ private:
     void refresh();
     void appendLog(const QString &message);
     void toggleFullScreen();
+    void togglePictureInPicture();
+    void updatePresentationLayout();
+    void editTranslationGlossary();
     void applyTheme();
     void applyCapturePolicy();
     void updateDisplayStatus();

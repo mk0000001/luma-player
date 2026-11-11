@@ -141,14 +141,20 @@ struct TranslationService::Impl {
     }
     QNetworkRequest endpoint(const QString &path,int timeout){
         QNetworkRequest request(QUrl(QString("http://127.0.0.1:%1%2").arg(port).arg(path)));request.setRawHeader("Authorization","Bearer "+token.toUtf8());request.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
-        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);request.setTransferTimeout(timeout);return request;
+        request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute,false);
+        request.setTransferTimeout(timeout);return request;
     }
     void health(){
         if(ready||reply||!process)return;
         const auto serial=launchSerial;auto *response=network.get(endpoint("/health",1000));reply=response;
+        response->setReadBufferSize(maximumResponseBytes+1);
+        QObject::connect(response,&QNetworkReply::readyRead,q,[this,response,serial]{
+            if(serial==launchSerial && reply==response && response->bytesAvailable()>maximumResponseBytes)response->abort();
+        });
         QObject::connect(response,&QNetworkReply::finished,q,[this,response,serial]{
             response->deleteLater();if(serial!=launchSerial||reply!=response)return;reply=nullptr;
-            if(response->error()!=QNetworkReply::NoError||response->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()!=200)return;
+            if(response->error()!=QNetworkReply::NoError||response->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt()!=200||response->bytesAvailable()>maximumResponseBytes)return;
             if(QJsonDocument::fromJson(response->readAll()).object().value("status").toString()!="ok")return;
             ready=true;poll.stop();startupDeadline.stop();schedule();
         });
@@ -164,6 +170,7 @@ struct TranslationService::Impl {
         }
         activeFingerprint=fingerprint(payload);
         const auto serial=launchSerial;auto *response=network.post(endpoint("/v1/chat/completions",requestMs),QJsonDocument(payload).toJson(QJsonDocument::Compact));reply=response;
+        response->setReadBufferSize(maximumResponseBytes+1);
         requestDeadline.start(requestMs);
         QObject::connect(response,&QNetworkReply::readyRead,q,[this,response,serial,task]{
             if(serial==launchSerial && reply==response && response->bytesAvailable()>maximumResponseBytes)skipCue(task,"번역 응답이 너무 커서 이 자막을 건너뜁니다.");

@@ -1,4 +1,5 @@
 #include "caption_overlay.h"
+#include "native_playback_move.h"
 #include <QEvent>
 #include <QPainter>
 #include <QTimer>
@@ -17,7 +18,7 @@ void CaptionOverlay::setCaptionStyle(const CaptionStyle &style){
 }
 bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     switch(event->type()){
-    case QEvent::Move:syncGeometry();break;
+    case QEvent::Move:if(anchor_ && !playbackWindowsMoving(anchor_->window()))syncGeometry();break;
     case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:
         if(!syncPending_){syncPending_=true;QTimer::singleShot(0,this,[this]{syncPending_=false;syncGeometry();});}
         break;

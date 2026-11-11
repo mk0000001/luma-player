@@ -3,6 +3,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QPainterPath>
+#include <QProxyStyle>
 #include <QStyleOptionButton>
 #include <algorithm>
 
@@ -10,6 +11,14 @@ static void initializeLumaResources(){Q_INIT_RESOURCE(luma);}
 
 namespace luma {
 namespace {
+class SeekSliderStyle final:public QProxyStyle {
+public:
+    SeekSliderStyle():QProxyStyle(QStringLiteral("Fusion")){}
+    int styleHint(StyleHint hint,const QStyleOption *option,const QWidget *widget,QStyleHintReturn *data)const override{
+        const int value=QProxyStyle::styleHint(hint,option,widget,data);
+        return hint==SH_Slider_AbsoluteSetButtons?value|Qt::LeftButton:value;
+    }
+};
 void paintMark(QPainter &p,const QRectF &rect){
     p.save();p.translate(rect.topLeft());p.scale(rect.width()/64.,rect.height()/64.);
     p.setPen(Qt::NoPen);p.setBrush(QColor("#2189ff"));p.drawRoundedRect(QRectF(0,0,64,64),19,19);
@@ -33,6 +42,9 @@ void paintIcon(QPainter &p,PlayerIcon icon){
             const QPointF at=corner*8;const QPointF origin=icon==PlayerIcon::Fullscreen?at:at*.45;
             p.drawLine(origin,origin+QPointF(-corner.x()*5*sign,0));p.drawLine(origin,origin+QPointF(0,-corner.y()*5*sign));}break;}
     case PlayerIcon::Volume:p.drawPolyline(QPolygonF{{-9,-3},{-5,-3},{0,-7},{0,7},{-5,3},{-9,3},{-9,-3}});p.drawArc(QRectF(-5,-6,12,12),-65*16,130*16);p.drawArc(QRectF(-7,-10,20,20),-55*16,110*16);break;
+    case PlayerIcon::PictureInPicture:
+        p.drawRoundedRect(QRectF(-9,-6,18,12),2,2);
+        p.setBrush(p.pen().color());p.drawRect(QRectF(0,0,6,3));break;
     case PlayerIcon::Folder:p.drawPolyline(QPolygonF{{-10,7},{-10,-7},{-3,-7},{0,-4},{10,-4},{10,7},{-10,7}});break;
     case PlayerIcon::Disc:p.drawEllipse(QRectF(-9,-9,18,18));p.drawEllipse(QRectF(-2,-2,4,4));p.drawArc(QRectF(-6,-6,12,12),20*16,70*16);break;
     case PlayerIcon::Sun:p.drawEllipse(QRectF(-4,-4,8,8));for(int i=0;i<8;++i){p.save();p.rotate(i*45);p.drawLine(QPointF(0,-7),QPointF(0,-10));p.restore();}break;
@@ -48,6 +60,11 @@ void paintIcon(QPainter &p,PlayerIcon icon){
 QIcon playerApplicationIcon(){
     static const bool initialized=[] {initializeLumaResources();return true;}();Q_UNUSED(initialized);
     QIcon icon;for(int size:{16,24,32,48,64,128,256}){QPixmap pixmap(size,size);pixmap.fill(Qt::transparent);QPainter p(&pixmap);p.setRenderHint(QPainter::Antialiasing);paintMark(p,QRectF(0,0,size,size));p.end();icon.addPixmap(pixmap);}return icon;
+}
+SeekSlider::SeekSlider(QWidget *parent):QSlider(Qt::Horizontal,parent){
+    auto *seekStyle=new SeekSliderStyle;
+    seekStyle->setParent(this);
+    setStyle(seekStyle);
 }
 BrandMark::BrandMark(QWidget *parent):QWidget(parent){setFixedSize(137,36);setAccessibleName("LumaPlayer");setAttribute(Qt::WA_TranslucentBackground);}
 void BrandMark::paintEvent(QPaintEvent *){

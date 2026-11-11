@@ -253,7 +253,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #undef LOAD
         if(!ok)return;
         d->mpv=d->mpv_create(); if(!d->mpv){d->error="libmpv allocation failed";return;}
-        for(const auto &[key,value]:QList<QPair<QByteArray,QByteArray>>{{"config","no"},{"terminal","no"},{"input-default-bindings","no"},{"input-vo-keyboard","no"},{"osc","no"},{"osd-level","0"},{"idle","yes"},{"keep-open","yes"},{"hwdec","auto-safe"},{"vo","gpu-next"}})
+        for(const auto &[key,value]:QList<QPair<QByteArray,QByteArray>>{{"config","no"},{"load-scripts","no"},{"load-unsafe-playlists","no"},{"terminal","no"},{"input-default-bindings","no"},{"input-vo-keyboard","no"},{"osc","no"},{"osd-level","0"},{"idle","yes"},{"keep-open","yes"},{"hwdec","auto-safe"},{"vo","gpu-next"}})
             d->mpv_set_option_string(d->mpv,key.constData(),value.constData());
 #ifdef Q_OS_WIN
         d->mpv_set_option_string(d->mpv,"gpu-api","d3d11");

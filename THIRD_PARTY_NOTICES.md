@@ -6,7 +6,7 @@ LumaPlayer 소스는 GPL-3.0-or-later입니다. 동적 라이브러리·모델·
 
 | 구성요소 | 버전·출처 | 적용 조건·소스 |
 |---|---|---|
-| Qt Core/Gui/Widgets/Network | 공식 MSVC 6.8.3 | LGPL-3.0/GPL 대안, 아래 영문 표의 정확한 소스와 `LICENSES` 참조 |
+| Qt Core/Gui/Widgets/Network | 공식 MSVC 6.11.3 | LGPL-3.0/GPL 대안, 아래 영문 표의 정확한 소스와 `LICENSES` 참조 |
 | libVLC·libbluray 플러그인 | VLC 3.0.24 | GPL/LGPL 등 각 구성요소 조건, 원본 COPYING 포함 |
 | libmpv·FFmpeg | mpv 3138fc8eea / FFmpeg 9.0.2 full | GPL 빌드, 아래 고정 버전 소스 참조 |
 | whisper.cpp·GGML·Whisper base 및 OpenVINO 변환 인코더 | b5454 / 고정 모델 해시 | MIT, [Intel 변환 모델](https://huggingface.co/Intel/whisper.cpp-openvino-models), `LICENSES/Whisper-MIT.txt`·`LICENSES/OpenAI-Whisper-MIT.txt` 유지 |
@@ -35,7 +35,7 @@ LumaPlayer is GPL-3.0-or-later. The portable package includes dynamically loaded
 
 | Component | Version / provenance | License and source |
 |---|---|---|
-| Qt Core/Gui/Widgets/Network | 6.8.3, official MSVC 2022 package | LGPL-3.0 / GPL-3.0 alternatives; [qtbase 6.8.3 source](https://download.qt.io/official_releases/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz), [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations) |
+| Qt Core/Gui/Widgets/Network | 6.11.3, official MSVC 2022 package | LGPL-3.0 / GPL-3.0 alternatives; [qtbase 6.11.3 source](https://download.qt.io/official_releases/qt/6.11/6.11.3/submodules/qtbase-everywhere-src-6.11.3.tar.xz), [Qt licensing](https://www.qt.io/licensing/open-source-lgpl-obligations) |
 | VLC / libVLC / libbluray plugins | VLC 3.0.24 official Windows archive | VLC GPL-2.0-or-later and library/plugin component licenses; [VLC source archive](https://download.videolan.org/pub/videolan/vlc/3.0.24/vlc-3.0.24.tar.xz), [source and contrib build recipes](https://code.videolan.org/videolan/vlc/-/tree/3.0.24), COPYING in runtime/vlc |
 | libmpv and its linked dependencies | mpv 3138fc8eea; shinchiro 20261105 build | GPL-2.0-or-later build; [mpv exact source](https://github.com/mpv-player/mpv/tree/3138fc8eea), [Windows dependency build recipes](https://github.com/shinchiro/mpv-winbuild-cmake/tree/20261105) |
 | FFmpeg full and linked libraries | Gyan FFmpeg 9.0.2 full | GPL-3.0-or-later build; [FFmpeg 9.0.2 source](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz), [Gyan build provenance](https://www.gyan.dev/ffmpeg/builds/), COPYING in runtime/tools |

@@ -3,10 +3,15 @@
 #include <QIcon>
 #include <QPointer>
 #include <QPushButton>
+#include <QSlider>
 class QMenu;
 namespace luma {
-enum class PlayerIcon { Play,Pause,Previous,Next,Rewind,Forward,Fullscreen,ExitFullscreen,Volume,Folder,Disc,Sun,Moon,Up,Down,Left,Right,Confirm };
+enum class PlayerIcon { Play,Pause,Previous,Next,Rewind,Forward,Fullscreen,ExitFullscreen,PictureInPicture,Volume,Folder,Disc,Sun,Moon,Up,Down,Left,Right,Confirm };
 QIcon playerApplicationIcon();
+class SeekSlider final:public QSlider {
+public:
+    explicit SeekSlider(QWidget *parent=nullptr);
+};
 class BrandMark final:public QWidget {
 public:
     explicit BrandMark(QWidget *parent=nullptr);

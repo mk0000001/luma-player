@@ -19,7 +19,9 @@ Copy-LumaPackageTrackedDocuments -ProjectRoot $projectRoot -Destination $package
 New-Item -ItemType Directory -Path (Join-Path $package 'tools') -Force | Out-Null
 foreach($name in 'install-translation.ps1','install-translation-cuda.ps1','install-asr-cuda.ps1','install-asr-model.ps1','install-asr-encoder.ps1','measure-asr.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $package 'tools') }
 Copy-Item -LiteralPath (Join-Path $package 'docs/INSTALL-TRANSLATION.md') -Destination (Join-Path $package 'tools/README-translation.md')
-& (Join-Path $projectRoot '.deps\qt\bin\windeployqt.exe') --release --no-translations --no-opengl-sw --no-system-d3d-compiler (Join-Path $package 'LumaPlayer.exe')
+$lock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw | ConvertFrom-Json
+$qt = $lock.windows | Where-Object id -eq 'qt'
+& (Join-Path $projectRoot ('.deps/'+$qt.target+'/bin/windeployqt.exe')) --release --no-translations --no-opengl-sw --no-system-d3d-compiler (Join-Path $package 'LumaPlayer.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
 & (Join-Path $PSScriptRoot 'stage-runtime.ps1') -Destination $package -SkipTranslationModel:(!$IncludeTranslationModel) -IncludeCuda:$IncludeCuda
 if($IncludeCuda){Move-LumaPackageCudaSharedRuntime -Files $cudaFiles -Directory $package}
