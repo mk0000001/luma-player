@@ -1,4 +1,5 @@
 #include "translation_support.h"
+#include <QSettings>
 #include "runtime_environment.h"
 #include <QDir>
 #include <QCryptographicHash>
@@ -111,6 +112,15 @@ QString formatTranslationGlossary(const TranslationGlossary &glossary){
     for(auto it=glossary.cbegin();it!=glossary.cend();++it)
         lines.append(it.key()+QStringLiteral(" → ")+it.value());
     return lines.join('\n');
+}
+QString translationGlossarySettingsKey(const QString &discIdentity){
+    return discIdentity.isEmpty()?QString("translation/glossary"):"translation/discGlossary/"+discIdentity;
+}
+TranslationGlossary configuredTranslationGlossary(const QString &discIdentity){
+    const QSettings settings;
+    const auto common=settings.value(translationGlossarySettingsKey());
+    const auto chosen=discIdentity.isEmpty()?common:settings.value(translationGlossarySettingsKey(discIdentity),common);
+    return parseTranslationGlossary(chosen.toString()).value_or(TranslationGlossary{});
 }
 QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target){
     auto fail=[&](const QString &reason){if(error)*error=reason;return QString();};

@@ -20,6 +20,7 @@ protected:
     void reject()override;
 private:
     CaptionPreparationRequest request_;
+    TranslationGlossary fileGlossary_;
     CaptionPreparationService service_;
     PreparationMediaProbe probe_;
     JapaneseReading reading_;

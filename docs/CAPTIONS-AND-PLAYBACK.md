@@ -32,6 +32,8 @@
 
 **AI 자막 → 번역 용어집**에서 한 줄에 하나씩 `원문 → 번역`을 저장합니다. 예를 들어 `青空 → 푸른 하늘`로 지정하면 해당 표현이 나오는 자막을 번역할 때 모델에 이 뜻을 전달합니다. 음성 인식에서 반복되는 오기가 있다면 실제로 표시된 원문을 왼쪽에 넣을 수 있습니다.
 
+Blu-ray를 연 상태에서 편집하면 그 디스크에만 저장됩니다. 같은 디스크를 다시 열거나 자막을 미리 만들면 해당 용어집을 자동으로 불러옵니다. 디스크를 열지 않은 상태에서 편집한 기본 용어집은 일반 파일과 전용 용어집이 없는 디스크에 사용됩니다.
+
 실시간 번역은 현재 위치부터 다시 만들고, **재생 전 전체 자막 만들기**에는 생성 시작 시의 용어집이 적용됩니다. 기존 완료 프로젝트의 번역을 바꾸려면 용어집을 저장하고 새 프로젝트를 생성하세요. 용어집은 로컬 설정에 저장됩니다.
 
 ### 외부 자막 파일
@@ -118,6 +120,8 @@ The optional full large-v3 native path carries validated token alignment into pa
 ### Translation glossary
 
 In **AI Captions → Translation glossary**, enter one `source → translation` pair per line. For example, `青空 → 푸른 하늘` sends the preferred meaning to the model when the expression appears. Use the displayed source text on the left to handle a recurring recognition error.
+
+Editing while a Blu-ray is open saves the glossary for that disc. Reopening the disc or preparing its captions loads the glossary automatically. Edit without an open disc to set the default glossary for files and discs without a dedicated glossary.
 
 Live captions are translated again from the current position. New preparation jobs use the glossary saved when the job starts. To revise the translation in a completed project, save the glossary and generate a new project. The glossary is stored locally.
 

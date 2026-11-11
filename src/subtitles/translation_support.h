@@ -11,6 +11,8 @@ namespace luma {
 using TranslationGlossary=QMap<QString,QString>;
 std::optional<TranslationGlossary> parseTranslationGlossary(const QString &text);
 QString formatTranslationGlossary(const TranslationGlossary &glossary);
+QString translationGlossarySettingsKey(const QString &discIdentity={});
+TranslationGlossary configuredTranslationGlossary(const QString &discIdentity={});
 struct TranslationTask {quint64 generation;QString source;};
 class TranslationQueue {
 public:

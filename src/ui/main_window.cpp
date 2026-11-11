@@ -172,8 +172,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     translation_=new TranslationService({},this);
     const auto qualityTranslation=QCoreApplication::applicationDirPath()+"/runtime/translation/models/Hy-MT2-7B-Q4_K_M.gguf";
     translation_->setModel(QSettings().value("translation/model",QFileInfo::exists(qualityTranslation)?qualityTranslation:QString{}).toString());
-    if(const auto glossary=parseTranslationGlossary(QSettings().value("translation/glossary").toString()))
-        translation_->setGlossary(*glossary);
+    translation_->setGlossary(configuredTranslationGlossary());
     connect(translation_,&TranslationService::translatedCue,this,[this](quint64 generation,const QString &key,const QString &,const QString &korean){
         if(generation!=translation_->generation() || !translationEnabled_->isChecked())return;
         translationPending_.remove(key);translations_.insert(key,korean);rebuildManagedCaptions();translationStatus_->setText(QString("문맥을 참고한 한국어 번역 %1개 준비됨").arg(translations_.size()));
@@ -406,18 +405,20 @@ void MainWindow::buildUi(){
     connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession(true);model_=path;QSettings().setValue("ai/model",path);updateNpuStatus();aiStatus_->setText("음성 인식 모델 선택됨");if(liveCaptioningActive())job_.warmUp(model_);scheduleSubtitles();}});
     connect(translationModel,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"로컬 번역 모델",{},"GGUF 모델 (*.gguf)");if(!path.isEmpty()){translation_->cancel();translationPending_.clear();clearTranslationSkips();if(!preparedCaptions_)translations_.clear();translationFailed_=false;QSettings().setValue("translation/model",path);translation_->setModel(path);rebuildManagedCaptions();scheduleTranslations();if(preparedCaptions_)translationStatus_->setText("선택한 모델은 다음 자막 생성부터 사용합니다.");}});
     connect(translationGlossary,&QPushButton::clicked,this,[this]{
+        const auto discIdentity=active_==discEngine_.get()?resumeIdentity_:QString{};
+        const auto saved=configuredTranslationGlossary(discIdentity);
         bool accepted=false;
-        const auto text=QInputDialog::getMultiLineText(this,"번역 용어집",
+        const auto text=QInputDialog::getMultiLineText(this,discIdentity.isEmpty()?"기본 번역 용어집":"이 Blu-ray의 번역 용어집",
             "한 줄에 하나씩 입력하세요. 예시  青空 → 푸른 하늘",
-            formatTranslationGlossary(translation_->glossary()),&accepted);
+            formatTranslationGlossary(saved),&accepted);
         if(!accepted)return;
         const auto glossary=parseTranslationGlossary(text);
         if(!glossary){
             translationStatus_->setText("원문 → 번역 형식으로 중복 없이 최대 64개, 각 항목은 100자 이내로 입력하세요.");
             return;
         }
-        if(*glossary==translation_->glossary())return;
-        QSettings().setValue("translation/glossary",formatTranslationGlossary(*glossary));
+        if(*glossary==saved)return;
+        QSettings().setValue(translationGlossarySettingsKey(discIdentity),formatTranslationGlossary(*glossary));
         translation_->setGlossary(*glossary);
         translationPending_.clear();
         clearTranslationSkips();
@@ -530,7 +531,7 @@ void MainWindow::showCaptionPreparation(){
     const auto initialFile=active_==fileEngine_.get()?source_:QString{};
     const auto preparationDiscRoot=active_==discEngine_.get()?source_:discPath_;
     CaptionPreparationRequest defaults;defaults.model=model_;defaults.source.language=language_->currentData().toString();defaults.recognitionPreferences=job_.preferences();defaults.translationPreferences=translation_->preferences();defaults.translate=translationEnabled_->isChecked();
-    defaults.translationGlossary=translation_->glossary();
+    defaults.translationGlossary=configuredTranslationGlossary();
     if(active_==discEngine_.get()){
         const auto &state=active_->state();const auto playlist=matchDiscPlaylist(discInfo_,state.durationMs);
         if(!state.failed && state.timelineReady && !state.navigationTitle && state.currentTitle>=0 && !playlist.isEmpty()){
@@ -588,6 +589,7 @@ void MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     const bool disc=isDiscSource(source);source_=disc?localDiscPath(source):source;if(disc)discInfo_=inspectDisc(source_);
     discTargetDurationMs_=disc?preparedDiscDurationMs:0;
     resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);resumeSavedAt_=0;
+    translation_->setGlossary(configuredTranslationGlossary(disc?resumeIdentity_:QString{}));
     active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
     surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
     const auto videoWindow=static_cast<VideoSurface*>(surface_)->videoWindowId();
@@ -876,6 +878,7 @@ void MainWindow::clearTranslationSkips(){translationSkipped_.clear();translation
 QJsonObject MainWindow::diagnostics()const{
     QJsonObject result{{"version",LUMA_VERSION},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()},{"aiBackend",job_.selectedBackend()},{"aiEnabled",aiEnabled_->isChecked()},{"aiRetryCount",aiRetryCount_},{"aiRetryAt",nextAiAttemptMs_},{"captionBufferHolding",bufferHolding_},{"captionResumeRequested",bufferResume_},{"captionBufferBypass",bufferBypass_},{"hangulReadings",readingEnabled_->isChecked()},{"readingRuntime",reading_.available()},{"originalCaptions",originalEnabled_->isChecked()},{"koreanTranslations",translationEnabled_->isChecked()},{"translationCount",translations_.size()},{"translationBackend",translation_?translation_->selectedBackend():QString{}},{"bundledFonts",qApp->property("lumaFontsLoaded").toBool()},{"externalCueCount",externalCues_.size()},{"theme",playerUsesDarkTheme()?"dark":"light"},{"fullscreen",full_},{"transportVisible",transport_->isVisible()},{"transportHeight",transport_->height()},{"developerMode",developerApproved_},{"captureAllowed",captureApproved_},{"videoRecoveryCount",videoRecoveryCount_},{"videoRecoveryExhausted",videoRecoveryExhausted_}};
     result.insert("translationSkippedCount",translationSkipped_.size());result.insert("translationPendingCount",translationPending_.size());result.insert("translationFailed",translationFailed_);
+    result.insert("translationGlossaryEntries",translation_->glossary().size());
     result.insert("preparedCaptionsApplied",preparedApplied_);result.insert("preparedCueCount",preparedCaptions_?preparedCaptions_->originals.size():0);result.insert("preparedTranslationCount",preparedCaptions_?preparedCaptions_->translations.size():0);
     if(preparationDialog_)result.insert("preparation",preparationDialog_->diagnostics());
     result.insert("aiTiming",job_.selectedAlignment());

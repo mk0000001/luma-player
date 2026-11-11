@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.1.0-beta.4 — 2026-11-12 공개 베타
+
+- Blu-ray를 연 상태에서 저장한 번역 용어집을 디스크별로 기억합니다. 같은 디스크를 다시 열거나 전체 자막을 만들 때 자동으로 사용합니다.
+
 ### 0.1.0-beta.3 — 2026-11-12 공개 베타
 
 - **AI 자막 → 번역 용어집**에 `원문 → 번역`을 저장할 수 있습니다. 실시간 한국어 자막과 새로 만드는 전체 자막에서 일치하는 용어를 앞뒤 문맥과 함께 번역 모델에 전달합니다.
@@ -102,6 +106,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.1.0-beta.4 — 2026-11-12 public beta
+
+- Save a separate translation glossary for an open Blu-ray. The player loads it automatically when reopening the disc or preparing its captions.
 
 ### 0.1.0-beta.3 — 2026-11-12 public beta
 

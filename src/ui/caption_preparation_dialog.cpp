@@ -1,5 +1,6 @@
 #include "caption_preparation_dialog.h"
 #include "core/disc.h"
+#include "core/resume_history.h"
 #include "subtitles/subtitle_job.h"
 #include "subtitles/translation_support.h"
 #include <QVBoxLayout>
@@ -26,7 +27,7 @@ namespace {
 QPushButton *action(const QString &text,const char *name){auto *button=new QPushButton(text);button->setObjectName(name);button->setCursor(Qt::PointingHandCursor);return button;}
 }
 CaptionPreparationDialog::CaptionPreparationDialog(CaptionPreparationRequest defaults,QString discRoot,QString initialFile,QWidget *parent,QString runtime)
-    :QDialog(parent),request_(std::move(defaults)),service_(runtime,this),probe_(runtime,this),reading_(runtime),runtime_(std::move(runtime)),discRoot_(std::move(discRoot)){
+    :QDialog(parent),request_(std::move(defaults)),fileGlossary_(request_.translationGlossary),service_(runtime,this),probe_(runtime,this),reading_(runtime),runtime_(std::move(runtime)),discRoot_(std::move(discRoot)){
     setWindowTitle("재생 전 자막 만들기");setObjectName("captionPreparationDialog");setModal(true);resize(760,790);setMinimumWidth(660);
     auto *layout=new QVBoxLayout(this);layout->setContentsMargins(26,22,26,22);layout->setSpacing(12);
     auto *heading=new QLabel("자막을 먼저, 감상은 그다음.");heading->setObjectName("nowTitle");layout->addWidget(heading);
@@ -78,10 +79,12 @@ CaptionPreparationDialog::CaptionPreparationDialog(CaptionPreparationRequest def
 CaptionPreparationDialog::~CaptionPreparationDialog(){retryingAccelerator_=false;probe_.cancel();service_.cancel();}
 void CaptionPreparationDialog::setFile(const QString &file){
     if(busy_)return;probe_.cancel();invalidateResult();customOutput_=false;request_.source.source=QFileInfo(file).absoluteFilePath();request_.source.disc=false;request_.source.playlist.clear();request_.source.startMs=0;request_.source.audioTrackId=-1;request_.durationMs=0;request_.source.audioIndex=0;
+    request_.translationGlossary=fileGlossary_;
     sourceLabel_->setText(request_.source.source);playlists_->clear();form_->setRowVisible(playlists_,false);form_->setRowVisible(discAudio_,false);form_->setRowVisible(audio_,true);audio_->clear();audio_->setEnabled(true);durationLabel_->setText("미디어 정보 확인 중…");status_->setText("영상 재생 없이 길이와 오디오를 확인합니다.");setDefaultOutput();probing_=true;probeGeneration_=probe_.generation()+1;probe_.inspect(request_.source.source);updateStart();
 }
 void CaptionPreparationDialog::setDisc(const QString &root){
     if(busy_)return;probe_.cancel();probing_=false;invalidateResult();customOutput_=false;const auto preferred=request_.source;const auto preferredDuration=request_.durationMs;const auto disc=inspectDisc(root);
+    request_.translationGlossary=configuredTranslationGlossary(resumeIdentity(disc.root,&disc));
     const bool usePreferred=disc.valid && preferred.disc && preferredDuration>0 && preferredDuration<=24LL*60*60*1000 && preferred.audioIndex>=0 && preferred.audioIndex<64 && !preferred.playlist.isEmpty() && QFileInfo(localDiscPath(preferred.source))==QFileInfo(disc.root) && matchDiscPlaylist(disc,preferredDuration)==preferred.playlist;
     {QSignalBlocker guard(discAudio_);discAudio_->setValue(usePreferred?preferred.audioIndex+1:1);}
     request_.source.source=disc.root;request_.source.disc=true;request_.source.startMs=0;request_.source.audioTrackId=-1;request_.source.audioIndex=discAudio_->value()-1;request_.durationMs=0;request_.source.playlist.clear();sourceLabel_->setText(disc.label.isEmpty()?root:disc.label+" · "+root);audio_->clear();form_->setRowVisible(audio_,false);form_->setRowVisible(playlists_,true);form_->setRowVisible(discAudio_,true);discAudio_->setEnabled(true);

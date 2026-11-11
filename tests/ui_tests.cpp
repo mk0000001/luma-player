@@ -65,6 +65,17 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void discGlossaryIsSelectedOnlyForItsDisc(){
+        const QString firstDisc(64,'a'),secondDisc(64,'b');
+        QSettings settings;
+        settings.setValue(luma::translationGlossarySettingsKey(),"青空 → 푸른 하늘");
+        settings.setValue(luma::translationGlossarySettingsKey(firstDisc),"青空 → 파란 하늘");
+        QCOMPARE(luma::configuredTranslationGlossary(firstDisc).value("青空"),QString("파란 하늘"));
+        QCOMPARE(luma::configuredTranslationGlossary(secondDisc).value("青空"),QString("푸른 하늘"));
+        QCOMPARE(luma::configuredTranslationGlossary().value("青空"),QString("푸른 하늘"));
+        settings.setValue(luma::translationGlossarySettingsKey(firstDisc),QString{});
+        QVERIFY(luma::configuredTranslationGlossary(firstDisc).isEmpty());
+    }
     void captionAppearanceControlsRestoreTheirValues(){
         QString selectedFont;
         {
