@@ -10,6 +10,7 @@
 #include "subtitles/translation_support.h"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>

@@ -4,7 +4,7 @@
 
 ### 0.1.0-beta.6 — 2026-11-12 공개 베타
 
-- Linux Qt 6.4 환경에서도 빌드할 수 있도록 창 이동 코드의 헤더를 수정했습니다.
+- Linux Qt 6.4 환경에서도 빌드할 수 있도록 창 이동과 자막 코드의 헤더를 수정했습니다.
 
 ### 0.1.0-beta.5 — 2026-11-12 공개 베타
 
@@ -120,7 +120,7 @@
 
 ### 0.1.0-beta.6 — 2026-11-12 public beta
 
-- Use a header supported by Qt 6.4 when compiling the window movement code on Linux.
+- Use Qt 6.4-compatible headers when compiling window movement and captions on Linux.
 
 ### 0.1.0-beta.5 — 2026-11-12 public beta
 
