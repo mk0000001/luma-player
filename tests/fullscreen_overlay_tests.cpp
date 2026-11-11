@@ -103,7 +103,9 @@ private slots:
         QWidget host;host.resize(600,400);auto *layout=new QVBoxLayout(&host);layout->setContentsMargins(0,0,0,0);layout->setSpacing(0);
         QWidget video,controls;controls.setFixedHeight(108);layout->addWidget(&video,1);layout->addWidget(&controls);
         luma::FullscreenControls controller(&host,&controls,&video);host.show();QTest::qWait(40);QCOMPARE(controller.reservedHeight(),108);
-        host.move(80,90);host.resize(700,450);QCoreApplication::processEvents();QTest::qWait(20);
+        host.move(80,90);
+        QCOMPARE(controls.geometry(),QRect(video.mapToGlobal(QPoint(0,video.height()-108)),QSize(video.width(),108)));
+        host.resize(700,450);QCoreApplication::processEvents();QTest::qWait(20);
         QCOMPARE(controls.geometry(),QRect(video.mapToGlobal(QPoint(0,video.height()-108)),QSize(video.width(),108)));
         const auto original=video.geometry();controls.setFixedHeight(74);QCoreApplication::processEvents();QTest::qWait(20);QCOMPARE(video.geometry(),original);
         QCOMPARE(controller.reservedHeight(),74);

@@ -38,7 +38,7 @@ void FullscreenControls::syncGeometry(){
         const QRect target(surface_->mapToGlobal(QPoint(0,surface_->height()-transport_->height())),QSize(surface_->width(),transport_->height()));
         const bool moved=transport_->geometry()!=target,shown=!transport_->isVisible();
         if(moved)transport_->setGeometry(target);
-        if(shown)transport_->show();if(moved || shown || raisePending_)transport_->raise();
+        if(shown)transport_->show();if(shown || raisePending_)transport_->raise();
     }else transport_->hide();
     raisePending_=false;
     notifyVisibility();
@@ -92,7 +92,8 @@ bool FullscreenControls::eventFilter(QObject *object,QEvent *event){
     if(object==transport_ && event->type()==QEvent::Close && window_){event->ignore();window_->close();return true;}
     if(object==window_ || object==surface_ || object==transport_){
         switch(event->type()){
-        case QEvent::Move:case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:case QEvent::ParentChange:
+        case QEvent::Move:if(object!=transport_)syncGeometry();break;
+        case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:case QEvent::ParentChange:
             if(object==window_ && (event->type()==QEvent::Show || event->type()==QEvent::WindowStateChange) && window_ && !window_->isMinimized()){wanted_=true;idle_.restart();window_->unsetCursor();if(surface_)surface_->unsetCursor();}
             queueSync();break;
         default:break;

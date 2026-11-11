@@ -32,7 +32,9 @@ private slots:
         host.show();surface.setVideoActive(true);QCoreApplication::processEvents();QTest::qWait(20);auto *video=surface.videoWindow();QVERIFY(video);const auto id=surface.videoWindowId();
         const auto original=surface.geometry();surface.setVideoActive(false);QCoreApplication::processEvents();QVERIFY(!video->isVisible());QCOMPARE(surface.geometry(),original);
         surface.setVideoActive(true);QCoreApplication::processEvents();QCOMPARE(surface.geometry(),original);
-        host.move(120,80);host.resize(850,560);QCoreApplication::processEvents();QTest::qWait(20);QCOMPARE(video->geometry(),QRect(surface.mapToGlobal(QPoint()),surface.size()));
+        host.move(120,80);
+        QCOMPARE(video->geometry(),QRect(surface.mapToGlobal(QPoint()),surface.size()));
+        host.resize(850,560);QCoreApplication::processEvents();QTest::qWait(20);QCOMPARE(video->geometry(),QRect(surface.mapToGlobal(QPoint()),surface.size()));
         host.showFullScreen();QCoreApplication::processEvents();QTest::qWait(20);QCOMPARE(video->geometry(),QRect(surface.mapToGlobal(QPoint()),surface.size()));QCOMPARE(surface.videoWindowId(),id);
         host.showNormal();QCoreApplication::processEvents();QTest::qWait(20);QCOMPARE(video->geometry(),QRect(surface.mapToGlobal(QPoint()),surface.size()));QCOMPARE(surface.videoWindowId(),id);
         host.showMinimized();QCoreApplication::processEvents();QTest::qWait(20);QVERIFY(!video->isVisible());host.showNormal();QCoreApplication::processEvents();QTest::qWait(20);QVERIFY(video->isVisible());

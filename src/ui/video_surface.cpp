@@ -27,10 +27,10 @@ void VideoSurface::syncWindow(){
     if(!video_)return;
     QWidget *owner=window();if(owner==this && !parentWidget())owner=nullptr;
     if(host_!=owner){host_=owner;video_->setParent(owner,videoFlags);}
-    const QRect target(mapToGlobal(QPoint()),size());const bool moved=video_->geometry()!=target;
-    if(moved)video_->setGeometry(target);
+    const QRect target(mapToGlobal(QPoint()),size());
+    if(video_->geometry()!=target)video_->setGeometry(target);
     const bool visible=active_ && host_ && host_->isVisible() && !host_->isMinimized() && isVisible() && !size().isEmpty();
-    if(visible){const bool shown=!video_->isVisible();if(shown)video_->show();if(shown || moved)video_->lower();}
+    if(visible){if(!video_->isVisible()){video_->show();video_->lower();}}
     else video_->hide();
 }
 bool VideoSurface::eventFilter(QObject *object,QEvent *event){
@@ -51,7 +51,8 @@ bool VideoSurface::eventFilter(QObject *object,QEvent *event){
     }
     if(object==this || object==host_){
         switch(event->type()){
-        case QEvent::Move:case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::ParentChange:case QEvent::WindowStateChange:queueSync();break;
+        case QEvent::Move:syncWindow();break;
+        case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::ParentChange:case QEvent::WindowStateChange:queueSync();break;
         default:break;
         }
     }

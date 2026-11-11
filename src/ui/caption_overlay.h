@@ -19,6 +19,7 @@ private:
     SubtitleTimeline timeline_;
     QString text_;
     int bottomInset_=0;
+    bool syncPending_=false;
     void syncGeometry();
 };
 }

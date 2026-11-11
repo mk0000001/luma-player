@@ -14,8 +14,10 @@ void CaptionOverlay::setPosition(qint64 position){const auto text=timeline_.at(p
 void CaptionOverlay::setBottomInset(int pixels){pixels=std::max(0,pixels);if(bottomInset_!=pixels){bottomInset_=pixels;update();}}
 bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     switch(event->type()){
-    case QEvent::Move:case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:
-        QTimer::singleShot(0,this,&CaptionOverlay::syncGeometry);break;
+    case QEvent::Move:syncGeometry();break;
+    case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::WindowStateChange:
+        if(!syncPending_){syncPending_=true;QTimer::singleShot(0,this,[this]{syncPending_=false;syncGeometry();});}
+        break;
     default:break;
     }return false;
 }

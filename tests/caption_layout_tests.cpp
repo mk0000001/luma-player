@@ -75,6 +75,8 @@ private slots:
         QWidget window;window.resize(640,360);QWidget anchor(&window);anchor.resize(640,360);window.show();
         luma::CaptionOverlay overlay(&anchor);overlay.setCues({{0,1000,"A synthetic caption"}});overlay.setPosition(1);const auto video=anchor.geometry();
         overlay.setBottomInset(74);QCoreApplication::processEvents();QCOMPARE(anchor.geometry(),video);QCOMPARE(overlay.captionText(),QString("A synthetic caption"));
+        window.move(100,80);
+        QCOMPARE(overlay.geometry(),QRect(anchor.mapToGlobal(QPoint()),anchor.size()));
     }
 };
 QTEST_MAIN(CaptionLayoutTests)
