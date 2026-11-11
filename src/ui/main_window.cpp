@@ -195,6 +195,7 @@ void MainWindow::recoverVideoOutput(PlaybackEngine *engine,const QString &messag
     static_cast<VideoSurface*>(surface_)->setVideoActive(false);
     auto &replacement=disc?discEngine_:fileEngine_;
     replacement=std::make_unique<PlaybackEngine>(disc?PlaybackEngine::Kind::Disc:PlaybackEngine::Kind::File,QString{},this);bindEngine(replacement.get());
+    if(disc)replacement->useSoftwareDiscDecoderOnNextOpen();
     if(prepared)playPreparedCaptions(*prepared);else openSourceImpl(source,false,targetDuration);
     videoRecoveryCount_=1;requestedPlaying_=playing;recoveryAudio_=state.currentAudio;recoverySubtitle_=state.currentSubtitle;
     recoveryExternalCues_=external;
@@ -207,7 +208,7 @@ void MainWindow::recoverVideoOutput(PlaybackEngine *engine,const QString &messag
     if(!point && !recoveryExternalCues_.isEmpty()){const auto cues=std::move(recoveryExternalCues_);recoveryExternalCues_.clear();applyExternalCaptions(cues);}
     if(bufferHolding_)bufferResume_=playing;
     active_->setPaused(disc && point?false:point.has_value() || !playing);
-    status_->setText("그래픽 장치 연결이 끊겨 영상 출력을 다시 만들었습니다. 같은 위치로 복구하는 중…");
+    status_->setText(disc?"Blu-ray 영상 출력을 다시 준비했습니다. 같은 위치로 복구하는 중…":"그래픽 장치 연결이 끊겨 영상 출력을 다시 만들었습니다. 같은 위치로 복구하는 중…");
 }
 
 void MainWindow::buildUi(){
@@ -597,7 +598,9 @@ void MainWindow::refresh(){
     updateCaptionBuffer();
     if(!state.failed && !videoRecoveryExhausted_){
         if(pendingResume_ && active_==discEngine_.get() && state.navigationTitle)status_->setText(state.currentTitle==0?"디스크 메뉴에서 재생을 선택하면 저장 위치로 이동합니다.":"디스크 시작 안내를 진행한 뒤 재생 위치를 복원합니다.");
-        else if(bufferHolding_)status_->setText(bufferStatus_->text());else if(!aiFailed_)status_->setText(state.playing?"재생 중":"일시정지 / 준비 중");
+        else if(bufferHolding_)status_->setText(bufferStatus_->text());
+        else if(state.buffering)status_->setText("디스크 읽기 버퍼를 채우는 중…");
+        else if(!aiFailed_)status_->setText(state.playing?"재생 중":"일시정지 / 준비 중");
     }
     syncCombo(titles_,state.titles);syncCombo(audio_,state.audioTracks);syncCombo(subs_,state.subtitleTracks);
     const auto select=[](QComboBox *box,int id){const int index=box->findData(id);if(index>=0 && index!=box->currentIndex()){QSignalBlocker guard(box);box->setCurrentIndex(index);}};
@@ -778,6 +781,12 @@ QJsonObject MainWindow::diagnostics()const{
     if(active_)result.insert("currentAudioTrack",active_->state().currentAudio);
     if(captureGuard_){result.insert("captureRequested",captureGuard_->enabled());result.insert("captureApplied",captureGuard_->applied());result.insert("captureStatus",captureGuard_->status());}result.insert("display",displayCapabilities(winId()));
     if(active_){const auto &state=active_->state();result.insert("engine",active_->name());result.insert("positionMs",state.positionMs);result.insert("durationMs",state.durationMs);result.insert("playing",state.playing);result.insert("failed",state.failed);result.insert("title",state.currentTitle);result.insert("chapter",state.currentChapter);result.insert("chapterCount",state.chapters.size());result.insert("audioTrackCount",state.audioTracks.size());result.insert("videoCodec",state.videoCodec);result.insert("hardwareDecoder",state.hardwareDecoder);result.insert("audioCodec",state.audioCodec);result.insert("decodedVideo",state.decodedVideo);result.insert("decodedAudio",state.decodedAudio);result.insert("displayedPictures",state.displayedPictures);result.insert("playedAudioBuffers",state.playedAudioBuffers);result.insert("captionBufferedAheadMs",coverage_.bufferedAhead(state.positionMs,state.durationMs));result.insert("sourceFps",state.sourceFps);result.insert("filteredFps",state.filteredFps);result.insert("displayFps",state.displayFps);result.insert("motionStatus",state.motionStatus);}
+    if(active_){
+        const auto &state=active_->state();
+        result.insert("mediaBuffering",state.buffering);
+        result.insert("droppedVideoFrames",state.droppedVideoFrames);
+        result.insert("lostAudioBuffers",state.lostAudioBuffers);
+    }
     QJsonArray messages;const auto lines=log_->toPlainText().split('\n');for(const auto &line:lines.mid(std::max<qsizetype>(0,lines.size()-30)))messages.append(line);result.insert("recentMessages",messages);return result;
 }
 void MainWindow::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasUrls())event->acceptProposedAction();}

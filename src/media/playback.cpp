@@ -21,6 +21,7 @@
 #include <atomic>
 #include <optional>
 #include <iterator>
+#include <utility>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -79,6 +80,10 @@ struct PlaybackEngine::Impl {
     bool seekReady=false;
     std::optional<qint64> deferredSeek;
     bool discSoftware=true;
+    bool nextDiscSoftware=false,discAllocationFailed=false;
+    QByteArray discHardwareOption=":avcodec-hw=any";
+    QElapsedTimer discFrameProgress;
+    int lastDiscFrame=-1,audioAtLastDiscFrame=0;
     int metadataTitle=-2,metadataAudio=-2;
     QSet<int> navigationTitles;
     QHash<int,qint64> titleDurations;
@@ -169,6 +174,7 @@ struct PlaybackEngine::Impl {
             if(generation!=o->d->generation.load() || o->d->stopping.load())return;emit o->logMessage(msg);
             if(msg.contains("Using D3D11VA"))o->d->state.hardwareDecoder="D3D11VA";
             else if(msg.contains("Using DXVA2"))o->d->state.hardwareDecoder="DXVA2";
+            if(msg.contains("hardware acceleration picture allocation failed",Qt::CaseInsensitive))o->d->discAllocationFailed=true;
             const auto outputLoss=videoOutputLossReason(msg);
             if(!outputLoss.isEmpty() && o->d->videoOutputActive && !o->d->state.failed && !o->d->videoOutputLossSent){
                 // 신호 수신자가 복구를 결정한다. 여기서는 전송 상태를 실패로 바꾸지 않는다.
@@ -225,7 +231,13 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #endif
 #undef LOAD
         if(!ok)return;
-        d->discSoftware=qEnvironmentVariable("LUMA_DISC_DECODER")!="hardware";
+        const auto decoder=qEnvironmentVariable("LUMA_DISC_DECODER");
+#ifdef Q_OS_WIN
+        if(decoder=="software")d->discHardwareOption=":avcodec-hw=none";
+#else
+        if(decoder!="hardware" && decoder!="dxva2")d->discHardwareOption=":avcodec-hw=none";
+#endif
+        if(decoder=="dxva2")d->discHardwareOption=":avcodec-hw=dxva2";
         const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1"};
         d->vlc=d->libvlc_new(int(std::size(options)),options);
         if(!d->vlc){d->error="libVLC initialization failed";return;}
@@ -268,6 +280,7 @@ bool PlaybackEngine::available()const{return d->ready;}
 QString PlaybackEngine::lastError()const{return d->error;}
 QString PlaybackEngine::name()const{return d->kind==Kind::Disc?"libVLC · Blu-ray":"libmpv · GPU Next";}
 const PlaybackState &PlaybackEngine::state()const{return d->state;}
+void PlaybackEngine::useSoftwareDiscDecoderOnNextOpen(){d->nextDiscSoftware=true;}
 bool PlaybackEngine::openPreparedDisc(const QString &source,WId surface,qint64 durationMs){
     if(d->kind!=Kind::Disc || durationMs<=0 || durationMs>24LL*60*60*1000){d->fail("준비한 디스크 타이틀의 길이가 올바르지 않습니다.");return false;}
     return openInternal(source,surface,durationMs);
@@ -280,6 +293,10 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
     d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
     if(preparedDiscDurationMs>0)d->preparedTitleWait.start();else d->preparedTitleWait.invalidate();
     if(d->kind==Kind::Disc){
+        d->discSoftware=std::exchange(d->nextDiscSoftware,false) || d->discHardwareOption.endsWith("=none");
+        d->discAllocationFailed=false;
+        d->discFrameProgress.invalidate();
+        d->lastDiscFrame=-1;
         QString url=source;
         if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
 #ifdef Q_OS_WIN
@@ -294,7 +311,7 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         if(preparedDiscDurationMs>0)d->libvlc_media_add_option(d->media,":start-paused");
         d->libvlc_media_add_option(d->media,":bluray-region=A");
         d->libvlc_media_add_option(d->media,":disc-caching=10000");
-        if(d->discSoftware)d->libvlc_media_add_option(d->media,":avcodec-hw=none");
+        d->libvlc_media_add_option(d->media,d->discSoftware?":avcodec-hw=none":d->discHardwareOption.constData());
         d->libvlc_media_player_set_media(d->player,d->media);
         if(d->libvlc_media_player_play(d->player)<0){d->fail("Blu-ray 재생을 시작할 수 없습니다. 진단 로그를 확인하세요.");return false;}
     }else{
@@ -341,13 +358,13 @@ void PlaybackEngine::updateFrameInterpolation(){
         else d->state.motionStatus="이 실행기에서 광학 흐름 필터를 시작할 수 없습니다.";
     }
 }
-void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player)d->libvlc_media_player_set_time(d->player,ms);else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
+void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player){d->discFrameProgress.invalidate();d->libvlc_media_player_set_time(d->player,ms);}else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
 void PlaybackEngine::setVolume(int v){if(!available())return;v=std::clamp(v,0,100);if(d->player)d->libvlc_audio_set_volume(d->player,v);else d->mpv_set_property_string(d->mpv,"volume",QByteArray::number(v).constData());}
 void PlaybackEngine::setRate(double r){if(!available())return;r=std::clamp(r,0.25,4.0);if(d->player)d->libvlc_media_player_set_rate(d->player,float(r));else d->mpv_set_property_string(d->mpv,"speed",QByteArray::number(r).constData());}
 void PlaybackEngine::setAudio(int id){if(!available())return;if(d->player)d->libvlc_audio_set_track(d->player,id);else d->mpv_set_property_string(d->mpv,"aid",QByteArray::number(id).constData());}
 void PlaybackEngine::setSubtitle(int id){if(!available())return;d->managedSubtitle=false;if(d->player)d->libvlc_video_set_spu(d->player,id);else d->mpv_set_property_string(d->mpv,"sid",id<0?"no":QByteArray::number(id).constData());}
-void PlaybackEngine::setChapter(int id){if(!available())return;if(d->player)d->libvlc_media_player_set_chapter(d->player,id);else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
-void PlaybackEngine::setTitle(int id){if(d->player){d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_title(d->player,id);}}
+void PlaybackEngine::setChapter(int id){if(!available())return;if(d->player){d->discFrameProgress.invalidate();d->libvlc_media_player_set_chapter(d->player,id);}else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
+void PlaybackEngine::setTitle(int id){if(d->player){d->discFrameProgress.invalidate();d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_title(d->player,id);}}
 void PlaybackEngine::navigate(int mode){if(d->player && mode>=libvlc_navigate_activate && mode<=libvlc_navigate_popup)d->libvlc_media_player_navigate(d->player,mode);}
 void PlaybackEngine::clearManagedSubtitles(){
     if(!d->managedSubtitle)return;
@@ -370,7 +387,9 @@ void PlaybackEngine::poll(){
         d->state.currentTitle=d->libvlc_media_player_get_title(d->player);d->state.currentChapter=d->libvlc_media_player_get_chapter(d->player);
         d->state.currentAudio=d->libvlc_audio_get_track(d->player);d->state.currentSubtitle=d->libvlc_video_get_spu(d->player);
         libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;d->state.droppedVideoFrames=stats.i_lost_pictures;d->state.lostAudioBuffers=stats.i_lost_abuffers;}
-        if(d->libvlc_media_player_get_state(d->player)==libvlc_Error)d->fail("Blu-ray 재생 중 오류가 발생했습니다. 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
+        const auto nativeState=d->libvlc_media_player_get_state(d->player);
+        d->state.buffering=nativeState==libvlc_Buffering;
+        if(nativeState==libvlc_Error)d->fail("Blu-ray 재생 중 오류가 발생했습니다. 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
         d->state.audioTracks=d->descriptions(d->libvlc_audio_get_track_description(d->player));
         d->state.subtitleTracks=d->descriptions(d->libvlc_video_get_spu_description(d->player));
         d->state.chapters.clear(); const int chapters=d->libvlc_media_player_get_chapter_count(d->player);
@@ -416,6 +435,19 @@ void PlaybackEngine::poll(){
             d->metadataTitle=d->state.currentTitle;d->metadataAudio=d->state.currentAudio;
         }
         if(d->discSoftware)d->state.hardwareDecoder="CPU · Blu-ray 호환 디코딩";
+        const bool monitorGpu=!d->discSoftware && d->videoOutputActive && !d->state.failed &&
+            nativeState==libvlc_Playing && d->state.playing && d->state.timelineReady && !d->state.videoCodec.isEmpty();
+        if(!monitorGpu)d->discFrameProgress.invalidate();
+        else if(d->lastDiscFrame!=d->state.displayedPictures || !d->discFrameProgress.isValid()){
+            if(d->lastDiscFrame!=d->state.displayedPictures)d->discAllocationFailed=false;
+            d->lastDiscFrame=d->state.displayedPictures;
+            d->audioAtLastDiscFrame=d->state.playedAudioBuffers;
+            d->discFrameProgress.start();
+        }else if(!d->videoOutputLossSent && d->discFrameProgress.elapsed()>=8000 &&
+                 (d->discAllocationFailed || d->state.playedAudioBuffers>d->audioAtLastDiscFrame)){
+            d->videoOutputLossSent=true;
+            emit videoOutputLost(QStringLiteral("Blu-ray GPU 영상이 멈춰 호환 디코딩으로 복구합니다."));
+        }
     }else if(d->mpv){
         for(int i=0;i<100;++i){auto *event=d->mpv_wait_event(d->mpv,0);if(!event || event->event_id==MPV_EVENT_NONE)break;
             if(event->event_id==MPV_EVENT_FILE_LOADED){d->fileLoaded=true;updateFrameInterpolation();}

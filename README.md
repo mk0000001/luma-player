@@ -2,146 +2,102 @@
 
 ## 한국어
 
-Windows 설치형은 [설치 빌드 1](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-alpha.10-installer.1)을 사용하세요. CUDA·관련 라이브러리·기본 Turbo를 포함하고, full-v3·한국어 번역 모델을 선택하면 설치 중 자동 다운로드·SHA-256 검증합니다. [설치·제거 안내](docs/WINDOWS-INSTALLER.md).
+Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대사를 내 언어로 읽을 수 있는 오픈소스 플레이어를 찾기 어려웠습니다. LumaPlayer는 그 필요에서 시작했습니다. 디스크를 넣고 감상하는 흐름 안에서 영상, 자막, 번역을 함께 다룰 수 있게 만들고 있습니다.
 
-C++20/Qt 6으로 만드는 오픈소스 네이티브 Blu-ray·미디어 플레이어입니다. **Windows x64 먼저, Linux 다음** 순서로 개발합니다. 현재 대상은 `0.1.0-alpha.10` 프리뷰입니다. 구현과 실제 확인 범위는 [자막·재생 안내](docs/CAPTIONS-AND-PLAYBACK.md), 준비 타이틀 선택과 검증은 [릴리스 기록](docs/releases/0.1.0-alpha.10.md)에서 구분합니다. 모든 보호 디스크의 호환성이나 인증 Dolby Vision 출력을 보장하지 않습니다.
+### LumaPlayer로 할 수 있는 일
 
-선택 Kotoba 모델용 C++ NPU 인코더와 설치 검사를 제공합니다. OpenVINO 2026.4.1에서 실제 NPU 연속 추론을 확인했습니다. 설치기는 실제 인코더 호출·안정성·처리 시간을 검사하고, 적합한 모델·장치 조합만 자동 NPU를 사용하며 나머지는 GPU→CPU로 대체합니다. [NPU 준비 안내](docs/INSTALL-KOTOBA-NPU.md)와 [성능·검증 범위](docs/PERFORMANCE-KOTOBA.md)를 확인하세요.
+- **디스크를 감상하세요.** Blu-ray 메뉴에서 본편과 챕터를 고르고, 마지막으로 본 위치에서 이어볼 수 있습니다. 일반 동영상 파일도 열 수 있습니다.
+- **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 원하는 줄만 골라 표시하거나 가지고 있는 자막 파일을 불러올 수 있습니다.
+- **감상 전에 자막을 준비하세요.** 전체 영상의 자막과 번역을 저장해 두면, 다시 열거나 다른 장면으로 이동할 때 준비된 자막을 바로 쓸 수 있습니다.
+- **내 화면에 맞춰 감상하세요.** 다크·라이트 모드, 전체화면에서 자동으로 숨는 재생 바, 방향키 탐색과 볼륨 조절을 지원합니다.
 
-- **Blu-ray:** libVLC 메뉴·리모컨·타이틀·챕터. 기본값은 소프트웨어 디코딩과 10초 디스크 캐시입니다. 한 디스크의 관찰을 전체 호환성으로 확대하지 않습니다.
-- **파일:** libmpv GPU Next, AV1 등 엔진 지원 코덱, 파일 출력 GPU 선택. HDR/Dolby Vision 처리 경로와 실제 출력 검증은 구분합니다.
-- **로컬 자막:** 원문·일본어 한글 독음·한국어 번역을 분리하고, 긴 자막을 짧은 시간 페이지와 화면 폭에 맞게 표시합니다. 최소 10초 준비 후에도 60초 앞까지 계속 인식합니다. 한국어 번역은 최신 버퍼의 앞뒤 원문을 참고하고 현재 구간만 번역합니다. 실행 중 외부 API·계정·Python이 필요하지 않습니다.
-- **외부 자막·이어보기:** SRT/ASS/SSA/VTT/SMI, 같은 이름 자막 자동 검색, 불러오기 실패 시 현재 언어의 AI 전환. 파일별·디스크 본편 타이틀별 위치를 로컬에 저장합니다.
-- **재생 전 전체 자막:** 파일·Blu-ray 타이틀 전체의 원문을 먼저 인식한 뒤 문맥으로 한국어를 번역합니다. 취소·이어하기, 원문·독음·해석 SRT와 완성 프로젝트 재생을 제공합니다. [사전 생성 안내](docs/PREPARE-CAPTIONS.md).
-- **화면:** 기본 다크/선택 라이트, 자체 컨트롤과 Noto Sans. 영상 위의 74 px 전체화면 바는 영상 크기를 바꾸지 않고 5초 비활동 시 커서와 함께 숨습니다. alpha.4에는 이미 포커스된 VLC 영상에서 정지 포인터의 가운데 클릭이 재생바를 복원하지 못하는 [알려진 문제](docs/releases/0.1.0-alpha.4.md)가 남았습니다. alpha.5에서 창/전체화면 우클릭·가운데 클릭 복원과 유휴 숨김을 실물 디스크로 확인했습니다. 진단은 개발자 모드에서 표시합니다.
-- **선택 프레임 보간:** 파일용 디스플레이 동기 혼합과 실험적 CPU 광학 흐름(24~360 fps **목표**). 360 fps 실시간 표시를 보장하지 않습니다.
+### Windows 베타 설치
 
-### 실행과 선택 번역 모델
+릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.1) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
-[GitHub Releases](https://github.com/mk0000001/luma-player/releases)에서 공개된 Windows x64 포터블 ZIP을 확인하세요. 전체 폴더를 풀고 `LumaPlayer.exe`를 실행합니다. 실행 파일과 `runtime` 폴더를 함께 유지해야 합니다.
+시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
-두 포터블 구성 모두 Whisper large-v3-turbo Q5 원문 음성인식 모델과 번역 실행기를 포함합니다. `windows-x64` 코어는 CUDA를 생략하고, `windows-x64-cuda`는 **음성 인식·번역 CUDA 12.4 실행기를 함께 포함**합니다. CUDA 포함판도 시스템 드라이버를 바꾸지 않으며 CPU/Vulkan 경로를 유지합니다. 번역 가중치는 두 구성 모두 선택 설치이고, 모델 없이도 재생·원문·한글 독음을 사용할 수 있습니다. 압축을 푼 플레이어 폴더에서 실행하세요.
+### 권장 사양과 실제 테스트
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install-translation.ps1
-```
+실시간 원문 인식과 한국어 번역을 함께 사용할 때는 아래 테스트 환경 수준을 권장합니다.
 
-기본 `fast`는 Qwen3-4B Q4_K_M **약 2.50 GB**입니다. 선택 `quality`는 Hy-MT2-7B Q4_K_M **약 4.624 GB**입니다.
+| 항목 | 권장 사양 | 실제 테스트 사양 |
+| --- | --- | --- |
+| 운영체제 | Windows 11 x64 | Windows 11 Home x64, 빌드 26300 |
+| CPU | Core Ultra 9 185H급 | Intel Core Ultra 9 185H |
+| GPU | VRAM 12 GB급 NVIDIA CUDA GPU | GeForce RTX 4080 Laptop GPU, 12 GB, 드라이버 617.42 |
+| 메모리 | 32 GB | 32 GB 장착, OS 인식 31.4 GiB |
+| 저장공간 | SSD에 16 GB 이상 여유 | SOLIDIGM SSDPFKKW020X7 NVMe SSD |
+| 디스크 | Blu-ray를 읽을 수 있는 드라이브 | PIONEER BD-ROM BDCTD03RS USB |
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install-translation.ps1 -Profile quality
-```
+**츠키 무도관 Blu-ray (TUKI NIPPON BUDOKAN BD)**로 메뉴, ALL PLAY 본편 재생, 탐색과 자막 표시를 테스트했습니다. [버전별 검증 기록](https://github.com/mk0000001/luma-player/releases)
 
-설치 시에만 인터넷을 사용하고 크기·SHA-256을 확인하며, 정상 기존 파일은 재사용합니다. 설치한 quality 모델은 별도 모델 선택을 저장하지 않은 경우 재시작 후 기본으로 선택됩니다. 이미 선택한 모델이 있다면 **번역 모델 선택**에서 파일을 직접 고르세요. CUDA를 생략한 코어에 실행기를 추가하는 방법은 [설치 안내](docs/INSTALL-TRANSLATION.md)의 `install-translation-cuda.ps1`·`install-asr-cuda.ps1`을 참고하세요. 번역 Q6·디코딩·프롬프트 비교에서는 확실한 의미 개선이 없어 기존 Q4 프로필을 유지했습니다. [비교 기록](docs/translation-quality-validation.md)에 잔여 오류를 남깁니다.
+**권장 사양에 못 미치면 재생 전에 자막을 먼저 생성하세요.** **AI 자막 → 재생 전 전체 자막 만들기**에서 파일이나 Blu-ray 타이틀을 선택합니다. 생성이 끝나면 **미리 만든 자막 프로젝트 열기**로 열어 감상하세요. [미리 생성·이어하기 안내](docs/PREPARE-CAPTIONS.md)
 
-일본어 음성에는 선택 **Kotoba-Whisper v2.0 Q5** 모델(약 538 MB, Apache-2.0)을 추가로 설치할 수 있습니다. 아래 명령 후 **음성 인식 모델 선택**에서 `runtime/models/ggml-kotoba-whisper-v2.0-q5_0.bin`을 고릅니다. 다국어 기본 Turbo는 유지합니다. [모델 비교 기록](docs/asr-model-validation.md)에 실제 실행과 정확도 검증의 범위를 구분합니다.
+### 문제가 생기면
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install-asr-model.ps1 -Profile japanese
-```
+| 증상 | 확인할 곳 |
+| --- | --- |
+| 재생 시작이나 탐색 뒤 잠시 멈춤 | 실시간 자막은 먼저 10초 분량을 준비하고 이후 60초 앞까지 채웁니다. AI 자막의 준비 상태를 확인하세요. 반복해서 기다리게 되면 전체 자막을 미리 만들어 사용하세요. |
+| 하단에 CPU 표시가 뜸 | 하단은 영상 디코딩 상태를 표시합니다. 음성 인식·번역에 실제 사용한 장치는 AI 자막 탭에서 확인할 수 있습니다. |
+| 한국어 번역이 안 나옴 | **한국어 번역**을 켜고 **번역 모델 선택**에서 설치된 Hy-MT2 파일을 고르세요. |
+| Blu-ray 메뉴나 재생이 열리지 않음 | **새로 확인**으로 디스크를 감지한 뒤 **Blu-ray 재생**을 눌러 보세요. 계속 실패하면 개발자 모드의 진단에서 첫 오류를 확인하세요. |
 
-파일을 열거나 **Blu-ray 재생**을 누른 뒤 **AI 자막** 탭에서 자동자막과 원문·독음·번역 표시를 선택합니다. **표시 자막 저장**으로 현재 선택한 내용을 SRT로 내보냅니다.
+[재생·자막·단축키 안내](docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](docs/INSTALL-TRANSLATION.md)
 
-미리 준비하려면 **AI 자막 → 재생 전 전체 자막 만들기**에서 파일 또는 연결된 Blu-ray를 선택하세요. 현재 재생하던 디스크 타이틀·오디오를 우선 선택하며, 재생 정보가 없으면 가장 긴 타이틀을 선택합니다. 가장 긴 타이틀이 코멘터리 등 부가영상일 수 있으므로 디스크 메뉴와 대조하세요. 완료 후 **준비한 자막으로 재생**하거나 다음에 **미리 만든 자막 프로젝트 열기**를 사용합니다. 준비한 디스크 타이틀은 메뉴 없이 실제 길이가 맞는 타이틀을 직접 선택하며, 일반 **Blu-ray 재생**에서는 메뉴를 사용할 수 있습니다. 완성 자막은 탐색 후 실시간 인식 버퍼를 기다리지 않습니다. 가속 대체 사유 표시와 완료 구간을 보존하는 가속 재시도를 제공합니다. 선택한 전체 타이틀의 생성 시간과 임시 저장 공간이 필요합니다. 추가 ASR 후보의 실제 속도·정확도 범위는 [Qwen3 비교](docs/research/qwen3-asr-native-evaluation.md)를 확인하세요.
+### 기술과 개발
 
-AI는 재생 전·탐색 후 최소 10초 분량(끝에서는 남은 분량)을 준비하고, 준비 후에도 60초 앞까지 작업을 계속합니다. 처리 단위로 목표를 조금 넘을 수 있습니다. 시작 안내·디스크 메뉴는 기다리지 않습니다. 수동 일시정지를 유지하고, 실패로 최소 버퍼를 자동 우회하지 않습니다. **자막 다시 시도** 또는 **자막 없이 계속**을 선택할 수 있습니다. 영상 출력·음성 인식·번역 장치는 각각 선택하며 실제 사용 백엔드를 표시합니다. 모델마다 지원 장치가 다르고 인식·독음·번역에는 오류가 있을 수 있습니다.
+LumaPlayer는 C++20과 Qt 6으로 만든 네이티브 앱입니다. Blu-ray 메뉴와 재생에는 libVLC, 일반 미디어에는 libmpv를 사용합니다. Whisper 계열 모델이 음성을 인식하고, 로컬 번역 모델이 인식된 텍스트와 문맥을 읽어 번역합니다. Windows를 먼저 개발하며 Linux 개발과 검증은 저장소에서 이어갑니다.
 
-재생 화면에서 Space: 재생/일시정지 · F/Enter/F11: 전체화면 · Esc: 해제 · ←/→: 10초 탐색 · ↑/↓: 음량 5% · M: 음소거. 디스크 메뉴는 Ctrl+방향키/Ctrl+Enter 또는 마우스·화면 리모컨으로 조작합니다. 입력 위젯의 기본 키는 유지합니다. [전체 사용 안내](docs/CAPTIONS-AND-PLAYBACK.md)를 참고하세요.
-
-### 보호 콘텐츠와 출력 상태
-
-AACS/BD+ 라이브러리 연결, Windows 캡처 제외, 인증 DRM/HDCP 출력은 서로 다른 기능입니다. 키·인증서·상용 디스크 영상·음성·메뉴 이미지·생성 자막은 배포하지 않습니다. TUKI 한 장의 성공이 모든 디스크의 호환성을 뜻하지 않습니다.
-
-보호 디스크에서는 Windows 캡처 제외를 **영상과 자막 창에만** 기본 요청합니다. 본창·설정·메뉴·재생바는 캡처할 수 있게 유지하며 적용 상태를 표시합니다. **설정 → 개발자 모드 → 개발용 영상 캡처 허용**에서 개발자 모드와 캡처 해제에 각각 별도로 동의할 수 있습니다. 개발자 모드를 끄면 캡처 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 인증 DRM/HDCP, HDR/Dolby Vision·무손실 출력과 최종 배포 검증 범위는 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 확인하세요.
-
-### 소스에서 빌드
-
-Windows: Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, Ninja, Git, PowerShell 7이 필요합니다. 의존성 다운로드에는 인터넷과 충분한 디스크 공간이 필요합니다.
-
-```powershell
-git clone https://github.com/mk0000001/luma-player.git
-cd luma-player
-pwsh -File scripts/bootstrap-windows.ps1
-pwsh -File scripts/build-local-ai.ps1
-pwsh -File scripts/bootstrap-translation.ps1 -SkipModel -SkipOpenVino
-pwsh -File scripts/build-windows.ps1 -BuildDirectory build-next
-pwsh -File scripts/stage-runtime.ps1 -Destination build-next -SkipTranslationModel
-.\.deps\qt\bin\windeployqt.exe --release --no-translations build-next\LumaPlayer.exe
-.\build-next\LumaPlayer.exe
-```
-
-위 구성은 Vulkan/CPU 번역 실행기와 별도의 ASR 실행기를 준비합니다. 번역용 OpenVINO를 생략해도 ASR NPU 런타임은 제거되지 않습니다. 번역 모델까지 받으려면 `bootstrap-translation.ps1 -SkipOpenVino`에 `-ModelProfile fast` 또는 `quality`를 선택하세요. URL·체크섬은 [공통 잠금](dependencies.lock.json)과 [번역 잠금](translation-dependencies.lock.json)에 고정합니다.
-
-소스 빌드 후 CUDA 포함 ZIP을 만들려면 다음을 실행합니다. 고정 배포물과 라이선스를 확인해 앱 폴더에 준비하며 시스템 드라이버는 설치하지 않습니다.
-
-```powershell
-pwsh -File scripts/install-asr-cuda.ps1 -Development
-pwsh -File scripts/install-translation-cuda.ps1 -Development
-pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
-```
-
-출력 이름은 `LumaPlayer-0.1.0-alpha.10-windows-x64-cuda.zip`입니다. `-IncludeCuda`를 생략하면 기존 `windows-x64` 코어를 만듭니다. 릴리스 워크플로의 수동 입력 `include_cuda` 기본값은 `true`이며, 최종 ZIP 크기·해시와 실행 검증은 릴리스 기록에서 확인합니다.
-
-Linux 개발 빌드:
-
-```sh
-sudo apt install cmake ninja-build g++ qt6-base-dev libvlc-dev libmpv-dev ffmpeg
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
-./build/LumaPlayer
-```
-
-Linux CI는 컴파일·자동 검사 범위입니다. 광학 드라이브·오디오·X11/XWayland·네이티브 Wayland/HDR 실측과 패키징은 후속 작업이며 macOS는 현재 대상이 아닙니다.
-
-### 기록과 라이선스
-
-[기능 대응표](docs/FEATURES.md) · [변경 기록](CHANGELOG.md) · [구현 결정](docs/DECISIONS.md) · [기술 근거](docs/research/engine-decisions.md) · [버전 정책](docs/VERSIONING.md) · [제3자 고지](THIRD_PARTY_NOTICES.md)
-
-애플리케이션은 **GPL-3.0-or-later**입니다. Whisper/Turbo는 MIT, 선택 Qwen3-4B·Hy-MT2 모델은 Apache 2.0이며, 선택 CUDA는 별도 NVIDIA 원문 조건을 따릅니다. Noto는 수정 없이 SIL OFL 1.1·저작권 고지와 함께 포함합니다. 상용 플레이어의 비공개 코드·DLL·디자인 자산을 포함하지 않습니다.
+[구현 결정](docs/DECISIONS.md) · [선택 NPU 설정](docs/INSTALL-KOTOBA-NPU.md) · [라이선스](LICENSE) · [포함 라이브러리와 고지](THIRD_PARTY_NOTICES.md)
 
 ## English
 
-Use [Windows installer build 1](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-alpha.10-installer.1) for per-user installation. CUDA/dependencies and Turbo are included; optional full-v3/Korean translation models download automatically with SHA-256 verification. See the [installation guide](docs/WINDOWS-INSTALLER.md).
+We wanted an open-source Blu-ray player that could open disc menus, jump to a favorite scene, and show dialogue in a language we could read. That need started LumaPlayer. It brings video, captions, and translation into the same viewing experience.
 
-LumaPlayer is an open-source native C++20/Qt 6 Blu-ray/media player, **Windows x64 first, Linux next**. The current target is `0.1.0-alpha.10`. The [caption/playback guide](docs/CAPTIONS-AND-PLAYBACK.md) distinguishes implementation from observed behavior; the [release record](docs/releases/0.1.0-alpha.10.md) tracks preparation selection and validation. Universal protected-disc compatibility and certified Dolby Vision output are unfinished.
+### What you can do with LumaPlayer
 
-Native C++ Kotoba NPU conversion and installation calibration are available. Repeated genuine NPU inference was observed with OpenVINO 2026.4.1. The installer checks real encoder calls, stability and latency; automatic mode uses NPU only for a qualified model/device combination, otherwise GPU then CPU. See [setup](docs/INSTALL-KOTOBA-NPU.md) and [measured limits](docs/PERFORMANCE-KOTOBA.md). Korean translation uses the latest buffered original context while translating only the target cue.
+- **Watch your discs.** Choose the main feature or a chapter from the Blu-ray menu, pick up where you left off, and open regular video files too.
+- **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Choose which lines to show or load your own subtitle file.
+- **Prepare captions before watching.** Save captions and translation for a whole title, then reuse the completed project when you reopen it or seek to another scene.
+- **Make it fit your screen.** Use dark or light mode, fullscreen controls that hide when idle, and arrow keys for seeking and volume.
 
-Features include libVLC disc menus/remote/title/chapter controls; libmpv GPU Next file playback; separate source captions, Japanese Hangul readings and Korean translation; timed long-caption pages and wrapping; SRT/ASS/SSA/VTT/SMI import with AI fallback; per-file/disc-title resume; and dark/light Noto-based controls. The floating 74 px fullscreen bar and cursor hide after five inactive seconds without moving the video, including when the pointer rests over the bar. File-only motion options target 24–360 fps processing, without promising realtime 360 fps display.
+### Install the Windows beta
 
-Alpha.4 retains a [known issue](docs/releases/0.1.0-alpha.4.md): a stationary middle click on already-focused VLC video after idle can fail to restore the bar. Alpha.5 verified right/middle-click restoration in windowed/fullscreen modes and idle hiding with the physical disc.
+Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.1) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
 
-Disc defaults are software decoding and a ten-second cache. Results on one protected disc do not establish universal compatibility. Native owned-media checks, protected-disc observations and remaining limits are recorded separately from final CI/package validation.
+Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 
-### Run and install optional translation
+### Recommended and tested hardware
 
-Check [GitHub Releases](https://github.com/mk0000001/luma-player/releases) for published Windows x64 archives. Extract the complete folder and launch `LumaPlayer.exe`, keeping its runtime beside it. Both flavors include Whisper large-v3-turbo Q5 and the translation runtime. The `windows-x64` core omits CUDA; `windows-x64-cuda` bundles **both ASR and translation CUDA 12.4 runtimes**, retaining CPU/Vulkan alternatives and leaving system drivers unchanged. Translation weights remain optional in both; playback, source captions and Hangul readings work without them.
+For live recognition and Korean translation together, we recommend a system around the tested configuration below.
 
-From the extracted folder:
+| Component | Recommended | Tested |
+| --- | --- | --- |
+| OS | Windows 11 x64 | Windows 11 Home x64, build 26300 |
+| CPU | Core Ultra 9 185H class | Intel Core Ultra 9 185H |
+| GPU | NVIDIA CUDA GPU with about 12 GB VRAM | GeForce RTX 4080 Laptop GPU, 12 GB, driver 617.42 |
+| Memory | 32 GB | 32 GB installed, 31.4 GiB visible to Windows |
+| Storage | SSD with 16 GB free | SOLIDIGM SSDPFKKW020X7 NVMe SSD |
+| Disc playback | Blu-ray drive | PIONEER BD-ROM BDCTD03RS USB |
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\install-translation.ps1
-```
+Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON BUDOKAN BD**. [Version-specific verification records](https://github.com/mk0000001/luma-player/releases)
 
-The default `fast` profile downloads Qwen3-4B Q4_K_M, about **2.50 GB**. Add `-Profile quality` for Hy-MT2-7B Q4_K_M, about **4.624 GB**. Size/SHA-256 verification and valid-file reuse are enforced. An installed quality model becomes the startup default only without a saved explicit model selection; otherwise choose its file through **번역 모델 선택**. Restart after installing while the app was open. The [installer guide](docs/INSTALL-TRANSLATION.md) covers adding CUDA to core. Subsequent inference is local, without an external API account/key or Python. Q6, decoding and prompt comparisons did not establish a clear semantic improvement, so the Q4 profiles remain; see the [comparison record](docs/translation-quality-validation.md).
+**If your system falls below the recommendation, prepare captions before playback.** Choose a file or Blu-ray title in **AI 자막 → 재생 전 전체 자막 만들기**, then open the completed project with **미리 만든 자막 프로젝트 열기**. [Preparation and resume guide](docs/PREPARE-CAPTIONS.md)
 
-For Japanese speech, optionally run `tools/install-asr-model.ps1 -Profile japanese` to install **Kotoba-Whisper v2.0 Q5** (about 538 MB, Apache-2.0). Select `runtime/models/ggml-kotoba-whisper-v2.0-q5_0.bin` through the ASR model picker. Multilingual Turbo remains the default. The [ASR evidence](docs/asr-model-validation.md) distinguishes native execution from accuracy validation.
+### Troubleshooting
 
-Open a file or disc, then enable automatic captions and choose source/reading/translation in the **AI 자막** tab. **표시 자막 저장** exports the selected display text to SRT.
+| Symptom | What to check |
+| --- | --- |
+| Playback waits at startup or after a seek | Live captions first prepare 10 seconds of media, then work toward 60 seconds ahead. Check the AI caption tab. Use a completed project if waits keep recurring. |
+| CPU appears in the playback bar | The bar shows video decoding. The AI caption tab displays the devices used for recognition and translation. |
+| Korean translation is missing | Enable **한국어 번역** and select the installed Hy-MT2 file with **번역 모델 선택**. |
+| Disc menu or playback fails to open | Refresh disc detection with **새로 확인**, then retry **Blu-ray 재생**. If it still fails, check the first error in developer diagnostics. |
 
-For full preparation before playback, select **AI 자막 → 재생 전 전체 자막 만들기**, choose a file or connected Blu-ray, and prepare all originals before contextual Korean translation. Prefer the currently playing disc title/audio; without usable playback information, the longest title is selected. Verify it against the disc menu: commentary/bonus material can be longer than the main feature. Cancel/resume, SRT exports and reusable projects are supported. Prepared discs directly select the matching title without menus; ordinary **Blu-ray 재생** retains menus. Completed captions bypass live ASR buffering after seeks. Fallback explanations and checkpoint-preserving accelerator retry are available. See the [preparation guide](docs/PREPARE-CAPTIONS.md) for storage/model/source requirements and the [native Qwen3 comparison](docs/research/qwen3-asr-native-evaluation.md) for the measured scope of another ASR candidate.
+[Playback, captions, and shortcuts](docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](docs/INSTALL-TRANSLATION.md)
 
-ASR requires ten seconds before playback/after seeking, shortened near EOF, then keeps working toward 60 seconds ahead. Chunk boundaries may exceed the target slightly. Disc navigation does not wait for main-title captions. Manual pause is preserved, and failure does not silently bypass minimum readiness: use retry or **자막 없이 계속**. Video, ASR and translation devices are separate and report actual backends; support varies by model. Recognition, readings and translation can be inaccurate.
+### Technology and development
 
-With playback focus: Space plays/pauses; F/Enter/F11 toggles fullscreen; Esc exits; Left/Right seeks ten seconds; Up/Down changes volume by 5%; M mutes/restores volume. Ctrl+arrows/Ctrl+Enter navigate disc menus, alongside mouse/onscreen controls. Editable/control widgets retain normal keys. See the [user guide](docs/CAPTIONS-AND-PLAYBACK.md).
+LumaPlayer is a native C++20 and Qt 6 application. It uses libVLC for Blu-ray menus and playback and libmpv for media files. Local Whisper-family models recognize speech, and local text models translate the recognized text with context. Windows development comes first, with Linux development and verification tracked in the repository.
 
-### Build and limits
-
-Windows requires Visual Studio 2022 C++ Build Tools, Windows SDK, CMake 3.25+, Ninja, Git and PowerShell 7. Use the complete Windows commands in the Korean section: bootstrap dependencies, build native AI, bootstrap translation with `-SkipModel -SkipOpenVino`, build/stage `build-next`, deploy Qt, and run. Skipping translation OpenVINO does not remove the separate ASR NPU runtime. Source URLs/hashes are pinned in the two dependency locks. The Linux commands above exercise the development build; native optical-drive/display testing and packaging remain pending. macOS is outside the current target.
-
-For the CUDA ZIP, run both `install-asr-cuda.ps1 -Development` and `install-translation-cuda.ps1 -Development`, then `package-windows.ps1 -BuildDirectory build-next -IncludeCuda`, as shown above. Omitting `-IncludeCuda` preserves the core flavor. The release workflow's manual `include_cuda` input defaults to `true`; final archive size, hashes and native results remain in the release record.
-
-AACS/BD+ reading, Windows capture exclusion and certified DRM/HDCP output are separate. No protected keys/certificates or commercial media/menu/transcript assets are shipped. Default exclusion targets **video and captions only**, leaving the main UI, settings, menus and transport capturable. Enable **설정 → 개발자 모드 → 개발용 영상 캡처 허용** only after separately acknowledging developer use and capture allowance; disabling developer mode revokes it. Notices explain lawful-use responsibilities without blanket legal immunity. See the [alpha.6 record](docs/releases/0.1.0-alpha.6.md) for actual HDR/lossless, CI and packaging status.
-
-See the [changelog](CHANGELOG.md), [version policy](docs/VERSIONING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). The application is GPL-3.0-or-later, Whisper/Turbo is MIT, optional Qwen3-4B/Hy-MT2 weights are Apache 2.0, and optional CUDA keeps its separate NVIDIA terms. Unmodified Noto fonts retain SIL OFL 1.1 notices.
+[Engineering decisions](docs/DECISIONS.md) · [Optional NPU setup](docs/INSTALL-KOTOBA-NPU.md) · [License](LICENSE) · [Bundled libraries and notices](THIRD_PARTY_NOTICES.md)

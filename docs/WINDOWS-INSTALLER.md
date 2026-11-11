@@ -2,7 +2,7 @@
 
 ## 한국어
 
-설치 빌드 `0.1.0-alpha.10-installer.1`은 변경하지 않은 alpha.10 Windows x64 CUDA 플레이어를 설치합니다. 기존 포터블 ZIP·태그는 그대로 유지합니다.
+Windows x64 CUDA 설치 EXE로 LumaPlayer를 설치합니다. 버전은 각 릴리스에서 확인할 수 있습니다.
 
 1. 설치 EXE를 실행하고 언어·설치 폴더를 선택합니다. 관리자 권한은 필요하지 않습니다. 기본 위치는 사용자 로컬 앱 폴더입니다.
 2. 권장 설치는 full-v3 Q5 음성인식(약 1.08 GB)과 Hy-MT2 한국어 번역(약 4.62 GB)을 자동 다운로드합니다. 인터넷 없이 설치하려면 기본 Turbo만 선택합니다. CUDA 실행기와 Turbo는 EXE에 포함됩니다.
@@ -13,16 +13,16 @@
 
 별도 라이브러리도 함께 설치합니다: CUDA 12 실행 라이브러리(cudart·cuBLAS·cuBLASLt), 음성인식/번역 실행기, Qt 6, Visual C++ 실행 DLL, libVLC·libmpv·FFmpeg, OpenVINO 실행 라이브러리, Noto Sans. 사용자 앱 폴더에 설치하므로 시스템 PATH·드라이버를 바꾸거나 별도 CUDA Toolkit·Visual Studio를 요구하지 않습니다. NVIDIA GPU 가속은 호환 장치 드라이버가 있어야 하며 Intel NPU도 해당 장치 드라이버가 필요합니다. 장치 드라이버는 이 설치기가 자동 교체하거나 재부팅하지 않습니다.
 
-빌드: 공식 Inno Setup **6.7.4**와 검증된 alpha.10 CUDA 포터블 폴더를 준비합니다. `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe>`를 실행합니다. 756개 패키지 파일의 크기·해시와 소스 커밋을 확인하며 기존 출력은 덮어쓰지 않습니다. 모델 URL은 저장소 잠금 파일에서 생성합니다.
+설치기를 빌드하려면 공식 Inno Setup **6.7.4**와 현재 버전의 CUDA 포터블 폴더를 준비하세요. `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`를 실행합니다. 패키지 파일의 크기·해시와 소스 커밋을 확인하고 새 출력 폴더에 설치 EXE를 만듭니다. 모델 URL은 저장소 잠금 파일에서 읽습니다.
 
 ## English
 
-Installer build `0.1.0-alpha.10-installer.1` installs the unchanged alpha.10 Windows x64 CUDA player; previous portable archives and tags remain intact. Run the EXE, select language/destination and components. Installation is per user and needs no administrator rights.
+The Windows x64 CUDA setup EXE installs LumaPlayer. Choose your version from Releases, run the EXE, and select the language, destination, and components. Installation is per user and needs no administrator rights.
 
 Recommended installation automatically downloads full-v3 Q5 ASR (1.08 GB) and Hy-MT2 Korean translation (4.62 GB). Bundled-Turbo-only installation works offline; CUDA runtimes and Turbo are embedded. Immutable HTTPS URLs and SHA-256 enforce model integrity. Valid existing models at the destination are reused; failures offer retry/cancel.
 
 Launch from the Start Menu. Existing model choices are preserved. Fresh installations retain Turbo as the recognition default; full-v3 can be selected from AI caption settings. Installed Hy-MT2 is discovered preferentially. Allow approximately 16 GB free for the 3.63 GB player, 5.71 GB optional models and download staging. Uninstall preserves downloaded optional models and user settings/captions. No protected keys/media/commercial captions are bundled. The EXE is unsigned.
 
-Build with official Inno Setup 6.7.4 and the verified alpha.10 CUDA payload using `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe>`. The builder verifies all 756 manifest entries and the immutable source commit, generates model pins from repository lock files, and refuses existing output paths.
+Build with official Inno Setup 6.7.4 and the current CUDA payload using `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. The builder verifies the manifest entries and source commit, reads model pins from the repository lock files, and writes the EXE to a new output folder.
 
 Dependencies are installed alongside the application: CUDA 12 runtime (cudart/cuBLAS/cuBLASLt), ASR/translation runners, Qt 6, Visual C++ runtime DLLs, libVLC/libmpv/FFmpeg, OpenVINO runtime and Noto Sans. No separate CUDA Toolkit/Visual Studio or global PATH change is required. NVIDIA GPU and Intel NPU execution still require compatible device drivers; the installer does not replace drivers or reboot the system.

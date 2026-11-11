@@ -19,15 +19,21 @@ void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
     const auto key=r.source+'\n'+r.playlist+'\n'+QString::number(r.audioTrackId)+'\n'+QString::number(r.audioIndex)+'\n'+QString::number(r.readAtFullSpeed);
     const auto cachedBytes=cache_?QFileInfo(cache_->filePath("audio.pcm")).size():0;
     const auto availableEnd=cacheStart_+cachedBytes/32;
+    constexpr auto liveWindowMs=CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs;
     const bool covers=key_==key && r.startMs>=cacheStart_ && r.startMs+r.durationMs<=availableEnd;
-    const bool growing=key_==key && reader_.state()!=QProcess::NotRunning && r.startMs>=cacheStart_ && r.startMs<=availableEnd+15000;
+    const bool growing=key_==key && reader_.state()!=QProcess::NotRunning && r.startMs>=cacheStart_ && r.startMs<=availableEnd+15000
+        && (r.readAtFullSpeed || r.startMs+r.durationMs<=cacheStart_+liveWindowMs);
     if(!covers && !growing){
         cancel();key_=key;cacheStart_=r.startMs;cache_=std::make_unique<QTemporaryDir>(QDir::tempPath()+"/luma-audio-buffer-XXXXXX");
         if(!cache_->isValid()){emit failed("음성 버퍼 임시 폴더를 만들 수 없습니다.");return;}
         auto command=extractionCommand(runtime_,r,cache_->filePath("audio.pcm"));
-        const auto length=command.arguments.indexOf("-t");if(length>=0){command.arguments.removeAt(length);command.arguments.removeAt(length);}
+        const auto length=command.arguments.indexOf("-t");
+        if(length>=0){
+            if(r.readAtFullSpeed){command.arguments.removeAt(length);command.arguments.removeAt(length);}
+            else command.arguments[length+1]=QString::number(liveWindowMs/1000.0,'f',3);
+        }
         const auto codec=command.arguments.indexOf("-c:a");command.arguments.insert(codec+2,"s16le");command.arguments.insert(codec+2,"-f");
-        if(!r.readAtFullSpeed){const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number((CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs)/1000)}+command.arguments.mid(seek);}
+        if(!r.readAtFullSpeed){const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number(liveWindowMs/1000)}+command.arguments.mid(seek);}
         error_.clear();reader_.setProgram(command.program);reader_.setArguments(command.arguments);reader_.start();
     }
     start_=r.startMs;duration_=std::clamp<qint64>(r.durationMs,1,60000);wav_=wav;pending_=true;poll_.start();check();

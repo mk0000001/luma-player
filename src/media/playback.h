@@ -7,7 +7,7 @@ namespace luma {
 struct MediaItem { int id; QString label; };
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
-    bool playing=false, failed=false, navigationTitle=false;
+    bool playing=false, failed=false, navigationTitle=false, buffering=false;
     bool timelineReady=false,discMenus=true;
     int currentTitle=-1,currentChapter=-1;
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
@@ -35,6 +35,7 @@ public:
     QString name() const;
     bool open(const QString &source, WId surface);
     bool openPreparedDisc(const QString &source,WId surface,qint64 durationMs);
+    void useSoftwareDiscDecoderOnNextOpen();
     void stop();
     void pauseToggle();
     void setPaused(bool paused);
