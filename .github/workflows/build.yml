@@ -30,7 +30,10 @@ jobs:
           ./tests/asr_encoder_install_tests.ps1
       - name: Compile and test
         shell: pwsh
-        run: ./scripts/build-windows.ps1
+        run: |
+          New-Item -ItemType Directory -Path build/runtime/fonts -Force | Out-Null
+          Copy-Item -Path .deps/fonts/*.ttf,.deps/fonts/*.otf -Destination build/runtime/fonts
+          ./scripts/build-windows.ps1
       - name: Compile local recognition and reading engines
         shell: pwsh
         run: ./scripts/build-local-ai.ps1
