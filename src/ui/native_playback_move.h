@@ -1,7 +1,7 @@
 #pragma once
 
 #include <initializer_list>
-#include <QtTypes>
+#include <QtGlobal>
 
 class QByteArray;
 class QWidget;
