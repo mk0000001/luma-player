@@ -13,7 +13,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 ### Windows 베타 설치
 
-릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.3) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -64,7 +64,7 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 
 ### Install the Windows beta
 
-Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
+Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.3) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 

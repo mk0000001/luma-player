@@ -89,7 +89,8 @@ void CaptionPreparationDialog::setDisc(const QString &root){
     playlists_->setEnabled(disc.valid && playlists_->count()>0);durationLabel_->setText(request_.durationMs>0?formatTime(request_.durationMs):"타이틀 확인 실패");status_->setText(!disc.valid?"Blu-ray 플레이리스트를 읽을 수 없습니다. 디스크 연결을 확인해 주세요.":usePreferred?"현재 재생하던 타이틀과 오디오를 선택했습니다. 생성 전에 확인해 주세요.":"가장 긴 타이틀을 선택했습니다. 본편·부가영상은 디스크 메뉴와 대조해 선택하세요.");setDefaultOutput();updateStart();
 }
 void CaptionPreparationDialog::setDefaultOutput(){
-    const auto source=request_.source.source+'\n'+request_.source.playlist+'\n'+request_.source.language+'\n'+request_.model+'\n'+request_.translationModel+'\n'+QString::number(request_.source.audioIndex)+'\n'+QString::number(translate_->isChecked());
+    auto source=request_.source.source+'\n'+request_.source.playlist+'\n'+request_.source.language+'\n'+request_.model+'\n'+request_.translationModel+'\n'+QString::number(request_.source.audioIndex)+'\n'+QString::number(translate_->isChecked());
+    if(translate_->isChecked() && !request_.translationGlossary.isEmpty())source+='\n'+formatTranslationGlossary(request_.translationGlossary);
     const auto suffix=QString::fromLatin1(QCryptographicHash::hash(source.toUtf8(),QCryptographicHash::Sha256).toHex().left(16));
     output_->setText(QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)).filePath("prepared-captions/"+suffix));
 }

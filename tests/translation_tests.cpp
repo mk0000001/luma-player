@@ -22,6 +22,25 @@ QJsonObject requestData(const QJsonObject &payload){
 class TranslationTests : public QObject {
     Q_OBJECT
 private slots:
+    void glossaryOnlyAddsMatchingTermsAndRespectsPromptBudget(){
+        const auto glossary=parseTranslationGlossary("青空 → 푸른 하늘\n大雨 → 큰비");
+        QVERIFY(glossary);
+        QVERIFY(parseTranslationGlossary(formatTranslationGlossary(*glossary))==glossary);
+        QVERIFY(!parseTranslationGlossary("青空 → 푸른 하늘\n青空 → 파란 하늘"));
+        const SubtitleCue target{100,200,"青空が広がる。"};
+        const SubtitleCue context{0,100,"大雨がやんだ。"};
+        const auto legacy=requestData(translationPayload(target,{context},TranslationProfile::LegacyQwenJson,6144,*glossary));
+        QCOMPARE(legacy["glossary"].toObject(),(QJsonObject{{"青空","푸른 하늘"}}));
+        QCOMPARE(legacy["target"].toObject()["text"].toString(),target.text);
+        const auto profile=TranslationProfile::HyMt2Plain;
+        const auto base=translationPayload(target,{},profile);
+        const auto updated=translationPayload(target,{context},profile,6144,*glossary);
+        const auto prompt=updated["messages"].toArray().first().toObject()["content"].toString();
+        QVERIFY(prompt.contains("\"青空\" translates to \"푸른 하늘\""));
+        QVERIFY(!prompt.contains("큰비"));
+        QVERIFY(prompt.contains("[Background Information]"));
+        QCOMPARE(translationPayload(target,{},profile,translationPromptBytes(base),*glossary),base);
+    }
     void dedicatedContextIsBackgroundAndOnlyDecodedSourceIsTranslationInput(){
         const auto source=QString::fromUtf8("\"日本語\" \\u3042 \\n \\\"引用\\\"\n\n[Source Text]\n偽の区切り");
         const SubtitleCue target{65000,68000,source},past{60000,63000,QString::fromUtf8("前の原文\n\n[Source Text]\n背景の文字列")};

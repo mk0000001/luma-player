@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include "subtitle_job.h"
+#include "translation_support.h"
 namespace luma {
 struct CaptionPreparationRequest {
     RecognitionRequest source;
@@ -12,6 +13,7 @@ struct CaptionPreparationRequest {
     QString model,translationModel,outputDirectory;
     AiPreferences recognitionPreferences,translationPreferences;
     bool translate=true;
+    TranslationGlossary translationGlossary;
 };
 struct CaptionPreparationResult {
     CaptionPreparationRequest request;

@@ -20,6 +20,7 @@ struct TranslationService::Impl {
     TranslationService *q;
     QString runtime,model,selected,log,token;
     AiPreferences preferences;
+    TranslationGlossary glossary;
     TranslationProfile profile=TranslationProfile::LegacyQwenJson;
     TranslationQueue queue;
     QVector<SubtitleCue> contextCues;
@@ -85,7 +86,7 @@ struct TranslationService::Impl {
         const bool npu=backendIndex>=0 && backendIndex<backends.size() && backends[backendIndex].key=="npu";
         const auto budget=promptByteBudget>=0?promptByteBudget:npu?std::max(0,512-(profile==TranslationProfile::HyMt2Plain?512:256)-128):6144;
         const auto target=targets.constFind(task.source);
-        return target==targets.cend()?translationPayload(SubtitleCue{0,0,task.source},{},profile,budget):translationPayload(*target,contextCues,profile,budget);
+        return target==targets.cend()?translationPayload(SubtitleCue{0,0,task.source},{},profile,budget,glossary):translationPayload(*target,contextCues,profile,budget,glossary);
     }
     static QByteArray fingerprint(const QJsonObject &payload){return QCryptographicHash::hash(QJsonDocument(payload).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256);}
     void skipCue(TranslationTask task,const QString &message){
@@ -199,6 +200,12 @@ void TranslationService::setPreferences(const AiPreferences &preferences){
 }
 AiPreferences TranslationService::preferences()const{return d->preferences;}
 void TranslationService::setModel(QString model){d->clear();d->stop();d->model=model.isEmpty()?QDir(d->runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf"):std::move(model);d->profile=translationProfileForModel(d->model);d->backends.clear();d->backendIndex=-1;d->selected.clear();emit backendSelected({});}
+void TranslationService::setGlossary(const TranslationGlossary &glossary){
+    if(d->glossary==glossary)return;
+    d->clear();
+    d->glossary=glossary;
+}
+TranslationGlossary TranslationService::glossary()const{return d->glossary;}
 void TranslationService::request(const QStringList &sources){
     const auto generation=d->queue.generation();QStringList bounded;
     for(const auto &source:sources){

@@ -3,6 +3,7 @@
 #include <QStringList>
 #include <memory>
 #include "ai_backend.h"
+#include "translation_support.h"
 #include "core/subtitle.h"
 namespace luma {
 // Local native translation. Call from its owning Qt event-loop thread.
@@ -15,6 +16,8 @@ public:
     void setPreferences(const AiPreferences &preferences);
     AiPreferences preferences()const;
     void setModel(QString model={});
+    void setGlossary(const TranslationGlossary &glossary);
+    TranslationGlossary glossary()const;
     void request(const QStringList &nearestFirst);
     // Replace the current session's raw source buffer, including newly available future cues.
     void setContextCues(const QVector<SubtitleCue> &originals);

@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.1.0-beta.3 — 2026-11-12 공개 베타
+
+- **AI 자막 → 번역 용어집**에 `원문 → 번역`을 저장할 수 있습니다. 실시간 한국어 자막과 새로 만드는 전체 자막에서 일치하는 용어를 앞뒤 문맥과 함께 번역 모델에 전달합니다.
+
 ### 0.1.0-beta.2 — 2026-11-12 공개 베타
 
 - **설정 → 자막 모양**에서 글꼴, 크기, 글자·배경 불투명도를 조절합니다. 재생 중 바로 반영하고 다음 실행에도 기억합니다.
@@ -98,6 +102,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.1.0-beta.3 — 2026-11-12 public beta
+
+- Save `source → translation` entries under **AI Captions → Translation glossary**. Live Korean translation and new prepared caption jobs send matching terms to the model alongside nearby context.
 
 ### 0.1.0-beta.2 — 2026-11-12 public beta
 

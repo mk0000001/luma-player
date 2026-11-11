@@ -83,7 +83,9 @@ QString acceleratorRejection(const QString &message){
 }
 QJsonObject requestJson(const CaptionPreparationRequest &request){
     const auto &s=request.source;
-    return {{"source",s.source},{"disc",s.disc},{"playlist",s.playlist},{"language",s.language},{"title",s.title},{"audio_index",s.audioIndex},{"audio_track_id",s.audioTrackId},{"duration_ms",request.durationMs},{"model",request.model},{"translation_model",request.translationModel},{"output_directory",request.outputDirectory},{"translate",request.translate},{"recognition_preferences",preferencesJson(request.recognitionPreferences)},{"translation_preferences",preferencesJson(request.translationPreferences)}};
+    QJsonObject result{{"source",s.source},{"disc",s.disc},{"playlist",s.playlist},{"language",s.language},{"title",s.title},{"audio_index",s.audioIndex},{"audio_track_id",s.audioTrackId},{"duration_ms",request.durationMs},{"model",request.model},{"translation_model",request.translationModel},{"output_directory",request.outputDirectory},{"translate",request.translate},{"recognition_preferences",preferencesJson(request.recognitionPreferences)},{"translation_preferences",preferencesJson(request.translationPreferences)}};
+    if(!request.translationGlossary.isEmpty())result.insert("translation_glossary",formatTranslationGlossary(request.translationGlossary));
+    return result;
 }
 bool validRequest(const CaptionPreparationRequest &request,QString &error){
     const auto &s=request.source;
@@ -92,6 +94,8 @@ bool validRequest(const CaptionPreparationRequest &request,QString &error){
     if((s.disc&&!QRegularExpression("^[0-9]{5}$").match(s.playlist).hasMatch())||(!s.disc&&!s.playlist.isEmpty()))return reject(error,"플레이리스트 선택이 잘못되었습니다.");
     if(!localPath(s.source)||!localPath(request.outputDirectory)||!localPath(request.model)||QFileInfo(request.model).suffix().compare("bin",Qt::CaseInsensitive)!=0)return reject(error,"원본·저장 폴더·인식 모델은 로컬 경로여야 합니다.");
     if((request.translate||!request.translationModel.isEmpty())&&(!localPath(request.translationModel)||QFileInfo(request.translationModel).suffix().compare("gguf",Qt::CaseInsensitive)!=0))return reject(error,"번역 모델 경로가 잘못되었습니다.");
+    if(parseTranslationGlossary(formatTranslationGlossary(request.translationGlossary))!=request.translationGlossary)
+        return reject(error,"번역 용어집이 잘못되었습니다.");
     return true;
 }
 std::optional<CaptionPreparationRequest> readRequest(const QJsonObject &object,QString &error){
@@ -102,6 +106,12 @@ std::optional<CaptionPreparationRequest> readRequest(const QJsonObject &object,Q
     r.model=object["model"].toString();r.translationModel=object["translation_model"].toString();r.outputDirectory=object["output_directory"].toString();r.translate=object["translate"].toBool();
     const auto asr=object["recognition_preferences"].toObject(),translation=object["translation_preferences"].toObject();
     r.recognitionPreferences={asr["mode"].toString(),asr["gpu_device"].toString()};r.translationPreferences={translation["mode"].toString(),translation["gpu_device"].toString()};
+    if(object.contains("translation_glossary")){
+        if(!object["translation_glossary"].isString())return {};
+        const auto glossary=parseTranslationGlossary(object["translation_glossary"].toString());
+        if(!glossary)return {};
+        r.translationGlossary=*glossary;
+    }
     if(!validRequest(r,error)||requestJson(r)!=object)return {};return r;
 }
 std::optional<QJsonObject> jobIdentity(const CaptionPreparationRequest &request,const QString &runtime,QString &error){
@@ -353,6 +363,7 @@ struct CaptionPreparationService::Impl {
         if(!state.result.request.translate){finish();return;}
         state.phase="translation";if(!checkpoint()||!report())return;
         translation=new TranslationService(runtime,q);translation->setPreferences(state.result.request.translationPreferences);translation->setModel(state.result.request.translationModel);
+        translation->setGlossary(state.result.request.translationGlossary);
         translation->setContextCues(state.result.originals);translationGeneration=translation->generation();const auto id=generation;
         QObject::connect(translation,&TranslationService::failed,q,[this,id](const QString &message){if(active&&generation==id)fail(message);});
         QObject::connect(translation,&TranslationService::translatedCue,q,[this,id](quint64 child,const QString &key,const QString &source,const QString &korean){

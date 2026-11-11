@@ -1,12 +1,16 @@
 #pragma once
 #include <QHash>
 #include <QJsonObject>
+#include <QMap>
 #include <QProcessEnvironment>
 #include <QStringList>
 #include <optional>
 #include "ai_backend.h"
 #include "core/subtitle.h"
 namespace luma {
+using TranslationGlossary=QMap<QString,QString>;
+std::optional<TranslationGlossary> parseTranslationGlossary(const QString &text);
+QString formatTranslationGlossary(const TranslationGlossary &glossary);
 struct TranslationTask {quint64 generation;QString source;};
 class TranslationQueue {
 public:
@@ -42,7 +46,7 @@ QJsonObject translationPayload(const QString &source,TranslationProfile profile=
 QString translationCueKey(const SubtitleCue &cue);
 // The target is immutable. Context is selected from raw original cues, never display pages.
 // UTF-8 bytes provide a conservative token ceiling; an empty object means the target cannot fit.
-QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile=TranslationProfile::LegacyQwenJson,int promptByteBudget=6144);
+QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile=TranslationProfile::LegacyQwenJson,int promptByteBudget=6144,const TranslationGlossary &glossary={});
 int translationPromptBytes(const QJsonObject &payload);
 QString confirmedTranslationBackend(const TranslationBackend &backend,const QString &log);
 }

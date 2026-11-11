@@ -28,6 +28,12 @@
 
 **표시 자막 저장**은 선택한 표시 조합을 UTF-8 SRT로 저장합니다. 자동 인식·독음·번역의 의미와 정확도는 원문과 함께 확인하세요. 한 번역 구간이 잘리거나 유효하지 않으면 해당 구간을 건너뛰고 다음 번역을 계속할 수 있습니다. 모델이나 실행기 자체의 오류는 별도로 표시합니다. 선택 번역 모델 설치는 [번역 설치 안내](INSTALL-TRANSLATION.md)를 참고하세요.
 
+### 번역 용어집
+
+**AI 자막 → 번역 용어집**에서 한 줄에 하나씩 `원문 → 번역`을 저장합니다. 예를 들어 `青空 → 푸른 하늘`로 지정하면 해당 표현이 나오는 자막을 번역할 때 모델에 이 뜻을 전달합니다. 음성 인식에서 반복되는 오기가 있다면 실제로 표시된 원문을 왼쪽에 넣을 수 있습니다.
+
+실시간 번역은 현재 위치부터 다시 만들고, **재생 전 전체 자막 만들기**에는 생성 시작 시의 용어집이 적용됩니다. 기존 완료 프로젝트의 번역을 바꾸려면 용어집을 저장하고 새 프로젝트를 생성하세요. 용어집은 로컬 설정에 저장됩니다.
+
 ### 외부 자막 파일
 
 미디어를 연 뒤 **디스크 → 자막 파일 추가**로 로컬 자막을 선택하거나 자막 파일을 플레이어에 놓으세요. 지원하는 텍스트 형식은 **SRT, ASS, SSA, VTT, SMI/SAMI**입니다. 미디어와 같은 폴더에 이름이 정확히 같은 자막이 있으면 자동으로 찾습니다. 예: `movie.mkv`와 `movie.srt`. 언어 접미사가 붙은 `movie.ja.srt`는 직접 선택하세요.
@@ -108,6 +114,12 @@ Long source cues become shorter timed display pages within their original cue in
 The pipeline is **audio → original-language recognition → original/context text translated into Korean**. Audio is never sent to the translation model. Bounded original captions within 60 seconds on either side inform only the target translation. Newly available originals refresh future translations; currently displayed text remains stable for its cue. Recognition errors can still cause translation errors.
 
 The optional full large-v3 native path carries validated token alignment into page start/end times, preserving token boundaries and pauses. Unaligned segments and external subtitles retain coarse timing. This is not supplied-lyrics forced alignment or a guarantee of singing accuracy. See the [model validation](asr-model-validation.md).
+
+### Translation glossary
+
+In **AI Captions → Translation glossary**, enter one `source → translation` pair per line. For example, `青空 → 푸른 하늘` sends the preferred meaning to the model when the expression appears. Use the displayed source text on the left to handle a recurring recognition error.
+
+Live captions are translated again from the current position. New preparation jobs use the glossary saved when the job starts. To revise the translation in a completed project, save the glossary and generate a new project. The glossary is stored locally.
 
 ### External subtitle files
 

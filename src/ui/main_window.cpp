@@ -38,6 +38,7 @@
 #include <QPlainTextEdit>
 #include <QTabWidget>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QDialog>
 #include <QFile>
 #include <QSaveFile>
@@ -171,6 +172,8 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     translation_=new TranslationService({},this);
     const auto qualityTranslation=QCoreApplication::applicationDirPath()+"/runtime/translation/models/Hy-MT2-7B-Q4_K_M.gguf";
     translation_->setModel(QSettings().value("translation/model",QFileInfo::exists(qualityTranslation)?qualityTranslation:QString{}).toString());
+    if(const auto glossary=parseTranslationGlossary(QSettings().value("translation/glossary").toString()))
+        translation_->setGlossary(*glossary);
     connect(translation_,&TranslationService::translatedCue,this,[this](quint64 generation,const QString &key,const QString &,const QString &korean){
         if(generation!=translation_->generation() || !translationEnabled_->isChecked())return;
         translationPending_.remove(key);translations_.insert(key,korean);rebuildManagedCaptions();translationStatus_->setText(QString("문맥을 참고한 한국어 번역 %1개 준비됨").arg(translations_.size()));
@@ -341,6 +344,7 @@ void MainWindow::buildUi(){
     translationEnabled_=new QCheckBox("한국어 번역");translationEnabled_->setObjectName("translationEnabled");translationEnabled_->setChecked(QSettings().value("subtitles/translation",true).toBool());aiLayout->addWidget(translationEnabled_);
     translationBackend_=label("번역 · 로컬 모델 실행 대기","muted");translationBackend_->setWordWrap(true);aiLayout->addWidget(translationBackend_);translationStatus_=label("원문이 준비되면 가까운 구간부터 번역합니다.","muted");translationStatus_->setWordWrap(true);aiLayout->addWidget(translationStatus_);
     auto *translationModel=button("번역 모델 선택","subtle");aiLayout->addWidget(translationModel);
+    auto *translationGlossary=button("번역 용어집","subtle");aiLayout->addWidget(translationGlossary);
     choice(aiLayout,"번역 가속",translationMode_);translationMode_->setObjectName("translationMode");translationMode_->addItem("자동 · 사용 가능한 가속","auto");translationMode_->addItem("GPU 우선","gpu");translationMode_->addItem("CPU","cpu");translationMode_->addItem("NPU · 호환 모델/런타임 필요","npu");setSavedChoice(translationMode_,"translation/mode","auto");
     choice(aiLayout,"번역 GPU",translationGpu_);translationGpu_->setObjectName("translationGpu");translationGpu_->addItem("자동 GPU 선택",QString{});const auto savedTranslationGpu=QSettings().value("translation/gpu").toString();if(!savedTranslationGpu.isEmpty()){translationGpu_->addItem("저장된 GPU · "+savedTranslationGpu,savedTranslationGpu);translationGpu_->setCurrentIndex(1);}
     auto *translationNote=label("음성 인식과 별도로 선택합니다. 실제 사용 장치는 위에 표시됩니다.","muted");translationNote->setWordWrap(true);aiLayout->addWidget(translationNote);
@@ -401,6 +405,31 @@ void MainWindow::buildUi(){
     connect(external,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"자막 열기",{},"텍스트 자막 (*.srt *.ass *.ssa *.vtt *.smi *.sami)");if(!path.isEmpty())loadCaptionFile(path);});
     connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession(true);model_=path;QSettings().setValue("ai/model",path);updateNpuStatus();aiStatus_->setText("음성 인식 모델 선택됨");if(liveCaptioningActive())job_.warmUp(model_);scheduleSubtitles();}});
     connect(translationModel,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"로컬 번역 모델",{},"GGUF 모델 (*.gguf)");if(!path.isEmpty()){translation_->cancel();translationPending_.clear();clearTranslationSkips();if(!preparedCaptions_)translations_.clear();translationFailed_=false;QSettings().setValue("translation/model",path);translation_->setModel(path);rebuildManagedCaptions();scheduleTranslations();if(preparedCaptions_)translationStatus_->setText("선택한 모델은 다음 자막 생성부터 사용합니다.");}});
+    connect(translationGlossary,&QPushButton::clicked,this,[this]{
+        bool accepted=false;
+        const auto text=QInputDialog::getMultiLineText(this,"번역 용어집",
+            "한 줄에 하나씩 입력하세요. 예시  青空 → 푸른 하늘",
+            formatTranslationGlossary(translation_->glossary()),&accepted);
+        if(!accepted)return;
+        const auto glossary=parseTranslationGlossary(text);
+        if(!glossary){
+            translationStatus_->setText("원문 → 번역 형식으로 중복 없이 최대 64개, 각 항목은 100자 이내로 입력하세요.");
+            return;
+        }
+        if(*glossary==translation_->glossary())return;
+        QSettings().setValue("translation/glossary",formatTranslationGlossary(*glossary));
+        translation_->setGlossary(*glossary);
+        translationPending_.clear();
+        clearTranslationSkips();
+        translationFailed_=false;
+        if(preparedCaptions_){
+            translationStatus_->setText("용어집을 저장했습니다. 다음 전체 자막 생성부터 적용됩니다.");
+        }else{
+            translations_.clear();
+            rebuildManagedCaptions();
+            translationStatus_->setText("용어집을 저장했습니다. 현재 위치부터 다시 번역합니다.");
+        }
+    });
     connect(aiMode_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(aiGpu_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(videoGpu_,&QComboBox::activated,this,&MainWindow::changeVideoAdapter);
     connect(translationMode_,&QComboBox::activated,this,&MainWindow::updateTranslationPreferences);connect(translationGpu_,&QComboBox::activated,this,&MainWindow::updateTranslationPreferences);
     connect(motionMode_,&QComboBox::activated,this,&MainWindow::updateMotionSettings);connect(motionFps_,&QComboBox::activated,this,&MainWindow::updateMotionSettings);
@@ -501,6 +530,7 @@ void MainWindow::showCaptionPreparation(){
     const auto initialFile=active_==fileEngine_.get()?source_:QString{};
     const auto preparationDiscRoot=active_==discEngine_.get()?source_:discPath_;
     CaptionPreparationRequest defaults;defaults.model=model_;defaults.source.language=language_->currentData().toString();defaults.recognitionPreferences=job_.preferences();defaults.translationPreferences=translation_->preferences();defaults.translate=translationEnabled_->isChecked();
+    defaults.translationGlossary=translation_->glossary();
     if(active_==discEngine_.get()){
         const auto &state=active_->state();const auto playlist=matchDiscPlaylist(discInfo_,state.durationMs);
         if(!state.failed && state.timelineReady && !state.navigationTitle && state.currentTitle>=0 && !playlist.isEmpty()){
