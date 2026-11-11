@@ -21,7 +21,7 @@ QSizeF textSize(const QTextLayout &text){
     return QSizeF(width,height);
 }
 }
-CaptionLayout layoutCaption(const QString &source,const QSizeF &viewport,qreal bottomInset,QPaintDevice *device){
+CaptionLayout layoutCaption(const QString &source,const QSizeF &viewport,qreal bottomInset,QPaintDevice *device,const CaptionStyle &style){
     CaptionLayout result;
     const qreal width=viewport.width(),height=std::max(qreal(0),viewport.height()-std::max(qreal(0),bottomInset));
     if(source.isEmpty() || width<=0 || height<=0)return result;
@@ -30,9 +30,17 @@ CaptionLayout layoutCaption(const QString &source,const QSizeF &viewport,qreal b
     const qreal bottomMargin=std::min(height*.12,std::max(qreal(4),height/18));
     const qreal paddingX=std::min(qreal(14),width*.03),paddingY=std::min(qreal(8),height*.03);
     const qreal textWidth=std::max(qreal(.01),width-2*horizontalMargin-2*paddingX),textHeight=std::max(qreal(.01),height-topMargin-bottomMargin-2*paddingY);
-    QFont font;font.setFamilies({"Noto Sans CJK JP","Noto Sans CJK KR","Noto Sans","Noto Color Emoji","Segoe UI Emoji"});font.setWeight(QFont::DemiBold);
+    QStringList families{"Noto Sans CJK JP","Noto Sans CJK KR","Noto Sans","Noto Color Emoji","Segoe UI Emoji"};
+    if(!style.fontFamily.isEmpty()){
+        families.removeAll(style.fontFamily);
+        families.prepend(style.fontFamily);
+    }
+    QFont font;
+    font.setFamilies(families);
+    font.setWeight(QFont::DemiBold);
+    const int preferredPixels=qRound(std::clamp(qRound(width/30),18,34)*std::clamp(style.sizePercent,50,200)/100.);
     QSizeF size;
-    for(int pixels=std::clamp(qRound(width/30),18,34);pixels>=1;--pixels){
+    for(int pixels=preferredPixels;pixels>=1;--pixels){
         font.setPixelSize(pixels);result.text=shapeCaption(text,font,std::max(qreal(1),textWidth),device);size=textSize(*result.text);
         if(size.height()<=textHeight || pixels==1)break;
     }
@@ -43,10 +51,17 @@ CaptionLayout layoutCaption(const QString &source,const QSizeF &viewport,qreal b
     result.background=QRectF(QPointF((width-box.width())/2,height-bottomMargin-box.height()),box);
     result.origin=result.background.topLeft()+QPointF(paddingX,paddingY);return result;
 }
-void paintCaption(QPainter &painter,const CaptionLayout &layout){
+void paintCaption(QPainter &painter,const CaptionLayout &layout,const CaptionStyle &style){
     if(!layout.text || layout.background.isEmpty())return;
-    painter.save();painter.setRenderHint(QPainter::Antialiasing);painter.setPen(Qt::NoPen);painter.setBrush(QColor(0,0,0,180));
-    painter.drawRoundedRect(layout.background,10,10);painter.setPen(Qt::white);painter.translate(layout.origin);painter.scale(layout.scale,layout.scale);
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0,0,0,qRound(std::clamp(style.backgroundOpacity,0,100)*255/100.)));
+    painter.drawRoundedRect(layout.background,10,10);
+    painter.setPen(Qt::white);
+    painter.setOpacity(std::clamp(style.textOpacity,0,100)/100.);
+    painter.translate(layout.origin);
+    painter.scale(layout.scale,layout.scale);
     layout.text->draw(&painter,QPointF());painter.restore();
 }
 }

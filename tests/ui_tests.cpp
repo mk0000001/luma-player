@@ -11,6 +11,7 @@
 #include <QRawFont>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QPushButton>
 #include <QLineEdit>
@@ -64,6 +65,32 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void captionAppearanceControlsRestoreTheirValues(){
+        QString selectedFont;
+        {
+            luma::MainWindow window;
+            auto *font=window.findChild<QComboBox*>("captionFont");
+            auto *size=window.findChild<QSpinBox*>("captionSize");
+            auto *text=window.findChild<QSpinBox*>("captionTextOpacity");
+            auto *background=window.findChild<QSpinBox*>("captionBackgroundOpacity");
+            QVERIFY(font && size && text && background);
+            QVERIFY(font->count()>1);
+            QCOMPARE(font->currentIndex(),0);
+            QCOMPARE(size->value(),100);
+            QCOMPARE(text->value(),100);
+            QCOMPARE(background->value(),71);
+            font->setCurrentIndex(1);
+            selectedFont=font->currentData().toString();
+            size->setValue(135);
+            text->setValue(80);
+            background->setValue(0);
+        }
+        luma::MainWindow restored;
+        QCOMPARE(restored.findChild<QComboBox*>("captionFont")->currentData().toString(),selectedFont);
+        QCOMPARE(restored.findChild<QSpinBox*>("captionSize")->value(),135);
+        QCOMPARE(restored.findChild<QSpinBox*>("captionTextOpacity")->value(),80);
+        QCOMPARE(restored.findChild<QSpinBox*>("captionBackgroundOpacity")->value(),0);
+    }
     void preparationEntryDoesNotStartPlayback(){
         luma::MainWindow window;window.show();auto *prepare=window.findChild<QPushButton*>("prepareCaptions");QVERIFY(prepare);
         QVERIFY(!window.diagnostics().contains("engine"));bool sawDialog=false;
@@ -397,6 +424,22 @@ private slots:
         luma::MainWindow restored;restored.show();restored.openSource(media);
         QTRY_VERIFY_WITH_TIMEOUT(std::abs(restored.diagnostics().value("positionMs").toDouble()-saved->positionMs)<1500,15000);
         auto *resume=restored.findChild<QPushButton*>("resumePlayback");QVERIFY(resume);QVERIFY(resume->isEnabled());
+    }
+    void realOwnedFileUsesSelectedIntelAdapter(){
+        const auto media=qEnvironmentVariable("LUMA_UI_INTEL_VIDEO");
+        const auto adapter=qEnvironmentVariable("LUMA_UI_INTEL_ADAPTER");
+        if(media.isEmpty() || adapter.isEmpty())QSKIP("Set LUMA_UI_INTEL_VIDEO and LUMA_UI_INTEL_ADAPTER for native Intel decoding verification.");
+        QSettings().setValue("video/adapter",adapter);
+        luma::MainWindow window;
+        auto *videoGpu=window.findChild<QComboBox*>("videoGpu");
+        QVERIFY(videoGpu);
+        QCOMPARE(videoGpu->currentData().toString(),adapter);
+        window.show();
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toDouble()>=500,10000);
+        const auto decoder=window.diagnostics().value("hardwareDecoder").toString();
+        QVERIFY2(decoder.startsWith("d3d11va"),qPrintable(decoder));
+        qInfo()<<"Adapter"<<adapter<<"decoder"<<decoder;
     }
     void realOwnedFileRecoversVideoOutputOnceAndPreservesPause_data(){
         QTest::addColumn<int>("fraction");QTest::addColumn<bool>("paused");QTest::addColumn<bool>("toggleWhileLoading");

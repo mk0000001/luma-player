@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <QPointer>
 #include "core/subtitle.h"
+#include "caption_layout.h"
 namespace luma {
 class CaptionOverlay:public QWidget {
     Q_OBJECT
@@ -10,6 +11,7 @@ public:
     void setCues(const QVector<SubtitleCue> &cues);
     void setPosition(qint64 positionMs);
     void setBottomInset(int pixels);
+    void setCaptionStyle(const CaptionStyle &style);
     QString captionText()const{return text_;}
 protected:
     bool eventFilter(QObject *object,QEvent *event)override;
@@ -18,6 +20,7 @@ private:
     QPointer<QWidget> anchor_;
     SubtitleTimeline timeline_;
     QString text_;
+    CaptionStyle style_;
     int bottomInset_=0;
     bool syncPending_=false;
     void syncGeometry();

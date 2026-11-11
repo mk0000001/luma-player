@@ -7,13 +7,13 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 ### LumaPlayer로 할 수 있는 일
 
 - **디스크를 감상하세요.** Blu-ray 메뉴에서 본편과 챕터를 고르고, 마지막으로 본 위치에서 이어볼 수 있습니다. 일반 동영상 파일도 열 수 있습니다.
-- **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 원하는 줄만 골라 표시하거나 가지고 있는 자막 파일을 불러올 수 있습니다.
+- **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 가지고 있는 자막 파일도 열 수 있고, 글꼴과 크기, 글자·배경 투명도를 조절할 수 있습니다.
 - **감상 전에 자막을 준비하세요.** 전체 영상의 자막과 번역을 저장해 두면, 다시 열거나 다른 장면으로 이동할 때 준비된 자막을 바로 쓸 수 있습니다.
 - **내 화면에 맞춰 감상하세요.** 다크·라이트 모드, 전체화면에서 자동으로 숨는 재생 바, 방향키 탐색과 볼륨 조절을 지원합니다.
 
 ### Windows 베타 설치
 
-릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.1) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [베타 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -58,13 +58,13 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 ### What you can do with LumaPlayer
 
 - **Watch your discs.** Choose the main feature or a chapter from the Blu-ray menu, pick up where you left off, and open regular video files too.
-- **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Choose which lines to show or load your own subtitle file.
+- **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Load your own subtitles and adjust the font, size, or text and background opacity.
 - **Prepare captions before watching.** Save captions and translation for a whole title, then reuse the completed project when you reopen it or seek to another scene.
 - **Make it fit your screen.** Use dark or light mode, fullscreen controls that hide when idle, and arrow keys for seeking and volume.
 
 ### Install the Windows beta
 
-Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.1) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
+Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Beta download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.2) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 

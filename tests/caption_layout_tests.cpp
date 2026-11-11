@@ -9,11 +9,19 @@
 #include "ui/caption_layout.h"
 
 namespace {
-QImage renderOverlay(const QString &text,const QSize &size){
+QImage renderOverlay(const QString &text,const QSize &size,const luma::CaptionStyle &style={}){
     QWidget window;window.resize(size);QWidget anchor(&window);anchor.resize(size);window.show();
     luma::CaptionOverlay overlay(&anchor);overlay.setCues({{0,1000,text}});overlay.setPosition(1);QCoreApplication::processEvents();
+    overlay.setCaptionStyle(style);
     QImage result(size,QImage::Format_ARGB32_Premultiplied);result.fill(Qt::transparent);
     QPainter painter(&result);overlay.render(&painter,QPoint(),QRegion(),QWidget::DrawChildren);return result;
+}
+int maxOpacity(const QImage &image){
+    int opacity=0;
+    for(int y=0;y<image.height();++y)
+        for(int x=0;x<image.width();++x)
+            opacity=qMax(opacity,qAlpha(image.pixel(x,y)));
+    return opacity;
 }
 int whiteTextBands(const QImage &image){
     bool previous=false;int bands=0;
@@ -35,6 +43,26 @@ private slots:
         const auto image=renderOverlay(QString(180,'W'),QSize(360,220));
         const int bands=whiteTextBands(image);QVERIFY2(bands>0,"The test must render visible caption glyphs");
         QVERIFY2(bands>=2,"An unbroken caption must wrap across visible lines instead of being clipped as one long word");
+    }
+    void captionStyleKeepsFallbackFontsAndScalesBeforeWrapping(){
+        const luma::CaptionStyle style{"Custom caption font",150,100,71};
+        const QSizeF viewport(800,500);
+        const auto original=luma::layoutCaption("Caption sample",viewport);
+        const auto changed=luma::layoutCaption("Caption sample",viewport,0,nullptr,style);
+        QVERIFY(original.text && changed.text);
+        const auto font=changed.text->font();
+        QCOMPARE(font.families().first(),style.fontFamily);
+        QVERIFY(font.families().contains("Noto Sans CJK JP"));
+        QVERIFY(font.families().contains("Noto Sans CJK KR"));
+        QCOMPARE(font.pixelSize(),qRound(original.text->font().pixelSize()*1.5));
+    }
+    void overlayPaintsTextAndBackgroundAtIndependentOpacities(){
+        const QSize size(320,180);
+        const QString text="Caption sample";
+        QCOMPARE(maxOpacity(renderOverlay(text,size,{{},100,0,0})),0);
+        const int textOpacity=maxOpacity(renderOverlay(text,size,{{},100,40,0}));
+        QVERIFY(textOpacity>=99 && textOpacity<=103);
+        QCOMPARE(maxOpacity(renderOverlay(text,size,{{},100,0,60})),153);
     }
     void allTextIsLaidOutWithinTheVideo_data(){
         QTest::addColumn<QString>("source");QTest::addColumn<QSizeF>("viewport");QTest::addColumn<int>("inset");

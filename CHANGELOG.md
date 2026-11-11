@@ -2,6 +2,11 @@
 
 ## 한국어
 
+### 0.1.0-beta.2 — 2026-11-12 공개 베타
+
+- **설정 → 자막 모양**에서 글꼴, 크기, 글자·배경 불투명도를 조절합니다. 재생 중 바로 반영하고 다음 실행에도 기억합니다.
+- AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적용합니다. Noto Sans와 기본 크기·불투명도로 복원할 수 있습니다.
+
 ### 0.1.0-beta.1 — 2026-11-12 공개 베타
 
 - Windows Blu-ray에서 GPU 영상 디코딩을 우선 사용하고, 재생 중 영상 프레임이 멈추면 CPU 호환 디코딩으로 같은 위치를 복구합니다.
@@ -93,6 +98,11 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.1.0-beta.2 — 2026-11-12 public beta
+
+- Change the font, size, and text and background opacity in **Settings → Caption appearance**. Changes take effect during playback and persist across launches.
+- The settings apply to AI captions, prepared caption projects, and imported text subtitles. Reset them to Noto Sans and the default size and opacity.
 
 ### 0.1.0-beta.1 — 2026-11-12 public beta
 

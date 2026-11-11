@@ -36,6 +36,12 @@ UTF-8과 BOM이 있는 UTF-16 SRT는 엄격하게 읽습니다. 잘못된 바이
 
 CP949와 Shift-JIS도 변환할 수 있습니다. SMI에 문자 인코딩이 명시되어 있으면 우선하며, 선언이 없으면 추정하므로 모호한 파일은 잘못 해석될 수 있습니다. 글자가 맞지 않으면 원래 인코딩을 지정할 수 있는 편집기에서 열어 **UTF-8로 다시 저장**하세요. 입력과 변환 결과는 각각 8 MiB로 제한하며 변환은 10초가 지나면 중단합니다. 자막을 읽거나 변환하지 못하면 오류를 표시하고 **현재 선택한 음성 언어의 AI 자동자막**을 켭니다. 이때도 음성 인식 모델과 실행기가 필요합니다.
 
+### 자막 모양
+
+**설정 → 자막 모양**에서 시스템에 설치된 글꼴, 기본 대비 **50–200%** 크기, 글자·배경 불투명도를 각각 조절할 수 있습니다. **0%**는 투명입니다. 변경은 화면에 바로 반영되며 앱을 다시 열어도 유지됩니다. **자막 모양 기본값 복원**으로 Noto Sans와 기본 크기·불투명도로 돌아갈 수 있습니다.
+
+AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적용됩니다. 디스크의 PGS 이미지 자막은 디스크에 저장된 모양으로 표시됩니다.
+
 ### 화면과 키보드
 
 재생바는 영상 위에 떠 있으며 나타나거나 사라져도 영상 크기와 위치를 바꾸지 않습니다. 전체화면 재생바 높이는 **74 px**입니다. 마우스가 재생바 위에 있더라도 약 **5초** 동안 움직이지 않으면 재생바와 커서를 숨기며, 다시 움직이면 나타납니다. 메뉴 사용·슬라이더 끌기·버튼을 누르고 있는 동안과 키 입력 중에는 조작할 수 있도록 유지합니다. 자막만 재생바 위로 옮겨 겹침을 피합니다.
@@ -110,6 +116,12 @@ Open media, then use **디스크 → 자막 파일 추가**, or drop a subtitle 
 UTF-8 and BOM-marked UTF-16 SRT are read strictly, rejecting malformed bytes or incomplete UTF-16 instead of silently inserting broken characters. Legitimate Japanese, Hangul, combining marks, emoji and music symbols are preserved. Other formats are converted locally through FFmpeg, retaining words and timing while reducing ordinary styling to plain text. ASS positioning, colors and animation are not reproduced exactly.
 
 CP949 and Shift-JIS conversion is supported. A declared SMI charset takes priority; undeclared legacy encoding uses a heuristic and may be ambiguous. If characters are wrong, open the file with its correct source encoding in an editor and save as **UTF-8**. Input and normalized output are each limited to 8 MiB, with a ten-second conversion timeout. Import failure displays an error and enables AI captions in the currently selected speech language; an ASR model and runtime are still required.
+
+### Caption appearance
+
+Open **설정 → 자막 모양** (Settings → Caption appearance) to choose an installed font, scale captions from **50–200%** of the default size, or adjust text and background opacity independently. **0%** is transparent. Changes apply immediately and persist after restarting. **자막 모양 기본값 복원** restores Noto Sans and the default size and opacity.
+
+These settings apply to AI captions, prepared caption projects, and imported text subtitles. The disc's PGS image subtitles retain their authored appearance.
 
 ### Screen and keyboard
 

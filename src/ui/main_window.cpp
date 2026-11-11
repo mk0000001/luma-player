@@ -22,6 +22,7 @@
 #include <QAbstractScrollArea>
 #include <QTabBar>
 #include <QBoxLayout>
+#include <QFormLayout>
 #include <QGridLayout>
 #include <QDir>
 #include <QFileInfo>
@@ -30,6 +31,8 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QComboBox>
+#include <QFontDatabase>
+#include <QSpinBox>
 #include <QCheckBox>
 #include <QListWidget>
 #include <QPlainTextEdit>
@@ -69,6 +72,72 @@ void syncCombo(QComboBox *box,const QVector<MediaItem> &items){
 }
 QScrollArea *scrollPanel(QWidget *contents){auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setWidget(contents);return scroll;}
 void setSavedChoice(QComboBox *box,const QString &key,const QString &fallback={}){const auto saved=QSettings().value(key,fallback).toString();for(int i=0;i<box->count();++i)if(box->itemData(i).toString()==saved){box->setCurrentIndex(i);break;}}
+void addCaptionAppearance(QVBoxLayout *settingsLayout,CaptionOverlay *overlay){
+    const CaptionStyle defaults;
+    QSettings settings;
+    settings.beginGroup("subtitles/appearance");
+    settingsLayout->addWidget(label("자막 모양","section"));
+    auto *form=new QFormLayout;
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    settingsLayout->addLayout(form);
+
+    auto *font=new ChoiceBox;
+    font->setObjectName("captionFont");
+    font->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    font->setMinimumContentsLength(8);
+    font->addItem("기본 · Noto Sans",QString{});
+    for(const auto &family:QFontDatabase::families())
+        font->addItem(family,family);
+    font->setCurrentIndex(std::max(0,font->findData(settings.value("fontFamily",defaults.fontFamily))));
+    form->addRow("글꼴",font);
+
+    auto addPercent=[&](const QString &name,const char *objectName,const char *key,int minimum,int maximum,int fallback){
+        auto *control=new QSpinBox;
+        control->setObjectName(objectName);
+        control->setRange(minimum,maximum);
+        control->setSuffix("%");
+        control->setSingleStep(5);
+        control->setKeyboardTracking(false);
+        control->setValue(settings.value(key,fallback).toInt());
+        form->addRow(name,control);
+        return control;
+    };
+    auto *size=addPercent("크기","captionSize","sizePercent",50,200,defaults.sizePercent);
+    auto *text=addPercent("글자 불투명도","captionTextOpacity","textOpacity",0,100,defaults.textOpacity);
+    auto *background=addPercent("배경 불투명도","captionBackgroundOpacity","backgroundOpacity",0,100,defaults.backgroundOpacity);
+    text->setToolTip("0%는 투명, 100%는 불투명입니다.");
+    background->setToolTip(text->toolTip());
+
+    const auto currentStyle=[=]{
+        return CaptionStyle{font->currentData().toString(),size->value(),text->value(),background->value()};
+    };
+    overlay->setCaptionStyle(currentStyle());
+    const auto apply=[overlay,currentStyle]{
+        const auto style=currentStyle();
+        overlay->setCaptionStyle(style);
+        QSettings settings;
+        settings.beginGroup("subtitles/appearance");
+        settings.setValue("fontFamily",style.fontFamily);
+        settings.setValue("sizePercent",style.sizePercent);
+        settings.setValue("textOpacity",style.textOpacity);
+        settings.setValue("backgroundOpacity",style.backgroundOpacity);
+    };
+    QObject::connect(font,&QComboBox::currentIndexChanged,overlay,apply);
+    for(auto *control:{size,text,background})
+        QObject::connect(control,&QSpinBox::valueChanged,overlay,apply);
+
+    auto *reset=button("자막 모양 기본값 복원","subtle");
+    settingsLayout->addWidget(reset);
+    QObject::connect(reset,&QPushButton::clicked,overlay,[=]{
+        const QSignalBlocker fontBlocker(font),sizeBlocker(size),textBlocker(text),backgroundBlocker(background);
+        font->setCurrentIndex(0);
+        size->setValue(defaults.sizePercent);
+        text->setValue(defaults.textOpacity);
+        background->setValue(defaults.backgroundOpacity);
+        apply();
+    });
+}
 constexpr int privacyConsentVersion=1;
 bool confirmDeveloperUse(QWidget *parent,bool capture){
     QDialog dialog(parent);dialog.setObjectName(capture?"captureConsentDialog":"developerConsentDialog");
@@ -92,7 +161,7 @@ bool confirmDeveloperUse(QWidget *parent,bool capture){
 
 MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtitleCache_(QDir::tempPath()+"/luma-captions-XXXXXX"){
     setWindowTitle("LumaPlayer");resize(1440,900);setMinimumSize(1080,680);setAcceptDrops(true);setWindowIcon(playerApplicationIcon());
-    buildUi();captions_=new CaptionOverlay(surface_);fullscreenControls_=new FullscreenControls(this,transport_,surface_);
+    buildUi();fullscreenControls_=new FullscreenControls(this,transport_,surface_);
     connect(static_cast<VideoSurface*>(surface_),&VideoSurface::urlsDropped,this,&MainWindow::openDroppedUrls);
     connect(fullscreenControls_,&FullscreenControls::reservedHeightChanged,captions_,&CaptionOverlay::setBottomInset);captions_->setBottomInset(fullscreenControls_->reservedHeight());
     captureGuard_=new CaptureGuard(this);captureGuard_->watch(static_cast<VideoSurface*>(surface_)->videoWindow());captureGuard_->watch(captions_);
@@ -243,6 +312,7 @@ void MainWindow::buildUi(){
     auto *remoteButton=button("메뉴");remoteButton->setObjectName("remoteQuick");remoteButton->setToolTip("Blu-ray 디스크 리모컨");remoteButton->setFixedHeight(32);buttons->addWidget(remoteButton);
     auto *full=new IconButton(PlayerIcon::Fullscreen,"전체 화면 · F11");fullButton_=full;buttons->addWidget(full);transportLayout->addLayout(buttons);centerLayout->addWidget(transport_);
     status_=label("미디어를 선택하면 준비가 시작됩니다.","status");status_->setWordWrap(true);centerLayout->addWidget(status_);body->addWidget(center,1);
+    captions_=new CaptionOverlay(surface_);
     panel_=new QWidget;panel_->setObjectName("settingsPanel");panel_->setFixedWidth(306);auto *panelLayout=new QVBoxLayout(panel_);panelLayout->setContentsMargins(0,0,0,0);auto *tabs=new QTabWidget;tabs->setObjectName("settingsTabs");panelLayout->addWidget(tabs);body->addWidget(panel_);
     auto *discTab=new QWidget;auto *discLayout=new QVBoxLayout(discTab);discLayout->setContentsMargins(17,18,17,16);discLayout->setSpacing(10);discLayout->addWidget(label("DISC REMOTE","section"));
     menuStatus_=label("디스크를 열면 현재 타이틀이 표시됩니다.","menuStatus");menuStatus_->setWordWrap(true);discLayout->addWidget(menuStatus_);
@@ -275,7 +345,9 @@ void MainWindow::buildUi(){
     choice(aiLayout,"번역 GPU",translationGpu_);translationGpu_->setObjectName("translationGpu");translationGpu_->addItem("자동 GPU 선택",QString{});const auto savedTranslationGpu=QSettings().value("translation/gpu").toString();if(!savedTranslationGpu.isEmpty()){translationGpu_->addItem("저장된 GPU · "+savedTranslationGpu,savedTranslationGpu);translationGpu_->setCurrentIndex(1);}
     auto *translationNote=label("음성 인식과 별도로 선택합니다. 실제 사용 장치는 위에 표시됩니다.","muted");translationNote->setWordWrap(true);aiLayout->addWidget(translationNote);
     aiStatus_=label("AI 자동자막 꺼짐","muted");aiStatus_->setWordWrap(true);aiLayout->addWidget(aiStatus_);auto *note=label("독음·번역은 원문과 별도로 보관됩니다. 노래나 배경음이 강하면 인식 정확도가 낮아질 수 있습니다.","muted");note->setWordWrap(true);aiLayout->addWidget(note);auto *save=button("표시 자막 저장","primary");aiLayout->addWidget(save);aiLayout->addStretch();tabs->addTab(scrollPanel(aiTab),"AI 자막");
-    auto *settingsTab=new QWidget;auto *settingsLayout=new QVBoxLayout(settingsTab);settingsLayout->setContentsMargins(17,18,17,18);settingsLayout->setSpacing(12);settingsLayout->addWidget(label("PLAYBACK & PRIVACY","section"));
+    auto *settingsTab=new QWidget;auto *settingsLayout=new QVBoxLayout(settingsTab);settingsLayout->setContentsMargins(17,18,17,18);settingsLayout->setSpacing(12);
+    addCaptionAppearance(settingsLayout,captions_);
+    settingsLayout->addWidget(label("PLAYBACK & PRIVACY","section"));
     choice(settingsLayout,"파일 영상 GPU",videoGpu_);videoGpu_->setObjectName("videoGpu");videoGpu_->addItem("자동 선택",QString{});for(const auto &entry:videoAdapters()){const auto adapter=entry.toObject();videoGpu_->addItem(adapter.value("name").toString(),adapter.value("id").toString());}setSavedChoice(videoGpu_,"video/adapter");
     auto *videoNote=label("파일 재생에 적용됩니다. 재생 중 변경하면 현재 위치에서 다시 연결합니다.","muted");videoNote->setWordWrap(true);settingsLayout->addWidget(videoNote);
     choice(settingsLayout,"프레임 보간",motionMode_);motionMode_->setObjectName("motionMode");motionMode_->addItem("꺼짐","off");motionMode_->addItem("부드러운 표시 · GPU 블렌딩","display");motionMode_->addItem("모션 보간 · 실험적 CPU 처리","optical");setSavedChoice(motionMode_,"motion/mode","off");

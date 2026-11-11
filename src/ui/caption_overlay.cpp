@@ -1,5 +1,4 @@
 #include "caption_overlay.h"
-#include "caption_layout.h"
 #include <QEvent>
 #include <QPainter>
 #include <QTimer>
@@ -12,6 +11,10 @@ CaptionOverlay::CaptionOverlay(QWidget *anchor):QWidget(anchor->window(),Qt::Too
 void CaptionOverlay::setCues(const QVector<SubtitleCue> &cues){const auto generation=timeline_.reset();timeline_.attach(generation,cues);text_.clear();hide();}
 void CaptionOverlay::setPosition(qint64 position){const auto text=timeline_.at(position);if(text!=text_){text_=text;update();}syncGeometry();}
 void CaptionOverlay::setBottomInset(int pixels){pixels=std::max(0,pixels);if(bottomInset_!=pixels){bottomInset_=pixels;update();}}
+void CaptionOverlay::setCaptionStyle(const CaptionStyle &style){
+    style_=style;
+    update();
+}
 bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     switch(event->type()){
     case QEvent::Move:syncGeometry();break;
@@ -27,6 +30,8 @@ void CaptionOverlay::syncGeometry(){
     if(!isVisible())show();
 }
 void CaptionOverlay::paintEvent(QPaintEvent *){
-    if(text_.isEmpty())return;QPainter painter(this);paintCaption(painter,layoutCaption(text_,size(),bottomInset_,this));
+    if(text_.isEmpty())return;
+    QPainter painter(this);
+    paintCaption(painter,layoutCaption(text_,size(),bottomInset_,this,style_),style_);
 }
 }
