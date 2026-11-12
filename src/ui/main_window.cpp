@@ -4,6 +4,7 @@
 #include "caption_preparation_dialog.h"
 #include "fullscreen_controls.h"
 #include "player_controls.h"
+#include "performance_overlay.h"
 #include "theme.h"
 #include "video_surface.h"
 #include "luma_version.h"
@@ -109,7 +110,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     QTimer::singleShot(0,this,[this]{discoverDisc();deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();});
 }
 
-MainWindow::~MainWindow(){savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
+MainWindow::~MainWindow(){performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 
@@ -118,6 +119,7 @@ QJsonObject MainWindow::diagnostics()const{
     result.insert("translationSkippedCount",translationSkipped_.size());result.insert("translationPendingCount",translationPending_.size());result.insert("translationFailed",translationFailed_);
     result.insert("translationGlossaryEntries",translation_->glossary().size());
     result.insert("pictureInPicture",pictureInPicture_);
+    result.insert("performanceOverlay",performance_->summary());
     result.insert("preparedCaptionsApplied",preparedApplied_);result.insert("preparedCueCount",preparedCaptions_?preparedCaptions_->originals.size():0);result.insert("preparedTranslationCount",preparedCaptions_?preparedCaptions_->translations.size():0);
     if(preparationDialog_)result.insert("preparation",preparationDialog_->diagnostics());
     result.insert("aiTiming",job_.selectedAlignment());

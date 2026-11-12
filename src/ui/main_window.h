@@ -11,9 +11,11 @@
 #include "subtitles/subtitle_job.h"
 #include "subtitles/japanese_reading.h"
 #include "subtitles/caption_preparation.h"
-class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;
+class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;class QVBoxLayout;
 namespace luma {
 class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;class CaptionPreparationDialog;
+class PerformanceOverlay;
+struct PerformanceInput;
 class MainWindow:public QMainWindow {
     Q_OBJECT
 public:
@@ -45,6 +47,8 @@ private:
     QPlainTextEdit *log_=nullptr;
     QCheckBox *aiEnabled_=nullptr,*originalEnabled_=nullptr,*readingEnabled_=nullptr,*translationEnabled_=nullptr,*developerEnabled_=nullptr,*captureAllowed_=nullptr;
     CaptionOverlay *captions_=nullptr;
+    PerformanceOverlay *performance_=nullptr;
+    QCheckBox *performanceEnabled_=nullptr;
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
     AiDeviceProbe *deviceProbe_=nullptr;
@@ -95,6 +99,9 @@ private:
     void selectAudio(int id);
     void selectTitle(int id);
     void buildUi();
+    void buildDeveloperTools(QVBoxLayout *layout);
+    PerformanceInput performanceInput() const;
+    QJsonObject developerSnapshot() const;
     void openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);
     qint64 discTargetDurationMs_=0;
     void bindEngine(PlaybackEngine *engine);

@@ -60,6 +60,7 @@ AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적�
 | --- | --- |
 | F / Enter / F11 | 전체화면 전환 |
 | Ctrl+Shift+P | 작은 화면(PiP) 전환 |
+| Ctrl+Shift+D | 성능 오버레이 전환 · 개발자 모드 |
 | Esc | 전체화면 또는 작은 화면 나가기 |
 | Space | 재생 / 일시정지 |
 | ← / → | 10초 뒤로 / 앞으로 |
@@ -75,6 +76,14 @@ AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적�
 왼쪽의 **이어서 보기**는 최근 유효한 기록을 엽니다. 같은 파일을 다시 열어도 저장한 위치를 복원합니다. 기록은 로컬 사용자 설정에 저장하며, 파일의 경로·크기·수정 시각이 달라지면 기존 기록을 적용하지 않습니다.
 
 디스크는 드라이브 문자만이 아니라 디스크 정보와 본편 타이틀을 구분해 기록합니다. 같은 디스크의 해당 본편 타이틀을 확인한 뒤 위치를 복원하며, 메뉴나 시작 안내의 0초가 본편 기록을 덮어쓰지 않게 합니다. 처음 3초 미만과 끝까지 5초 미만인 지점은 이어보기 대상으로 남기지 않습니다. 저장된 길이와 현재 길이의 호환성 검사도 통과해야 합니다. AI가 켜져 있으면 복원한 위치에서도 같은 최소 자막 준비 규칙을 적용합니다.
+
+### 개발자 모드의 성능 진단
+
+**설정 → 개발자 모드 → 성능 오버레이**에서 텍스트·그래프·혼합과 왼쪽 또는 오른쪽 위를 선택하세요. 오버레이는 창 모드, 전체화면, 작은 화면에서 영상 위에 표시됩니다. 1초 간격으로 측정하고 최근 90초의 추이를 보여 줍니다.
+
+CPU와 RAM은 시스템 전체 기준이고, 앱 RAM은 플레이어 프로세스의 상주 메모리입니다. Windows GPU·NPU는 드라이버가 보고한 가장 바쁜 엔진의 부하를 사용하며 수치가 없으면 `—`로 표시합니다. Blu-ray I/O는 libVLC 재생 경로의 입력 또는 디먹싱 처리량입니다. 광학 드라이브의 물리 읽기 속도는 캐시와 읽기 방식에 따라 다릅니다. Blu-ray FPS는 연속 재생 중 약 3초간 표시한 프레임을 기준으로 하고, 일반 파일 FPS는 필터 처리량 추정치를 표시합니다.
+
+**진단 요약 복사**는 재생 상태와 최근 수치의 JSON을 복사합니다. **성능 기록 CSV 저장**은 최근 샘플을 저장하고, **성능 기록 초기화**와 **재생 로그 지우기**는 각 화면의 기록을 비웁니다. JSON과 CSV에는 파일 경로, 자막 본문, 재생 로그가 들어가지 않습니다.
 
 ### Windows 캡처 제외와 확인 범위
 
@@ -150,6 +159,7 @@ These keys apply with playback focus. Text fields, lists, selectors and sliders 
 | --- | --- |
 | F / Enter / F11 | Toggle fullscreen |
 | Ctrl+Shift+P | Toggle picture-in-picture |
+| Ctrl+Shift+D | Toggle the performance overlay in developer mode |
 | Esc | Leave fullscreen or picture-in-picture |
 | Space | Play / pause |
 | ← / → | Seek back / forward ten seconds |
@@ -165,6 +175,14 @@ Disc menus also support the mouse, onscreen directional/confirm remote and **메
 The left-side **이어서 보기** button opens the latest valid entry. Reopening the same file also restores its position. History stays in local user settings; changed path, size or modification time prevents applying an old file entry.
 
 Disc history distinguishes disc metadata and main titles rather than relying only on drive letters. Restore waits for the matching main title; menu/startup zero positions do not replace its history. Positions before three seconds or within the final five seconds are not retained for resume. Saved and current durations must also pass a compatibility check. With AI enabled, restored playback uses the same minimum caption preparation rule.
+
+### Developer performance diagnostics
+
+Go to **Settings → Developer mode → Performance overlay** and choose text, graphs, or both and the upper left or right corner. The overlay sits over the video in windowed, fullscreen, and picture-in-picture modes. It samples once per second and shows the last 90 seconds.
+
+CPU and RAM cover the system, and app RAM is the player process's resident memory. Windows GPU and NPU values use the busiest engine reported by the driver. A dash indicates unavailable data. Blu-ray I/O measures input or demux throughput in libVLC's playback path. Physical drive throughput depends on caching and reads. Blu-ray FPS uses frames presented over about three seconds of continuous playback. File FPS uses the estimated filter output rate.
+
+**Copy diagnostics** copies a JSON snapshot of playback and current metrics. **Save performance CSV** saves recent samples. **Reset performance history** and **Clear playback log** clear their respective records. JSON and CSV omit file paths, subtitle text, and playback logs.
 
 ### Windows capture exclusion and verification
 

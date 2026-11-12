@@ -1,6 +1,7 @@
 #include <QtTest>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QDialog>
 #include <QLabel>
 #include <QTimer>
@@ -32,6 +33,7 @@
 #include <optional>
 #include <algorithm>
 #include "ui/main_window.h"
+#include "ui/performance_overlay.h"
 #include "ui/video_surface.h"
 #include "core/resume_history.h"
 #include "subtitles/translation_service.h"
@@ -43,6 +45,12 @@
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
+    void restorePerformancePreferences(){
+        QSettings settings;
+        settings.setValue("ui/developerMode",true);
+        settings.setValue("privacy/developerConsentVersion",1);
+        settings.setValue("developer/performanceEnabled",true);
+    }
     bool answerConsent(luma::MainWindow &window,const QString &name,bool accept){
         bool seen=false;
         QTimer::singleShot(0,&window,[&]{
@@ -68,6 +76,43 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void developerPerformanceOverlayRequiresConsentAndExportsSamples(){
+        QSettings().setValue("developer/performanceEnabled",true);
+        luma::MainWindow window;
+        window.show();
+        auto *enabled=window.findChild<QCheckBox*>("performanceEnabled");
+        auto *view=window.findChild<QComboBox*>("performanceView");
+        auto *corner=window.findChild<QComboBox*>("performanceCorner");
+        auto *developer=window.findChild<QCheckBox*>("developerMode");
+        auto *copy=window.findChild<QPushButton*>("copyDiagnostics");
+        auto *overlay=dynamic_cast<luma::PerformanceOverlay*>(window.findChild<QWidget*>("performanceOverlay"));
+        QVERIFY(enabled && view && corner && developer && copy && overlay);
+        QTest::keyClick(&window,Qt::Key_D,Qt::ControlModifier|Qt::ShiftModifier);
+        QVERIFY(!enabled->isChecked() && !overlay->isVisible());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        QTest::keyClick(&window,Qt::Key_D,Qt::ControlModifier|Qt::ShiftModifier);
+        QTRY_VERIFY_WITH_TIMEOUT(overlay->summary().value("sampleCount").toInt()>=2,6000);
+        QVERIFY(overlay->testAttribute(Qt::WA_TransparentForMouseEvents));
+        view->setCurrentIndex(view->findData("graph"));
+        corner->setCurrentIndex(corner->findData("left"));
+        QCOMPARE(overlay->summary().value("view").toString(),QString("graph"));
+        QCOMPARE(overlay->summary().value("position").toString(),QString("left"));
+        const auto rows=overlay->csv().split('\n');
+        QCOMPARE(rows[0].count(','),rows[1].count(','));
+        QVERIFY(rows[0].contains("npuPercent") && rows[0].contains("discInputMiBps"));
+        copy->click();
+        const auto snapshot=QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object();
+        QVERIFY(snapshot.contains("performance"));
+        QVERIFY(!snapshot.contains("recentMessages") && !snapshot.contains("discRoot"));
+        const auto preview=qEnvironmentVariable("LUMA_UI_PERFORMANCE_PREVIEW");
+        if(!preview.isEmpty()){
+            view->setCurrentIndex(view->findData("both"));
+            QVERIFY(overlay->grab().save(preview));
+        }
+        developer->setChecked(false);
+        QVERIFY(!enabled->isChecked() && !overlay->isVisible());
+        QVERIFY(!overlay->summary().value("enabled").toBool());
+    }
     void seekTrackClickCommitsPosition(){
         luma::MainWindow window;
         window.show();
@@ -88,11 +133,13 @@ private slots:
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
             QSKIP("Requires the native Windows Qt backend and a local media fixture");
+        restorePerformancePreferences();
         luma::MainWindow window;
         window.show();
         auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
         auto *pip=window.findChild<QPushButton*>("pictureInPicture");
-        QVERIFY(surface && pip);
+        auto *overlay=window.findChild<QWidget*>("performanceOverlay");
+        QVERIFY(surface && pip && overlay);
         QTRY_VERIFY(window.isVisible());
         window.openSource(media);
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>300,10000);
@@ -106,6 +153,7 @@ private slots:
         QVERIFY(window.width()<geometry.width());
         QCOMPARE(surface->videoWindowId(),videoId);
         QTRY_VERIFY(window.diagnostics().value("positionMs").toInteger()>position+300);
+        QTRY_VERIFY(overlay->isVisible() && QRect(surface->mapToGlobal(QPoint()),surface->size()).contains(overlay->geometry()));
         QTest::keyClick(surface,Qt::Key_Escape);
         QVERIFY(!window.diagnostics().value("pictureInPicture").toBool());
         QTRY_VERIFY(!(GetWindowLongPtrW(handle,GWL_EXSTYLE)&WS_EX_TOPMOST));
@@ -117,20 +165,23 @@ private slots:
         BOOL fullDrag=FALSE;
         if(!SystemParametersInfoW(SPI_GETDRAGFULLWINDOWS,0,&fullDrag,0)||!fullDrag)
             QSKIP("Requires Windows to show contents while dragging");
+        restorePerformancePreferences();
         luma::MainWindow window;
         window.show();
         auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
         auto *caption=window.findChild<luma::CaptionOverlay*>("captionOverlay");
         auto *transport=window.findChild<QWidget*>("transport");
-        QVERIFY(surface && caption && transport);
+        auto *overlay=window.findChild<QWidget*>("performanceOverlay");
+        QVERIFY(surface && caption && transport && overlay);
         surface->setVideoActive(true);
         caption->setCues({{0,1000,"Synthetic caption"}});
         caption->setPosition(200);
         QTRY_VERIFY(transport->isVisible());
+        QTRY_VERIFY(overlay->isVisible());
         auto *video=surface->videoWindow();
         QVERIFY(video->isVisible() && caption->isVisible());
-        const std::array<QWidget*,4> group{&window,video,caption,transport};
-        std::array<RECT,4> before{};
+        const std::array<QWidget*,5> group{&window,video,caption,transport,overlay};
+        std::array<RECT,5> before{};
         for(size_t i=0;i<group.size();++i)
             QVERIFY(GetWindowRect(reinterpret_cast<HWND>(group[i]->winId()),&before[i]));
         RECT target=before[0];
@@ -204,12 +255,20 @@ private slots:
         const auto path=qEnvironmentVariable("LUMA_UI_PREPARED_DISC_PROJECT");if(path.isEmpty())QSKIP("Set a completed private physical-disc project for selected-playlist validation.");
         QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(project->request.source.disc);
         QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
+        const bool verifyPerformance=qEnvironmentVariableIsSet("LUMA_UI_DISC_OVERLAY");
+        if(verifyPerformance)restorePerformancePreferences();
         luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));
         const auto report=qScopeGuard([&]{const auto output=qEnvironmentVariable("LUMA_UI_PREPARED_DISC_REPORT");if(!output.isEmpty()){QSaveFile file(output);if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(window.diagnostics()).toJson());file.commit();}}});
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),25000);
         QCOMPARE(window.diagnostics()["durationMs"].toInteger(),project->request.durationMs);QVERIFY(!window.diagnostics()["navigationTitle"].toBool());QVERIFY(window.diagnostics().contains("discMenus"));QVERIFY(!window.diagnostics()["discMenus"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["playing"].toBool(),10000);const auto start=window.diagnostics()["positionMs"].toInteger();
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["positionMs"].toInteger()>=start+1000,5000);QVERIFY(window.diagnostics()["displayedPictures"].toInt()>0);
+        if(verifyPerformance){
+            const auto sample=[&window]{return window.diagnostics()["performanceOverlay"].toObject()["latest"].toObject();};
+            const auto normalFps=[&sample]{const auto fps=sample().value("presentedFps").toDouble();return fps>=18 && fps<=30;};
+            QTRY_VERIFY_WITH_TIMEOUT(normalFps(),12000);
+            qInfo().noquote()<<QJsonDocument(sample()).toJson(QJsonDocument::Compact);
+        }
         auto *surface=window.findChild<QWidget*>("videoSurface");QVERIFY(surface);surface->setFocus();const auto beforeSeek=window.diagnostics()["positionMs"].toInteger();QTest::keyClick(surface,Qt::Key_Right);
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["positionMs"].toInteger()>=beforeSeek+8000,10000);QVERIFY(window.diagnostics()["preparedCaptionsApplied"].toBool());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
     }

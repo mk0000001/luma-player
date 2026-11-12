@@ -227,12 +227,13 @@ void MainWindow::buildUi(){
     captureAllowed_->setChecked(developerEnabled_->isChecked() && QSettings().value("privacy/captureAllowed",false).toBool() && QSettings().value("privacy/captureConsentVersion",0).toInt()==privacyConsentVersion);developerLayout->addWidget(captureAllowed_);
     captureApproved_=captureAllowed_->isChecked();
     if(!captureAllowed_->isChecked()){QSettings().setValue("privacy/captureAllowed",false);QSettings().setValue("privacy/captureConsentVersion",0);}
+    buildDeveloperTools(developerLayout);
     developerLayout->addWidget(label("PLAYBACK LOG","section"));log_=new QPlainTextEdit;log_->setReadOnly(true);log_->setMaximumBlockCount(500);log_->setMinimumHeight(170);developerLayout->addWidget(log_);developerPanel->setVisible(developerEnabled_->isChecked());codec_->setVisible(developerEnabled_->isChecked());settingsLayout->addWidget(developerPanel,1);settingsLayout->addStretch();tabs->addTab(scrollPanel(settingsTab),"설정");
     connect(developerEnabled_,&QCheckBox::toggled,this,[this,developerPanel](bool enabled){
         if(enabled && !confirmDeveloperUse(this,false)){QSignalBlocker guard(developerEnabled_);developerEnabled_->setChecked(false);enabled=false;}
         developerApproved_=enabled;
         QSettings().setValue("ui/developerMode",enabled);QSettings().setValue("privacy/developerConsentVersion",enabled?privacyConsentVersion:0);
-        if(!enabled)captureAllowed_->setChecked(false);
+        if(!enabled){captureAllowed_->setChecked(false);performanceEnabled_->setChecked(false);}
         developerPanel->setVisible(enabled);codec_->setVisible(enabled);applyCapturePolicy();
     });
     connect(captureAllowed_,&QCheckBox::toggled,this,[this](bool allowed){

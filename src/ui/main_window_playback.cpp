@@ -41,6 +41,7 @@ void syncCombo(QComboBox *box,const QVector<MediaItem> &items){
 }
 
 void MainWindow::bindEngine(PlaybackEngine *engine){
+    engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}});
     connect(engine,&PlaybackEngine::videoOutputLost,this,[this,engine](const QString &message){

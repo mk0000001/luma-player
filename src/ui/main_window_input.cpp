@@ -4,11 +4,13 @@
 #include "native_playback_move.h"
 #include "fullscreen_controls.h"
 #include "caption_overlay.h"
+#include "performance_overlay.h"
 #include <QAbstractButton>
 #include <QAbstractScrollArea>
 #include <QAbstractSpinBox>
 #include <QApplication>
 #include <QComboBox>
+#include <QCheckBox>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
@@ -33,6 +35,10 @@ bool MainWindow::eventFilter(QObject *object,QEvent *event){
     auto *target=qobject_cast<QWidget*>(object);if(!target)return QMainWindow::eventFilter(object,event);
     bool belongs=false;for(auto *owner=target;owner;owner=owner->parentWidget())if(owner==this){belongs=true;break;}if(!belongs)return false;
     auto *key=static_cast<QKeyEvent*>(event);const auto modifiers=key->modifiers() & ~Qt::KeypadModifier;const auto code=key->key();
+    if(developerApproved_ && modifiers==(Qt::ControlModifier|Qt::ShiftModifier) && code==Qt::Key_D){
+        if(!key->isAutoRepeat())performanceEnabled_->toggle();
+        return true;
+    }
     if((modifiers==(Qt::ControlModifier|Qt::ShiftModifier) && code==Qt::Key_P) ||
        (modifiers==Qt::NoModifier && code==Qt::Key_Escape && pictureInPicture_)){
         if(!key->isAutoRepeat())togglePictureInPicture();
@@ -62,7 +68,7 @@ bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *
 #ifdef Q_OS_WIN
     if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_MOVING &&
        surface_ && movePlaybackWindows(this,eventType,message,result,
-            {static_cast<VideoSurface*>(surface_)->videoWindow(),captions_,transport_}))
+            {static_cast<VideoSurface*>(surface_)->videoWindow(),captions_,transport_,performance_}))
         return true;
 #endif
     return QMainWindow::nativeEvent(eventType,message,result);

@@ -3,6 +3,7 @@
 #include <QVector>
 #include <QtGui/qwindowdefs.h>
 #include <memory>
+#include <optional>
 namespace luma {
 struct MediaItem { int id; QString label; };
 struct PlaybackState {
@@ -17,6 +18,9 @@ struct PlaybackState {
     bool losslessAudio=false;
     QString motionStatus;
     double sourceFps=0,filteredFps=0,displayFps=0;
+    bool discStatisticsAvailable=false, fileCacheHolding=false;
+    quint32 discInputBytes=0, discDemuxBytes=0;
+    std::optional<double> cacheSeconds, avSyncMs;
     QVector<MediaItem> audioTracks, subtitleTracks, chapters, titles;
 };
 bool isDiscSource(const QString &source);
@@ -39,6 +43,7 @@ public:
     void stop();
     void pauseToggle();
     void setPaused(bool paused);
+    void setPerformanceMetricsEnabled(bool enabled);
     void setFrameInterpolation(const QString &mode,int targetFps);
     void seek(qint64 positionMs);
     void setVolume(int volume);

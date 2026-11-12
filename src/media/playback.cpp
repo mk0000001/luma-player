@@ -1,4 +1,5 @@
 #include "playback.h"
+#include <cmath>
 #include "motion_options.h"
 #include <QSettings>
 #include <QSet>
@@ -70,7 +71,7 @@ struct PlaybackEngine::Impl {
     QString discError;
     PlaybackState state;
     QTimer timer;
-    bool ready=false, errorSent=false;
+    bool ready=false, errorSent=false, performanceMetrics=false;
     bool videoOutputActive=false,videoOutputLossSent=false;
     bool managedSubtitle=false;
     MotionOptions motion;
@@ -158,6 +159,11 @@ struct PlaybackEngine::Impl {
     }
     QString prop(const char *key) { char *s=mpv_get_property_string(mpv,key); if(!s)return {}; const auto result=QString::fromUtf8(s); mpv_free(s); return result; }
     double number(const char *key) { double value=0; mpv_get_property(mpv,key,MPV_FORMAT_DOUBLE,&value); return value; }
+    std::optional<double> metric(const char *key) {
+        double value=0;
+        if(mpv_get_property(mpv,key,MPV_FORMAT_DOUBLE,&value)>=0 && std::isfinite(value))return value;
+        return {};
+    }
     QVector<MediaItem> descriptions(libvlc_track_description_t *list) {
         QVector<MediaItem> items;
         for(auto *item=list;item;item=item->p_next) items.append({item->i_id,QString::fromUtf8(item->psz_name?item->psz_name:"")});
@@ -359,6 +365,14 @@ void PlaybackEngine::updateFrameInterpolation(){
     }
 }
 void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);if(d->player){d->discFrameProgress.invalidate();d->libvlc_media_player_set_time(d->player,ms);}else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
+void PlaybackEngine::setPerformanceMetricsEnabled(bool enabled){
+    d->performanceMetrics=enabled;
+    if(!enabled){
+        d->state.cacheSeconds.reset();
+        d->state.avSyncMs.reset();
+        d->state.fileCacheHolding=false;
+    }
+}
 void PlaybackEngine::setVolume(int v){if(!available())return;v=std::clamp(v,0,100);if(d->player)d->libvlc_audio_set_volume(d->player,v);else d->mpv_set_property_string(d->mpv,"volume",QByteArray::number(v).constData());}
 void PlaybackEngine::setRate(double r){if(!available())return;r=std::clamp(r,0.25,4.0);if(d->player)d->libvlc_media_player_set_rate(d->player,float(r));else d->mpv_set_property_string(d->mpv,"speed",QByteArray::number(r).constData());}
 void PlaybackEngine::setAudio(int id){if(!available())return;if(d->player)d->libvlc_audio_set_track(d->player,id);else d->mpv_set_property_string(d->mpv,"aid",QByteArray::number(id).constData());}
@@ -386,7 +400,18 @@ void PlaybackEngine::poll(){
         d->state.playing=d->libvlc_media_player_is_playing(d->player)!=0;
         d->state.currentTitle=d->libvlc_media_player_get_title(d->player);d->state.currentChapter=d->libvlc_media_player_get_chapter(d->player);
         d->state.currentAudio=d->libvlc_audio_get_track(d->player);d->state.currentSubtitle=d->libvlc_video_get_spu(d->player);
-        libvlc_media_stats_t stats{};if(d->media && d->libvlc_media_get_stats(d->media,&stats)){d->state.decodedVideo=stats.i_decoded_video;d->state.decodedAudio=stats.i_decoded_audio;d->state.displayedPictures=stats.i_displayed_pictures;d->state.playedAudioBuffers=stats.i_played_abuffers;d->state.droppedVideoFrames=stats.i_lost_pictures;d->state.lostAudioBuffers=stats.i_lost_abuffers;}
+        libvlc_media_stats_t stats{};
+        d->state.discStatisticsAvailable=d->media && d->libvlc_media_get_stats(d->media,&stats);
+        if(d->state.discStatisticsAvailable){
+            d->state.decodedVideo=stats.i_decoded_video;
+            d->state.decodedAudio=stats.i_decoded_audio;
+            d->state.displayedPictures=stats.i_displayed_pictures;
+            d->state.playedAudioBuffers=stats.i_played_abuffers;
+            d->state.droppedVideoFrames=stats.i_lost_pictures;
+            d->state.lostAudioBuffers=stats.i_lost_abuffers;
+            d->state.discInputBytes=quint32(stats.i_read_bytes);
+            d->state.discDemuxBytes=quint32(stats.i_demux_read_bytes);
+        }
         const auto nativeState=d->libvlc_media_player_get_state(d->player);
         d->state.buffering=nativeState==libvlc_Buffering;
         if(nativeState==libvlc_Error)d->fail("Blu-ray 재생 중 오류가 발생했습니다. 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
@@ -430,7 +455,21 @@ void PlaybackEngine::poll(){
         if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
         if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){
             libvlc_media_track_t **tracks=nullptr;const auto n=d->libvlc_media_tracks_get(d->media,&tracks);
-            for(unsigned i=0;i<n;++i){const auto code=tracks[i]->i_codec;char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};if(tracks[i]->i_type==libvlc_track_video)d->state.videoCodec=QString::fromLatin1(fourcc);if(tracks[i]->i_type==libvlc_track_audio && tracks[i]->i_id==d->state.currentAudio){d->state.audioCodec=QString::fromLatin1(fourcc);if(tracks[i]->audio){d->state.audioSampleRate=int(tracks[i]->audio->i_rate);d->state.audioChannels=int(tracks[i]->audio->i_channels);}}}
+            d->state.sourceFps=0;
+            for(unsigned i=0;i<n;++i){
+                const auto *track=tracks[i];
+                const auto code=track->i_codec;
+                const char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};
+                if(track->i_type==libvlc_track_video){
+                    d->state.videoCodec=QString::fromLatin1(fourcc);
+                    if(track->video && track->video->i_frame_rate_den)
+                        d->state.sourceFps=double(track->video->i_frame_rate_num)/track->video->i_frame_rate_den;
+                }
+                if(track->i_type==libvlc_track_audio && track->i_id==d->state.currentAudio){
+                    d->state.audioCodec=QString::fromLatin1(fourcc);
+                    if(track->audio){d->state.audioSampleRate=int(track->audio->i_rate);d->state.audioChannels=int(track->audio->i_channels);}
+                }
+            }
             if(n)d->libvlc_media_tracks_release(tracks,n);
             d->metadataTitle=d->state.currentTitle;d->metadataAudio=d->state.currentAudio;
         }
@@ -461,6 +500,14 @@ void PlaybackEngine::poll(){
         d->state.videoCodec=d->prop("video-codec");d->state.audioCodec=d->prop("audio-codec-name");d->state.hardwareDecoder=d->prop("hwdec-current");
         d->state.runtimeVersion=d->prop("mpv-version");d->state.colorPrimaries=d->prop("video-params/primaries");d->state.transferFunction=d->prop("video-params/gamma");
         d->state.sourceFps=d->number("container-fps");d->state.filteredFps=d->number("estimated-vf-fps");d->state.displayFps=d->number("display-fps");
+        if(d->performanceMetrics){
+            d->state.cacheSeconds=d->metric("demuxer-cache-duration");
+            d->state.avSyncMs=d->metric("avsync");
+            if(d->state.avSyncMs)*d->state.avSyncMs*=1000;
+            int cacheHolding=0;
+            d->mpv_get_property(d->mpv,"paused-for-cache",MPV_FORMAT_FLAG,&cacheHolding);
+            d->state.fileCacheHolding=cacheHolding!=0;
+        }
         updateFrameInterpolation();
         d->state.outputPrimaries=d->prop("video-target-params/primaries");d->state.outputTransferFunction=d->prop("video-target-params/gamma");
         d->state.audioSampleRate=int(d->number("audio-params/samplerate"));d->state.audioChannels=int(d->number("audio-params/channel-count"));d->state.audioOutput=d->prop("current-ao");d->state.droppedVideoFrames=int(d->number("frame-drop-count"));
