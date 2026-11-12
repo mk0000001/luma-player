@@ -8,31 +8,31 @@
 - Android 보안 영상 표면과 캡처 차단을 적용했습니다. HDR·Dolby Vision·공간 음향은 원본과 기기의 지원 범위에서 재생합니다.
 - 일반 설정에 HDR 자동/SDR 전환과 PCM·HDMI 비트스트림을 추가했습니다. 개발자 모드에 시스템·플레이어 성능 비교와 SDR 화면 HDR 렌더링 시험 옵션을 제공합니다.
 
-### 0.1.0-beta.6 — 2026-11-12 공개 베타
+### 0.1.6 — 2026-11-12 공개 베타
 
 - Linux Qt 6.4 환경에서도 빌드할 수 있도록 창 이동과 자막 코드의 헤더를 수정했습니다.
 
-### 0.1.0-beta.5 — 2026-11-12 공개 베타
+### 0.1.5 — 2026-11-12 공개 베타
 
 - Windows에서 창을 끌 때 영상, 자막, 조작 바를 같은 이동 처리 단계에서 갱신합니다.
 - 항상 위에 뜨는 작은 화면(PiP)을 추가했습니다. 재생 바 또는 `Ctrl+Shift+P`로 전환하고 `Esc`로 돌아옵니다.
 - 탐색 바를 클릭해 위치를 바꾸고 자막 메뉴에서 번역 용어집을 열 수 있습니다.
 - 화면 구성, 재생, 자막, 입력 처리를 분리하고 Windows Qt를 6.11.3으로 올렸습니다. 라이브러리 검색, 자동 스크립트, 로컬 번역 응답 처리도 강화했습니다.
 
-### 0.1.0-beta.4 — 2026-11-12 공개 베타
+### 0.1.4 — 2026-11-12 공개 베타
 
 - Blu-ray를 연 상태에서 저장한 번역 용어집을 디스크별로 기억합니다. 같은 디스크를 다시 열거나 전체 자막을 만들 때 자동으로 사용합니다.
 
-### 0.1.0-beta.3 — 2026-11-12 공개 베타
+### 0.1.3 — 2026-11-12 공개 베타
 
 - **AI 자막 → 번역 용어집**에 `원문 → 번역`을 저장할 수 있습니다. 실시간 한국어 자막과 새로 만드는 전체 자막에서 일치하는 용어를 앞뒤 문맥과 함께 번역 모델에 전달합니다.
 
-### 0.1.0-beta.2 — 2026-11-12 공개 베타
+### 0.1.2 — 2026-11-12 공개 베타
 
 - **설정 → 자막 모양**에서 글꼴, 크기, 글자·배경 불투명도를 조절합니다. 재생 중 바로 반영하고 다음 실행에도 기억합니다.
 - AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적용합니다. Noto Sans와 기본 크기·불투명도로 복원할 수 있습니다.
 
-### 0.1.0-beta.1 — 2026-11-12 공개 베타
+### 0.1.1 — 2026-11-12 공개 베타
 
 - Windows Blu-ray에서 GPU 영상 디코딩을 우선 사용하고, 재생 중 영상 프레임이 멈추면 CPU 호환 디코딩으로 같은 위치를 복구합니다.
 - 실시간 자막용 Blu-ray 음성을 최대 75초 단위로 읽습니다. 디스크 읽기 대기와 자막 준비 상태를 구분해 표시합니다.
@@ -130,31 +130,31 @@
 - Secure Android video surfaces and capture protection are enabled. HDR, Dolby Vision, and spatial audio depend on the original media and device capabilities.
 - HDR auto/SDR switching, PCM, and HDMI bitstream are available in Settings. Developer mode adds system/player performance comparisons and forced HDR rendering for SDR display tests.
 
-### 0.1.0-beta.6 — 2026-11-12 public beta
+### 0.1.6 — 2026-11-12 public beta
 
 - Use Qt 6.4-compatible headers when compiling window movement and captions on Linux.
 
-### 0.1.0-beta.5 — 2026-11-12 public beta
+### 0.1.5 — 2026-11-12 public beta
 
 - Update the video, caption, and transport windows during the same Windows drag event.
 - Add always-on-top picture-in-picture. Toggle it from the transport or with `Ctrl+Shift+P`, and return with `Esc`.
 - Click the seek track to jump and open the translation glossary from the captions menu.
 - Separate window construction, playback, captions, and input. Update Windows Qt to 6.11.3 and harden library search, automatic scripts, and local translation response handling.
 
-### 0.1.0-beta.4 — 2026-11-12 public beta
+### 0.1.4 — 2026-11-12 public beta
 
 - Save a separate translation glossary for an open Blu-ray. The player loads it automatically when reopening the disc or preparing its captions.
 
-### 0.1.0-beta.3 — 2026-11-12 public beta
+### 0.1.3 — 2026-11-12 public beta
 
 - Save `source → translation` entries under **AI Captions → Translation glossary**. Live Korean translation and new prepared caption jobs send matching terms to the model alongside nearby context.
 
-### 0.1.0-beta.2 — 2026-11-12 public beta
+### 0.1.2 — 2026-11-12 public beta
 
 - Change the font, size, and text and background opacity in **Settings → Caption appearance**. Changes take effect during playback and persist across launches.
 - The settings apply to AI captions, prepared caption projects, and imported text subtitles. Reset them to Noto Sans and the default size and opacity.
 
-### 0.1.0-beta.1 — 2026-11-12 public beta
+### 0.1.1 — 2026-11-12 public beta
 
 - Prefer GPU video decoding for Blu-ray on Windows and recover a stalled picture at the same position with software decoding.
 - Read Blu-ray audio for live captions in windows of up to 75 seconds. Show disc buffering and caption preparation status.
