@@ -22,7 +22,7 @@ function Install-LumaBootstrapExtraction {
     $name = [IO.Path]::GetFileName($targetPath)
     $targetPath = Join-Path $parent.FullName $name
     $lockPath = Join-Path $parent.FullName ".$name.extract.lock"
-    $lock = [IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    $extractionLock = [IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::Write,[IO.FileShare]::None)
     $stage = $null
     $backup = $null
     $published = $false
@@ -65,6 +65,6 @@ function Install-LumaBootstrapExtraction {
                 [IO.Directory]::Delete($item.FullName,$true)
             } catch { Write-Warning "Bootstrap left cache cleanup at $temporary. $($_.Exception.Message)" }
         }
-        $lock.Dispose()
+        $extractionLock.Dispose()
     }
 }

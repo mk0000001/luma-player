@@ -127,7 +127,7 @@ final class LanClient implements Closeable {
                         response.close();
                         throw new IOException("LAN session redirects are disabled");
                     }
-                    if (access == Access.PLAYBACK && response.isSuccessful()) {
+                    if (access == Access.PLAYBACK) {
                         return checkedPlaybackResponse(response);
                     }
                     return response;
@@ -243,12 +243,34 @@ final class LanClient implements Closeable {
     }
 
     static Response checkedPlaybackResponse(Response response) throws IOException {
-        if (!LanEndpoint.isSubtitlePath(response.request().url().encodedPath())) {
+        String path = response.request().url().encodedPath();
+        if (!LanEndpoint.isPlaybackStreamPath(path)) {
             return response;
         }
         ResponseBody body = response.body();
+        if (!response.isSuccessful()) {
+            // Media3 materializes error bodies. Keep status and range/retry headers only.
+            if (body != null) {
+                body.close();
+            }
+            return response.newBuilder().removeHeader("Content-Encoding").removeHeader("Transfer-Encoding")
+                    .header("Content-Length", "0").body(ResponseBody.create(new byte[0], null)).build();
+        }
+        if (!LanEndpoint.isSubtitlePath(path)) {
+            return response;
+        }
         try {
-            return response.newBuilder().body(boundedSubtitle(body)).build();
+            if (response.code() != 200) {
+                throw new IOException("LAN subtitle must be a complete response");
+            }
+            ResponseBody checked = boundedSubtitle(body);
+            // Media3 uses the raw headers as an allocation hint before reading the source.
+            Response.Builder result = response.newBuilder().removeHeader("Content-Range")
+                    .removeHeader("Content-Length").body(checked);
+            if (checked.contentLength() >= 0) {
+                result.header("Content-Length", Long.toString(checked.contentLength()));
+            }
+            return result.build();
         } catch (IOException error) {
             if (body != null) {
                 body.close();

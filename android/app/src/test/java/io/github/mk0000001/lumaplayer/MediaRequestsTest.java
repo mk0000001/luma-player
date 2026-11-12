@@ -28,6 +28,20 @@ import org.junit.Test;
 
 public final class MediaRequestsTest {
     @Test
+    public void playerErrorsKeepTheStatusWithoutForwardingTheResponseBody() throws Exception {
+        for (String path : new String[]{"/v1/media", "/v1/media/variant/720p/0", LanEndpoint.subtitlePath("fixture")}) {
+            Request request = new Request.Builder().url("https://192.168.0.2:48762" + path).build();
+            try (Response response = responseFor(request, "text/plain").newBuilder().code(416)
+                         .header("Content-Range", "bytes */16").build();
+                 Response checked = LanClient.checkedPlaybackResponse(response)) {
+                assertEquals(416, checked.code());
+                assertEquals("bytes */16", checked.header("Content-Range"));
+                assertEquals(0, checked.body().bytes().length);
+            }
+        }
+    }
+
+    @Test
     public void bothSubtitleRoutesUseTheResponseGateWithoutChangingMedia() throws Exception {
         for (String path : new String[]{LanEndpoint.subtitlePath("fixture"), LanEndpoint.subtitleAtPath("fixture", 1000)}) {
             Request request = new Request.Builder().url("https://192.168.0.2:48762" + path).build();
@@ -36,6 +50,13 @@ public final class MediaRequestsTest {
             }
             try (Response response = responseFor(request, "text/vtt");
                  Response checked = LanClient.checkedPlaybackResponse(response)) {
+                assertEquals("fixture", checked.body().string());
+            }
+            try (Response response = responseFor(request, "text/vtt").newBuilder()
+                         .header("Content-Range", "bytes 0-15/16").header("Content-Length", "16").build();
+                 Response checked = LanClient.checkedPlaybackResponse(response)) {
+                assertEquals(null, checked.header("Content-Range"));
+                assertEquals("7", checked.header("Content-Length"));
                 assertEquals("fixture", checked.body().string());
             }
         }
