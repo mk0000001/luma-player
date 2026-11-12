@@ -69,7 +69,7 @@
 - 고정 Kotoba Q5 가중치에서 FP16 OpenVINO 인코더를 만드는 C++ 변환기·수치 비교·공유 정체성 검증 CLI 추가. 실제 인코더 호출 수·시간을 기록하며, 추론을 건너뛴 짧은 음성을 가속 성공으로 인정하지 않음.
 - OpenVINO 2026.4.1로 업데이트하고 설치 시 합성 16초 입력을 연속 네 번 실제 인코딩해 자동 NPU 사용 여부를 결정. 모델·IR·worker·런타임·드라이버가 바뀌거나 느림·오류가 있으면 GPU→CPU로 대체. 연산량 하한과 제품 TFLOPS는 [성능 기록](docs/PERFORMANCE-KOTOBA.md)에서 구분.
 - 버퍼된 앞뒤 원문으로 한국어 문맥 번역. 실제 HyMT2의 문맥 JSON 출력 문제를 공식 배경/원문 프롬프트로 수정하고, 같은 문장도 시간 구간별로 결과를 분리.
-- 개발자 모드와 영상 캡처 허용에 각각 별도 동의 추가. 동의 대기·취소·예전 설정이 캡처 허용으로 처리되지 않도록 하고 개발자 모드 해제 시 권한도 해제.
+- 개발자 모드에 이용 확인을 추가했습니다. 보호 디스크 영상과 자막에는 기본 캡처 차단을 적용합니다.
 - 그래픽 장치 손실 시 네이티브 출력을 한 번 복구하고 위치·불러온 자막·최신 재생 의도를 유지. 반복 오류는 재생을 멈추고 다시 열기 안내를 유지. 디스크 초기 안내·허용된 메뉴 동작을 존중.
 - AACS/BD+ 상세 오류가 일반 오류로 덮이지 않게 보존하고 재열기 때 초기화. 실패 후 잘못된 일시정지 아이콘·재생 의도를 정리. 실제 연결 디스크의 시작 안내→메뉴 진입은 확인했으나 과거 AACS 실패 원인은 미확정.
 - 최종 패키지·CI·장치 확인은 [alpha.6 기록](docs/releases/0.1.0-alpha.6.md)을 따름. 이전 버전·태그·ZIP은 보존.
@@ -185,7 +185,7 @@ Published distributions receive immutable tags, GitHub Releases and checksums. L
 - Added native C++ export, parity and shared identity verification for a pinned Q5-derived FP16 Kotoba encoder, plus actual per-request encoder counts/timing. Skipped short inputs cannot acknowledge acceleration.
 - Upgrade to OpenVINO 2026.4.1 and qualify automatic NPU use with four genuine encodes of owned 16-second synthetic input. Source/IR/worker/runtime/driver changes, slow runs and failures select GPU then CPU. Distinguish analytical operation-rate bounds from product TFLOPS in the performance report.
 - Translate targets using buffered original context; fix real HyMT2 context-JSON echoes through the official background/source prompt. Keep identical phrases separate by timed cue.
-- Require separate acknowledged developer/capture dialogs; pending, cancelled or legacy settings cannot grant capture allowance, and disabling developer mode revokes it.
+- Added a developer-mode acknowledgment. Capture exclusion defaults to on for protected-disc video and captions.
 - Recreate native output once after graphics-device loss while preserving position, imported captions and latest playback intent. Repeated loss stops playback with persistent reopen guidance. Respect authored disc initialization and permitted menu actions.
 - Preserve specific AACS/BD+ errors, reset them when reopening and clear failed playback intent. The connected disc reached its interactive menu; the original AACS failure's root cause is unconfirmed.
 - Follow the alpha.6 release record for final package, CI and device status. Earlier versions and artifacts remain immutable.
