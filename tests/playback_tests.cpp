@@ -107,6 +107,7 @@ FIXTURE_API void libvlc_media_player_set_hwnd(libvlc_media_player_t *,void *){}
 #include <QtTest>
 #include <QDir>
 #include <QLibrary>
+#include <QScopeGuard>
 #include "media/playback.h"
 using namespace luma;
 class PlaybackTests:public QObject {
@@ -127,6 +128,30 @@ private slots:
         videoLog_=reinterpret_cast<VideoLog>(fixture_.resolve("luma_fixture_video_log"));
         QVERIFY(videoLog_);
         discMenus_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_disc_menus"));premature_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_premature_playback"));QVERIFY(discMenus_);QVERIFY(premature_);
+    }
+    void interactiveDiscUsesCompatibleDecodingUnlessHardwareIsRequested(){
+        const bool hadOverride=qEnvironmentVariableIsSet("LUMA_DISC_DECODER");
+        const auto previous=qgetenv("LUMA_DISC_DECODER");
+        const auto restore=qScopeGuard([&]{
+            if(hadOverride)qputenv("LUMA_DISC_DECODER",previous);
+            else qunsetenv("LUMA_DISC_DECODER");
+        });
+        qunsetenv("LUMA_DISC_DECODER");
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());
+        QVERIFY(engine.open("bluray:///prepared/default-menu",0));
+        QVERIFY(engine.state().discMenus);
+        QCOMPARE(engine.state().videoDecoderRequest,QString("none"));
+
+        QVERIFY(engine.openPreparedDisc("bluray:///prepared/direct-title",0,6296832));
+        QVERIFY(!engine.state().discMenus);
+        QCOMPARE(engine.state().videoDecoderRequest,QString("any"));
+
+        VideoOverrides override;
+        override.hardware=VideoOverrides::Hardware::D3D11;
+        engine.setVideoOverrides(override);
+        QVERIFY(engine.open("bluray:///prepared/explicit-hardware",0));
+        QVERIFY(engine.state().discMenus);
+        QCOMPARE(engine.state().videoDecoderRequest,QString("d3d11va"));
     }
     void preparedDiscSelectsExactNativeZero(){
         PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());QVERIFY(engine.openPreparedDisc("bluray:///prepared/target-zero",0,6296832));

@@ -255,7 +255,7 @@ struct PlaybackEngine::Impl {
     std::optional<qint64> deferredSeek;
     bool discSoftware=true;
     bool nextDiscSoftware=false,discAllocationFailed=false;
-    QByteArray discHardwareOption=":avcodec-hw=any";
+    QByteArray discHardwareOverride;
     QElapsedTimer discFrameProgress;
     int lastDiscFrame=-1,audioAtLastDiscFrame=0;
     int metadataTitle=-2,metadataAudio=-2;
@@ -510,12 +510,9 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
         LOAD_OPTIONAL(libvlc_chapter_descriptions_release);
 #undef LOAD_OPTIONAL
         const auto decoder=qEnvironmentVariable("LUMA_DISC_DECODER");
-#ifdef Q_OS_WIN
-        if(decoder=="software")d->discHardwareOption=":avcodec-hw=none";
-#else
-        if(decoder!="hardware" && decoder!="dxva2")d->discHardwareOption=":avcodec-hw=none";
-#endif
-        if(decoder=="dxva2")d->discHardwareOption=":avcodec-hw=dxva2";
+        if(decoder=="software")d->discHardwareOverride=":avcodec-hw=none";
+        else if(decoder=="hardware")d->discHardwareOverride=":avcodec-hw=any";
+        else if(decoder=="dxva2")d->discHardwareOverride=":avcodec-hw=dxva2";
         if(!d->initDisc(false)){d->error="libVLC initialization failed";return;}
     }else{
 #define LOAD(n) ok=d->resolve(d->n,#n)&&ok
@@ -592,7 +589,14 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
             return false;
         }
         d->state.audioVolumeExternal=d->discBitstream;
-        auto hardware=d->discHardwareOption;
+        // HDMV can reuse video output across First Play, menus and the feature.
+        // Start menu sessions in compatibility mode so a failed GPU surface
+        // allocation cannot force a reopen that loses the authored navigation state.
+        QByteArray hardware=":avcodec-hw=none";
+#ifdef Q_OS_WIN
+        if(!d->state.discMenus)hardware=":avcodec-hw=any";
+#endif
+        if(!d->discHardwareOverride.isEmpty())hardware=d->discHardwareOverride;
         if(d->activeVideo.hardware==VideoOverrides::Hardware::Software)
             hardware=":avcodec-hw=none";
         else if(d->activeVideo.hardware!=VideoOverrides::Hardware::Auto &&
