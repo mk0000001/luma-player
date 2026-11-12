@@ -9,6 +9,10 @@ on:
         description: Check the official GitHub release list with the Windows updater
         type: boolean
         default: false
+      package_linux:
+        description: Produce and verify the Ubuntu 24.04 x64 release archive
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -122,6 +126,34 @@ jobs:
           cmake --build build --parallel 4
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Package and verify the Linux build
+        if: inputs.package_linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          package="LumaPlayer-$version-linux-x64-ubuntu24.04"
+          stage="$RUNNER_TEMP/$package"
+          cmake --install build --prefix "$stage"
+          install -m 644 LICENSE THIRD_PARTY_NOTICES.md README.md CHANGELOG.md "$stage/"
+          install -m 644 docs/releases/"$version".md "$stage/RELEASE-NOTES.md"
+          mkdir -p release-linux "$RUNNER_TEMP/luma-extracted"
+          tar -czf "release-linux/$package.tar.gz" -C "$RUNNER_TEMP" "$package"
+          (cd release-linux && sha256sum "$package.tar.gz" > "$package.tar.gz.sha256")
+          tar -xzf "release-linux/$package.tar.gz" -C "$RUNNER_TEMP/luma-extracted"
+          binary="$RUNNER_TEMP/luma-extracted/$package/LumaPlayer"
+          export QT_QPA_PLATFORM=offscreen
+          "$binary" --version | grep -Fx "LumaPlayer $version"
+          timeout 15s "$binary" --exit-after 2000
+          ldd "$binary"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: inputs.package_linux
+        with:
+          name: linux-release
+          path: release-linux/
+          if-no-files-found: error
+          compression-level: 0
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

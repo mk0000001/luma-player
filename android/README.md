@@ -4,6 +4,8 @@
 
 Android 9 이상에서 Windows LumaPlayer가 같은 네트워크에 공유한 파일과 Blu-ray 타이틀을 재생합니다. 앱을 열면 모바일 연결이 켜진 PC를 찾습니다. 목록에서 PC를 선택하거나 사설 IPv4 주소를 직접 입력하세요. 주소에 포트가 없으면 `48762`를 사용합니다.
 
+**0.2.3에서 0.2.5로 이동**하려면 새 APK를 설치하고 PC와 다시 페어링하세요. 이번 APK는 별도 앱 ID를 사용하므로 0.2.3과 함께 설치할 수 있습니다. 새 앱에서 연결을 확인한 뒤 이전 앱을 제거할 수 있습니다. [최신 Android APK](https://github.com/mk0000001/luma-player/releases/latest)
+
 **매번 PC에서 승인** 또는 **이 PC 기억하기**를 선택하고 **승인 요청**을 누르세요. 휴대폰과 PC에 표시된 6자리 코드가 같으면 휴대폰에서 **코드 일치 확인**을 누르고 PC에서 승인하세요. 양쪽에서 기억하기를 선택하면 다음번에 목록의 기억한 PC를 선택해 다시 연결할 수 있습니다. 매번 승인하려면 **기억 지우기**를 누르세요.
 
 승인된 연결은 HTTPS로 PC 인증서의 IP 이름과 공개 키 지문을 확인합니다. 기억한 연결의 자격 증명은 Android Keystore 키로 암호화하며, 현재 재생 토큰과 미디어는 앱 메모리에서 처리합니다. 재생 중 화면 캡처에는 보호된 영상 표면이 가려지고 컨트롤과 텍스트 자막은 UI에 표시됩니다. 재생 음성 캡처는 Android의 앱 정책으로 제한됩니다.
@@ -25,6 +27,8 @@ APK 경로는 도구 경로 아래 `build/app/outputs/apk/release/LumaPlayer-And
 ## English
 
 On Android 9 and later, the app plays media files and Blu-ray titles shared by LumaPlayer for Windows on the same network. The app searches for PCs with mobile connections enabled when it opens. Select a PC or enter its private IPv4 address. The default port is `48762`.
+
+**Moving from 0.2.3 to 0.2.5** requires installing the new APK and pairing with the PC again. This APK uses a separate application ID and can be installed alongside 0.2.3. You can remove the old app after confirming the connection in the new one. [Latest Android APK](https://github.com/mk0000001/luma-player/releases/latest)
 
 Choose to ask every time or remember the PC, then request approval. If the six-digit codes match, confirm the match on the phone and approve on the PC. When both sides choose to remember, selecting the saved PC reconnects. Forget the PC on the phone to require approval again.
 

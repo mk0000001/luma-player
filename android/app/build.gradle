@@ -13,11 +13,11 @@ android {
     buildToolsVersion = '36.0.0'
 
     defaultConfig {
-        applicationId = 'io.github.mk0000001.lumaplayer'
+        applicationId = 'io.github.mk0000001.lumaplayer.app'
         minSdk = 28
         targetSdk = 36
-        versionCode = 20004
-        versionName = '0.2.4'
+        versionCode = 20005
+        versionName = rootProject.file('../VERSION').text.trim()
     }
 
     compileOptions {

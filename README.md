@@ -13,9 +13,13 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 - **새 버전을 확인하세요.** Windows 앱은 실행할 때 GitHub에서 업데이트를 확인합니다. 설정에서 수동으로 확인하거나 자동 알림을 끌 수 있습니다. [업데이트 안내](docs/UPDATES.md)
 - **내 화면에 맞춰 감상하세요.** 전체화면이나 항상 위에 뜨는 작은 화면(PiP)으로 볼 수 있습니다. 탐색 바를 클릭하거나 방향키로 장면을 이동하고, 다크·라이트 모드를 고를 수 있습니다.
 
-### Windows 설치
+### 설치 및 업데이트
 
-릴리스에서 Windows x64 기본 설치 파일 또는 NVIDIA CUDA 포함 설치 파일을 받아 실행하세요. 기본 Turbo 음성 인식 모델이 포함되며, 첫 실행에서 GPU·NPU에 맞는 선택 가속 패키지를 확인할 수 있습니다. 권장 설치는 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [릴리스 다운로드](https://github.com/mk0000001/luma-player/releases) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+**0.2.x가 최신 배포 계열입니다.** 기존 0.1.x 사용자는 아래 Windows 설치 파일을 실행해 업데이트할 수 있습니다. 0.2.x에서는 Android 원격 재생, Radeon 가속 비교, 진단 내보내기를 사용할 수 있습니다.
+
+[최신 Windows·Android·Linux 다운로드와 업데이트 안내](https://github.com/mk0000001/luma-player/releases/latest)
+
+Windows에서 Radeon·Intel GPU는 기본 설치 파일을 사용하세요. 두 설치본에 Turbo 음성 인식 모델이 포함됩니다. 권장 설치는 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 추가로 내려받으며, 추가 다운로드는 약 5.71 GB입니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -64,9 +68,13 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 - **Check for a new version.** The Windows app checks GitHub at launch. Check manually or turn off automatic notifications in settings. [Update guide](docs/UPDATES.md)
 - **Make it fit your screen.** Switch to fullscreen or always-on-top picture-in-picture. Click the seek track or use the arrow keys to jump, and choose dark or light mode.
 
-### Install on Windows
+### Install or update
 
-Run the standard or NVIDIA CUDA-bundled Windows x64 installer from the release. Both include the default Turbo model and offer hardware-matched acceleration packages at first launch. The recommended installation downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Release downloads](https://github.com/mk0000001/luma-player/releases) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
+**0.2.x is the current release series.** If you use 0.1.x, run the Windows installer below to update. The 0.2.x series adds Android remote playback, Radeon acceleration profiles, and diagnostic export.
+
+[Latest downloads and update instructions for Windows, Android, and Linux](https://github.com/mk0000001/luma-player/releases/latest)
+
+On Windows, use the standard installer for Radeon and Intel GPUs. Both installers include the Turbo speech recognition model. The recommended setup also downloads full-v3 Q5 and Hy-MT2 for Korean translation, totaling about 5.71 GB. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 

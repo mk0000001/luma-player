@@ -2,12 +2,15 @@
 
 ## 한국어
 
-### 개발 중
+### 0.2.5
 
 - Android에서 LAN 응답의 JSON 깊이와 WebVTT 응답 크기를 제한하고, 연결 취소 시 진행 중인 메타데이터 읽기도 중단합니다.
 - Windows 내부망 서버의 스트리밍 유휴 한도와 페어링 토큰 교체 처리를 보강했습니다. VPN 검색은 요청을 받은 포트에서 응답할 수 있습니다.
 - Windows 설치 페이로드 검증, 의존성 캐시와 업데이트 검증을 강화하고, GitHub 빌드와 초안 릴리스 권한을 분리했습니다.
 - 자막 검색과 번역 우선순위 처리의 반복 연산을 줄이고 Blu-ray 음성 임시 버퍼의 상한을 적용했습니다.
+- Blu-ray 메뉴에서 본편으로 전환할 때 호환 영상 디코딩 경로를 사용해 첫 영상이 멈추는 문제를 수정했습니다.
+- Android에서 재생을 유지한 채 설정을 열고, 현재 화질·HDR·재생 속도를 확인할 수 있습니다. 넓은 화면과 폴더블의 창 비율에 맞춰 영상과 챕터를 배치합니다.
+- Ubuntu 24.04 x64용 데스크톱 실행 파일을 아카이브로 제공합니다.
 
 ### 0.2.4
 
@@ -155,12 +158,15 @@
 
 ## English
 
-### Unreleased
+### 0.2.5
 
 - Bound LAN JSON depth and WebVTT response sizes on Android, and cancel active metadata reads when disconnecting.
 - Hardened Windows LAN stream idle handling and pairing-token rotation. VPN discovery can reply from its listening port.
 - Tightened Windows installer payload, dependency cache, and updater validation, and isolated GitHub build permissions from draft publishing.
 - Reduced repeated caption lookup and translation prioritization work, and bounded temporary Blu-ray audio buffering.
+- Use a compatible video decoding path when switching from a Blu-ray menu to the feature.
+- Open Android playback settings without interrupting playback. The panel shows current quality, HDR and speed settings, and video and chapters adapt to wide and foldable windows.
+- Provide a desktop build archive for Ubuntu 24.04 x64.
 
 ### 0.2.4
 
