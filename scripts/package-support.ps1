@@ -59,10 +59,11 @@ function Test-LumaPackagePrivateFile {
 }
 
 function Assert-LumaPackagePublicFiles {
-    param([string]$Directory)
+    param([string]$Directory,[switch]$PassThru)
     foreach($item in Get-ChildItem -LiteralPath $Directory -Recurse -Force) {
         if($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Package cannot contain linked paths: $($item.Name)" }
         if(!$item.PSIsContainer -and (Test-LumaPackagePrivateFile $item.FullName)) { throw "Package contains private playback data: $($item.Name)" }
+        if($PassThru -and !$item.PSIsContainer) { $item }
     }
 }
 
@@ -277,7 +278,7 @@ function Assert-LumaPackageArchiveSize {
 function Get-LumaPackageManifestFiles {
     param([string]$Directory)
     $root=[IO.Path]::GetFullPath($Directory).TrimEnd('\','/')
-    Get-ChildItem -LiteralPath $root -Recurse -File | Sort-Object FullName | ForEach-Object {
+    Get-ChildItem -LiteralPath $root -Recurse -File -Force | Sort-Object FullName | ForEach-Object {
         [ordered]@{path=$_.FullName.Substring($root.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
     }
 }

@@ -226,6 +226,14 @@ func (p *player) expireAttempts(now time.Time) {
 	}
 }
 
+func (p *player) clearDeviceApprovals(deviceID string) {
+	for id, attempt := range p.attempts {
+		if attempt.DeviceID == deviceID && attempt.result.State == "approved" {
+			delete(p.attempts, id)
+		}
+	}
+}
+
 func validDeviceName(value string) bool {
 	return len(value) > 0 && len(value) <= 128 && utf8.ValidString(value) && strings.TrimSpace(value) != "" &&
 		strings.IndexFunc(value, unicode.IsControl) < 0

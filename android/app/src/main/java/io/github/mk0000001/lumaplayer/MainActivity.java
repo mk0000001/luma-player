@@ -55,9 +55,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 @UnstableApi
@@ -65,7 +64,7 @@ public final class MainActivity extends Activity {
     private static final int CONTROLS_TIMEOUT_MS = 5000;
     private static final int NO_ORIENTATION_OVERRIDE = Integer.MIN_VALUE;
     private static final long DISPLAY_PICKER_TIMEOUT_MS = 120_000L;
-    private final ScheduledExecutorService connectionExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledThreadPoolExecutor connectionExecutor = new ScheduledThreadPoolExecutor(1);
     private final Handler lifecycleHandler = new Handler(Looper.getMainLooper());
     private final Runnable expireDisplayPicker = () -> {
         if (this.displayPickerOpen) {
@@ -88,7 +87,7 @@ public final class MainActivity extends Activity {
     private PlaybackGestures gestures;
 
     private LanClient client;
-    private LanClient.MediaRequests mediaRequests;
+    private LanClient.RequestScope mediaRequests;
     private LanSession playbackSession;
     private ExoPlayer player;
     private PlaybackInfo playbackInfo;
@@ -136,6 +135,7 @@ public final class MainActivity extends Activity {
         setContentView(content);
 
         root = findViewById(R.id.root);
+        connectionExecutor.setRemoveOnCancelPolicy(true);
         connectionScreen = new ConnectionScreen(this, connectionExecutor);
         playbackScreen = findViewById(R.id.playback_screen);
         playbackCanvas = findViewById(R.id.playback_canvas);
@@ -395,7 +395,7 @@ public final class MainActivity extends Activity {
                 .setMimeType(variant ? MimeTypes.VIDEO_MATROSKA : session.mimeType)
                 .setMediaMetadata(new MediaMetadata.Builder().setTitle(sessionTitle.getText()).build())
                 .setSubtitleConfigurations(subtitles).build();
-        LanClient.MediaRequests previousRequests = mediaRequests;
+        LanClient.RequestScope previousRequests = mediaRequests;
         mediaRequests = client.mediaRequests();
         DefaultExtractorsFactory extractors = new DefaultExtractorsFactory();
         boolean progressive = session.isBluRay() || variant;
@@ -820,6 +820,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+        navigation.setForeground(true);
         connectionScreen.start();
     }
 
@@ -839,6 +840,7 @@ public final class MainActivity extends Activity {
 
     @Override
     protected void onStop() {
+        navigation.setForeground(false);
         connectionScreen.stop();
         if (client != null) {
             if (displayPickerOpen) {

@@ -25,11 +25,23 @@ QString executable(const QString &runtime,const QString &relative,const QString 
 QString srtTime(qint64 milliseconds){
     const auto ms=std::max<qint64>(0,milliseconds);return QString("%1:%2:%3,%4").arg(ms/3600000,2,10,QChar('0')).arg((ms/60000)%60,2,10,QChar('0')).arg((ms/1000)%60,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));
 }
+
+QString extractionProtocols(const QString &scheme,bool disc){
+    if(disc)return "bluray,file";
+    if(scheme=="http" || scheme=="https")return "http,https,tcp,tls,crypto,httpproxy";
+    if(scheme=="rtsp" || scheme=="rtsps")return "rtsp,rtsps,rtp,tcp,tls,udp";
+    if(scheme=="rtmp" || scheme=="rtmps")return "rtmp,rtmps,tcp,tls";
+    if(scheme=="srt" || scheme=="udp")return scheme;
+    return "file,crypto";
+}
 }
 ProcessInvocation extractionCommand(const QString &runtime,const RecognitionRequest &r,const QString &output){
     const auto start=QString::number(double(std::max<qint64>(0,r.startMs))/1000,'f',3);
     const auto duration=QString::number(double(std::clamp<qint64>(r.durationMs,1,60000))/1000,'f',3);
-    QStringList args={"-hide_banner","-loglevel","error"};QString source=r.source;
+    const auto scheme=QUrl(r.source).scheme();
+    QStringList args={"-hide_banner","-loglevel","error","-nostdin","-protocol_whitelist",extractionProtocols(scheme,r.disc)};
+    if(!r.disc && (scheme=="http" || scheme=="https"))args.append({"-tls_verify","1"});
+    QString source=r.source;
     if(r.disc){args.append("-playlist");args.append(QString::number(r.playlist.toUInt()));if(source.startsWith("bluray://")){QUrl url(source);url.setScheme("file");source=url.toLocalFile();}source="bluray:"+QDir::fromNativeSeparators(source);}
     const auto mapping=r.disc && r.audioTrackId>=0?"0:i:"+QString::number(r.audioTrackId):"0:a:"+QString::number(std::max(0,r.audioIndex));
     args.append({"-ss",start,"-i",source,"-t",duration,"-map",mapping,"-vn","-ac","1","-ar","16000","-c:a","pcm_s16le","-y",output});

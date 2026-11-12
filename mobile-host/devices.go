@@ -51,6 +51,7 @@ func (p *player) activateDevice(id, name string, peer netip.Addr, token string) 
 		previous.cancel()
 		previous.requests.Wait()
 	}
+	p.clearDeviceApprovals(id)
 	ctx, cancel := context.WithCancel(context.Background())
 	device := &activeDevice{
 		name: name, peer: peer, hash: sha256.Sum256([]byte(token)), ctx: ctx, cancel: cancel,
@@ -150,11 +151,7 @@ func (p *player) expireDevices(now time.Time) {
 		}
 		delete(p.active, id)
 		device.cancel()
-		for attemptID, attempt := range p.attempts {
-			if attempt.DeviceID == id && attempt.result.State == "approved" {
-				delete(p.attempts, attemptID)
-			}
-		}
+		p.clearDeviceApprovals(id)
 	}
 }
 

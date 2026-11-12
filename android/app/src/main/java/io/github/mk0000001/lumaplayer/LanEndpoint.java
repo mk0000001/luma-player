@@ -131,7 +131,11 @@ final class LanEndpoint {
     }
 
     static boolean isMediaPath(String path) {
-        return SESSION_PATH.equals(path) || MEDIA_PATH.equals(path) || SUBTITLE_PATH.matcher(path).matches()
-                || VARIANT_PATH.matcher(path).matches() || SUBTITLE_AT_PATH.matcher(path).matches();
+        return SESSION_PATH.equals(path) || MEDIA_PATH.equals(path) || VARIANT_PATH.matcher(path).matches()
+                || isSubtitlePath(path);
+    }
+
+    static boolean isSubtitlePath(String path) {
+        return SUBTITLE_PATH.matcher(path).matches() || SUBTITLE_AT_PATH.matcher(path).matches();
     }
 }

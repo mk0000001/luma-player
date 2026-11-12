@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -20,6 +21,7 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopeGuard>
+#include <QSet>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStorageInfo>
@@ -377,14 +379,10 @@ bool startInstaller(HANDLE lockedFile, const QString &directory, const QByteArra
 
 namespace update {
 
-std::optional<Release> newestRelease(const QByteArray &json, const QString &installedVersion)
+static std::optional<Release> newestReleaseFromArray(const QJsonArray &releases, const QString &installedVersion)
 {
     const auto installed = parseVersion(installedVersion);
-    if (!installed || json.size() > releaseListLimit)
-        return {};
-    const auto document = QJsonDocument::fromJson(json);
-    const auto releases = document.array();
-    if (!document.isArray() || releases.size() > 30)
+    if (!installed || releases.size() > 30)
         return {};
 
     std::optional<Release> best;
@@ -408,21 +406,27 @@ std::optional<Release> newestRelease(const QByteArray &json, const QString &inst
         Release candidate{tag, versionText, 0, {}};
         bool hasSignature = false;
         bool duplicate = false;
+        QSet<QString> namedAssets;
         const auto assets = item.value("assets").toArray();
         for (const auto &assetValue : assets) {
             const auto asset = assetValue.toObject();
             if (asset.value("state").toString() != QStringLiteral("uploaded"))
                 continue;
             const auto name = asset.value("name").toString();
+            const bool installer = isInstallerName(versionText, name);
+            if (name != manifestName && name != signatureName && !installer)
+                continue;
+            if (namedAssets.contains(name)) {
+                duplicate = true;
+                break;
+            }
+            namedAssets.insert(name);
             const auto size = positiveInteger(asset.value("size"), installerLimit);
             if (name == manifestName && size > 0 && size <= manifestLimit) {
-                duplicate |= candidate.manifestBytes != 0;
                 candidate.manifestBytes = size;
             } else if (name == signatureName && size == signatureSize) {
-                duplicate |= hasSignature;
                 hasSignature = true;
-            } else if (size > 0 && isInstallerName(versionText, name)) {
-                duplicate |= candidate.installers.contains(name);
+            } else if (size > 0 && installer) {
                 candidate.installers.insert(name, size);
             }
         }
@@ -432,6 +436,14 @@ std::optional<Release> newestRelease(const QByteArray &json, const QString &inst
         bestVersion = version;
     }
     return best;
+}
+
+std::optional<Release> newestRelease(const QByteArray &json, const QString &installedVersion)
+{
+    if (json.size() > releaseListLimit)
+        return {};
+    const auto document = QJsonDocument::fromJson(json);
+    return document.isArray() ? newestReleaseFromArray(document.array(), installedVersion) : std::nullopt;
 }
 
 std::optional<Manifest> verifiedManifest(const QByteArray &json, const QByteArray &signature,
@@ -525,6 +537,7 @@ struct UpdateManager::State {
     UpdateManager &owner;
     QPointer<QWidget> window;
     QTimer deadline;
+    QDeadlineTimer transferDeadline;
     QTimer verifyTimer;
     HINTERNET session = nullptr;
     HINTERNET connection = nullptr;
@@ -554,7 +567,7 @@ struct UpdateManager::State {
     HANDLE installerLock = INVALID_HANDLE_VALUE;
     qint64 hashedBytes = 0;
     QCryptographicHash hash{QCryptographicHash::Sha256};
-    QByteArray verifyBuffer = QByteArray(512 * 1024, '\0');
+    QByteArray verifyBuffer;
 };
 
 void UpdateManager::State::startCheck(bool userRequested)
@@ -599,6 +612,12 @@ qint64 UpdateManager::State::responseLimit() const
 void UpdateManager::State::fetch(Request requestKind, const QUrl &url, int hops)
 {
     kind = requestKind;
+    if (hops == 0)
+        transferDeadline.setRemainingTime(kind == Request::Installer ? 2 * 60 * 60 * 1000 : 20000);
+    if (transferDeadline.hasExpired()) {
+        fail(QStringLiteral("업데이트 서버 응답 시간이 초과되었습니다."));
+        return;
+    }
     redirects = hops;
     received = 0;
     buffer.clear();
@@ -658,7 +677,7 @@ void UpdateManager::State::fetch(Request requestKind, const QUrl &url, int hops)
     const wchar_t *headers = kind == Request::Releases
         ? L"Accept: application/vnd.github+json\r\nAccept-Encoding: identity\r\n"
         : L"Accept: application/octet-stream\r\nAccept-Encoding: identity\r\n";
-    deadline.start(kind == Request::Installer ? 2 * 60 * 60 * 1000 : 20000);
+    deadline.start(int(transferDeadline.remainingTime()));
     if (!WinHttpSendRequest(request, headers, DWORD(-1), WINHTTP_NO_REQUEST_DATA, 0, 0, cookie)
         && GetLastError() != ERROR_IO_PENDING) {
         fail(QStringLiteral("GitHub에서 업데이트 파일을 받을 수 없습니다."));
@@ -784,11 +803,12 @@ void UpdateManager::State::receivedResponse()
 
     switch (kind) {
     case Request::Releases: {
-        if (!QJsonDocument::fromJson(buffer).isArray()) {
+        const auto document = QJsonDocument::fromJson(buffer);
+        if (!document.isArray()) {
             fail(QStringLiteral("GitHub 릴리스 목록을 읽을 수 없습니다."));
             return;
         }
-        const auto candidate = update::newestRelease(buffer, installed);
+        const auto candidate = update::newestReleaseFromArray(document.array(), installed);
         if (!candidate) {
             finish(QStringLiteral("설치 가능한 업데이트가 없습니다."), false);
             return;
@@ -949,6 +969,7 @@ void UpdateManager::State::beginVerification()
     }
     hashedBytes = 0;
     hash.reset();
+    verifyBuffer.resize(512 * 1024);
     if (progress) {
         progress->setLabelText(QStringLiteral("설치 파일 무결성을 확인하는 중…"));
         progress->setValue(0);
@@ -1019,6 +1040,7 @@ void UpdateManager::State::clear(bool keepInstaller)
 {
     closeTransfer();
     verifyTimer.stop();
+    verifyBuffer.clear();
     if (dialog) {
         QObject::disconnect(dialog, nullptr, &owner, nullptr);
         dialog->hide();

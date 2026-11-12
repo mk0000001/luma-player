@@ -2,6 +2,13 @@
 
 ## 한국어
 
+### 개발 중
+
+- Android에서 LAN 응답의 JSON 깊이와 WebVTT 응답 크기를 제한하고, 연결 취소 시 진행 중인 메타데이터 읽기도 중단합니다.
+- Windows 내부망 서버의 스트리밍 유휴 한도와 페어링 토큰 교체 처리를 보강했습니다. VPN 검색은 요청을 받은 포트에서 응답할 수 있습니다.
+- Windows 설치 페이로드 검증, 의존성 캐시와 업데이트 검증을 강화하고, GitHub 빌드와 초안 릴리스 권한을 분리했습니다.
+- 자막 검색과 번역 우선순위 처리의 반복 연산을 줄이고 Blu-ray 음성 임시 버퍼의 상한을 적용했습니다.
+
 ### 0.2.4
 
 - Windows 개발자 모드에서 Radeon 영상·음성인식·번역을 하나씩 또는 함께 켜고 CPU 기준과 비교할 수 있습니다.
@@ -147,6 +154,13 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### Unreleased
+
+- Bound LAN JSON depth and WebVTT response sizes on Android, and cancel active metadata reads when disconnecting.
+- Hardened Windows LAN stream idle handling and pairing-token rotation. VPN discovery can reply from its listening port.
+- Tightened Windows installer payload, dependency cache, and updater validation, and isolated GitHub build permissions from draft publishing.
+- Reduced repeated caption lookup and translation prioritization work, and bounded temporary Blu-ray audio buffering.
 
 ### 0.2.4
 

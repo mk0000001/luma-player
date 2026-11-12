@@ -21,8 +21,56 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
+
+type idleMediaTransport struct{}
+
+func (idleMediaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode:    http.StatusOK,
+		Header:        http.Header{"Content-Type": {matroskaMIME}},
+		Body:          idleMediaBody{ctx: r.Context()},
+		ContentLength: -1,
+		Request:       r,
+	}, nil
+}
+
+type idleMediaBody struct{ ctx context.Context }
+
+func (b idleMediaBody) Read([]byte) (int, error) {
+	timer := time.NewTimer(50 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-b.ctx.Done():
+		return 0, b.ctx.Err()
+	case <-timer.C:
+		return 0, io.EOF
+	}
+}
+
+func (idleMediaBody) Close() error { return nil }
+
+func TestReceiverStopsWaitingForAnIdleMediaBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		bridge := &playbackBridge{peer: &receiverPeer{
+			address: netip.MustParseAddrPort("192.168.7.9:48762"),
+			client:  &http.Client{Transport: idleMediaTransport{}},
+		}}
+		r := httptest.NewRequest(http.MethodGet, "/media", nil)
+		w := newResponseWriter(httptest.NewRecorder(), r)
+		started := time.Now()
+		var aborted any
+		func() {
+			defer func() { aborted = recover() }()
+			bridge.serveBridgeMedia(w, r, sessionMetadata{MIMEType: matroskaMIME})
+		}()
+		if aborted != http.ErrAbortHandler || time.Since(started) != 25*time.Second {
+			t.Fatalf("idle media copy finished after %s with %v, want an abort after 25s", time.Since(started), aborted)
+		}
+	})
+}
 
 func TestReceiverRejectsUnassignedOrNonPrivateLocalBindings(t *testing.T) {
 	for _, local := range []string{"8.8.8.8", "127.0.0.1", "fd00::1", "0.0.0.0", "10.0.0.1:48762"} {

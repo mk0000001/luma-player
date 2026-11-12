@@ -16,6 +16,7 @@ import org.json.JSONObject;
 final class LanSession {
     private static final String DISC_MIME = "video/x-matroska";
     private static final Pattern FILE_MIME = Pattern.compile("(?:audio|video)/[a-z0-9!#$&^_.+-]{1,80}");
+    private static final long MAX_RESTARTABLE_DURATION_MS = 999_990_000;
 
     final String title;
     final String mimeType;
@@ -54,7 +55,7 @@ final class LanSession {
 
     static LanSession parse(String json) throws IOException {
         try {
-            JSONObject session = new JSONObject(json);
+            JSONObject session = LanJson.parseObject(json);
             if (!Integer.valueOf(1).equals(session.get("version"))) {
                 throw new JSONException("Unsupported session version");
             }
@@ -69,12 +70,16 @@ final class LanSession {
             }
             boolean seekable = (Boolean) seekableValue;
             long durationMs = ((Number) durationValue).longValue();
-            if (durationMs < -1 || !supportsSource(sourceKind, mimeType, seekable)) {
+            if (durationMs < -1 || durationMs > Long.MAX_VALUE / 1000 || !supportsSource(sourceKind, mimeType, seekable)) {
                 throw new JSONException("Unsupported session source");
             }
             boolean restartable = session.has("restartable") && booleanField(session, "restartable");
-            if (restartable && (durationMs <= 0 || durationMs >= 999_990_000)) {
+            if (restartable && (durationMs <= 0 || durationMs >= MAX_RESTARTABLE_DURATION_MS)) {
                 throw new JSONException("Invalid restartable timeline");
+            }
+            List<String> profiles = parseProfiles(session);
+            if (!restartable && profiles.size() > 1) {
+                throw new JSONException("Alternate stream profiles require a restartable timeline");
             }
             String videoRange = session.has("videoRange") ? string(session, "videoRange", 8) : "unknown";
             if (!Arrays.asList("sdr", "pq", "hlg", "unknown").contains(videoRange)) {
@@ -82,7 +87,7 @@ final class LanSession {
             }
             return new LanSession(title, mimeType, sourceKind, durationMs, seekable,
                     parseSubtitles(session.getJSONArray("subtitles")), restartable, session.has("profiles"),
-                    parseProfiles(session), parseChapters(session, durationMs), videoRange,
+                    profiles, parseChapters(session, durationMs), videoRange,
                     session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null);
         } catch (JSONException | IllegalArgumentException e) {
             throw new IOException("Invalid LAN session metadata", e);

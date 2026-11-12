@@ -1,4 +1,5 @@
 #include "pcm_buffer.h"
+#include "runtime_environment.h"
 #include "subtitle_job.h"
 #include <QFile>
 #include <QFileInfo>
@@ -6,7 +7,12 @@
 #include <QtEndian>
 #include <algorithm>
 namespace luma {
+namespace {
+constexpr qint64 bytesPerMillisecond=32;
+constexpr qint64 offlineWindowMs=5*60*1000;
+}
 PcmBuffer::PcmBuffer(QString runtime,QObject *parent):QObject(parent),runtime_(std::move(runtime)){
+    reader_.setProcessEnvironment(localRuntimeEnvironment(runtime_));
     reader_.setProcessChannelMode(QProcess::MergedChannels);poll_.setInterval(100);
     connect(&poll_,&QTimer::timeout,this,&PcmBuffer::check);
     connect(&reader_,&QProcess::readyReadStandardOutput,this,[this]{error_+=QString::fromUtf8(reader_.readAllStandardOutput());if(error_.size()>2000)error_=error_.right(2000);});
@@ -18,20 +24,18 @@ void PcmBuffer::cancel(){pending_=false;poll_.stop();if(reader_.state()!=QProces
 void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
     const auto key=r.source+'\n'+r.playlist+'\n'+QString::number(r.audioTrackId)+'\n'+QString::number(r.audioIndex)+'\n'+QString::number(r.readAtFullSpeed);
     const auto cachedBytes=cache_?QFileInfo(cache_->filePath("audio.pcm")).size():0;
-    const auto availableEnd=cacheStart_+cachedBytes/32;
+    const auto availableEnd=cacheStart_+cachedBytes/bytesPerMillisecond;
     constexpr auto liveWindowMs=CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs;
+    const auto windowMs=r.readAtFullSpeed?offlineWindowMs:liveWindowMs;
     const bool covers=key_==key && r.startMs>=cacheStart_ && r.startMs+r.durationMs<=availableEnd;
     const bool growing=key_==key && reader_.state()!=QProcess::NotRunning && r.startMs>=cacheStart_ && r.startMs<=availableEnd+15000
-        && (r.readAtFullSpeed || r.startMs+r.durationMs<=cacheStart_+liveWindowMs);
+        && r.startMs+r.durationMs<=cacheStart_+windowMs;
     if(!covers && !growing){
         cancel();key_=key;cacheStart_=r.startMs;cache_=std::make_unique<QTemporaryDir>(QDir::tempPath()+"/luma-audio-buffer-XXXXXX");
         if(!cache_->isValid()){emit failed("음성 버퍼 임시 폴더를 만들 수 없습니다.");return;}
         auto command=extractionCommand(runtime_,r,cache_->filePath("audio.pcm"));
         const auto length=command.arguments.indexOf("-t");
-        if(length>=0){
-            if(r.readAtFullSpeed){command.arguments.removeAt(length);command.arguments.removeAt(length);}
-            else command.arguments[length+1]=QString::number(liveWindowMs/1000.0,'f',3);
-        }
+        if(length>=0)command.arguments[length+1]=QString::number(windowMs/1000.0,'f',3);
         const auto codec=command.arguments.indexOf("-c:a");command.arguments.insert(codec+2,"s16le");command.arguments.insert(codec+2,"-f");
         if(!r.readAtFullSpeed){const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number(liveWindowMs/1000)}+command.arguments.mid(seek);}
         error_.clear();reader_.setProgram(command.program);reader_.setArguments(command.arguments);reader_.start();
@@ -40,7 +44,8 @@ void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
 }
 void PcmBuffer::check(){
     if(!pending_ || !cache_)return;
-    QFile raw(cache_->filePath("audio.pcm"));const auto offset=(start_-cacheStart_)*32;auto count=duration_*32;
+    QFile raw(cache_->filePath("audio.pcm"));const auto offset=(start_-cacheStart_)*bytesPerMillisecond;
+    const auto count=duration_*bytesPerMillisecond;
     if(offset<0)return;
     if(raw.size()<offset+count){
         if(reader_.state()!=QProcess::NotRunning)return;

@@ -59,9 +59,7 @@ type lanDiscovery struct {
 }
 
 func startDiscovery(address netip.AddrPort, subnet netip.Prefix, name string, unicastOnly bool) (io.Closer, error) {
-	// Limited and directed broadcasts arrive on the wildcard UDP listener.
-	// A separate socket guarantees that the reply comes from the selected IP.
-	binding := &net.UDPAddr{Port: playerPort}
+	binding := &net.UDPAddr{Port: int(address.Port())}
 	if unicastOnly {
 		binding.IP = net.IP(address.Addr().AsSlice())
 	}
@@ -69,10 +67,14 @@ func startDiscovery(address netip.AddrPort, subnet netip.Prefix, name string, un
 	if err != nil {
 		return nil, err
 	}
-	sender, err := net.ListenUDP("udp4", net.UDPAddrFromAddrPort(netip.AddrPortFrom(address.Addr(), 0)))
-	if err != nil {
-		_ = receiver.Close()
-		return nil, err
+	sender := receiver
+	if !unicastOnly {
+		// Broadcasts arrive on the wildcard listener. Bind replies to the selected IP.
+		sender, err = net.ListenUDP("udp4", net.UDPAddrFromAddrPort(netip.AddrPortFrom(address.Addr(), 0)))
+		if err != nil {
+			_ = receiver.Close()
+			return nil, err
+		}
 	}
 	d := &lanDiscovery{receiver: receiver, sender: sender, done: make(chan struct{})}
 	go d.serve(discoveryResponder{
@@ -98,7 +100,9 @@ func (d *lanDiscovery) serve(responder discoveryResponder) {
 
 func (d *lanDiscovery) Close() error {
 	_ = d.receiver.Close()
-	_ = d.sender.Close()
+	if d.sender != d.receiver {
+		_ = d.sender.Close()
+	}
 	<-d.done
 	return nil
 }

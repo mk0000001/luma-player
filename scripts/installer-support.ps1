@@ -8,3 +8,22 @@ function New-LumaInstallerModelEntry {
  $dest=$Destination.Replace('/','\')
  'Source: "'+$Spec.url+'"; DestDir: "{app}\'+$dest+'"; DestName: "'+$Spec.file+'"; ExternalSize: '+$Spec.bytes+'; Hash: "'+$Spec.sha256+'"; Components: '+$Component+'; Flags: external download ignoreversion uninsneveruninstall; Check: NeedsModel('''+$dest+'\'+$Spec.file+''', '''+$Spec.sha256+''')'
 }
+
+function Assert-LumaInstallerPayload {
+ param([string]$Directory,$Manifest)
+ $root=Get-Item -LiteralPath $Directory -Force
+ if(!$root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Installer payload must be a regular directory'}
+ $prefix=$root.FullName.TrimEnd('\','/')+[IO.Path]::DirectorySeparatorChar
+ $files=[Collections.Generic.Dictionary[string,IO.FileInfo]]::new([StringComparer]::OrdinalIgnoreCase)
+ foreach($file in Assert-LumaPackagePublicFiles -Directory $root.FullName -PassThru){
+  $relative=$file.FullName.Substring($prefix.Length).Replace('\','/')
+  $files.Add($relative,$file)
+ }
+ if(!$files.Remove('manifest.json') -or $files.Count -ne @($Manifest.files).Count){throw 'Unexpected payload files'}
+ foreach($entry in $Manifest.files){
+  $relative=([string]$entry.path).Replace('\','/')
+  $file=$null
+  if(!$files.TryGetValue($relative,[ref]$file) -or $file.Length -ne $entry.bytes -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ine $entry.sha256){throw 'Payload manifest mismatch'}
+  $null=$files.Remove($relative)
+ }
+}

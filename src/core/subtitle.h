@@ -38,6 +38,7 @@ public:
 private:
     quint64 generation_ = 0;
     QVector<SubtitleCue> cues_;
+    QVector<qint64> maximumEnds_;
 };
 }
 Q_DECLARE_METATYPE(QVector<luma::SubtitleCue>)

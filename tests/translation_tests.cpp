@@ -22,6 +22,18 @@ QJsonObject requestData(const QJsonObject &payload){
 class TranslationTests : public QObject {
     Q_OBJECT
 private slots:
+    void nearestTranslationWorkRemainsBoundedAndStable(){
+        const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"};
+        QVector<SubtitleCue> cues{{200000,201000,"too far"},past,{0,2000,"expired"},future,past,cached};
+        for(int index=0;index<22;++index)cues.append({12000+1000*index,12900+1000*index,QString::number(index)});
+        const auto cachedKey=translationCueKey(cached);
+        const auto result=nearbyTranslationCues(cues,10000,[&](const QString &key){return key==cachedKey;});
+        QCOMPARE(result.size(),16);
+        QCOMPARE(result[0].text,past.text);
+        QCOMPARE(result[1].text,future.text);
+        QCOMPARE(result[2].text,QString("0"));
+        QCOMPARE(result.last().text,QString("13"));
+    }
     void glossaryOnlyAddsMatchingTermsAndRespectsPromptBudget(){
         const auto glossary=parseTranslationGlossary("青空 → 푸른 하늘\n大雨 → 큰비");
         QVERIFY(glossary);

@@ -11,10 +11,17 @@ $ErrorActionPreference='Stop'
 $payloadRoot=[IO.Path]::GetFullPath($Payload)
 $outRoot=[IO.Path]::GetFullPath($Output)
 if(Test-Path -LiteralPath $outRoot){throw 'Use a new installer output directory; existing outputs are preserved'}
-if((Get-FileHash -LiteralPath ($payloadRoot+'/manifest.json') -Algorithm SHA256).Hash -ine $ManifestSha256){throw 'Immutable payload manifest hash mismatch'}
-$manifest=Get-Content -LiteralPath ($payloadRoot+'/manifest.json') -Raw | ConvertFrom-Json
+$manifestFile=Get-Item -LiteralPath (Join-Path $payloadRoot 'manifest.json') -Force
+if($manifestFile.PSIsContainer -or ($manifestFile.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Installer manifest must be a regular file'}
+$manifestStream=[IO.File]::Open($manifestFile.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+ if((Get-FileHash -InputStream $manifestStream -Algorithm SHA256).Hash -ine $ManifestSha256){throw 'Immutable payload manifest hash mismatch'}
+ $manifestStream.Position=0
+ $reader=[IO.StreamReader]::new($manifestStream,[Text.Encoding]::UTF8,$true)
+ try {$manifest=$reader.ReadToEnd() | ConvertFrom-Json} finally {$reader.Dispose()}
+} finally {$manifestStream.Dispose()}
 $version=[string]$manifest.version
-if($version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$' -or [Diagnostics.FileVersionInfo]::GetVersionInfo($payloadRoot+'/LumaPlayer.exe').ProductVersion -cne $version){throw 'Wrong payload version'}
+if($version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$'){throw 'Wrong payload version'}
 $projectRoot=Split-Path -Parent $PSScriptRoot
 if($version -ceq '0.1.0-alpha.10'){
  $expectedCommit='3535669c816d1d4af34165f514798e5640fd325e'
@@ -29,13 +36,9 @@ if($manifest.sourceCommit -cne $expectedCommit -or $manifest.sourceDirty -or
    ($version -ceq '0.1.0-alpha.10' -and !$manifest.cudaIncluded) -or
    ($version -cne '0.1.0-alpha.10' -and $manifest.packageFlavor -cne $flavor)){throw 'Wrong immutable installer payload source'}
 if($SignUpdateManifest -and !$manifest.cudaIncluded){throw 'The existing automatic-update channel requires the CUDA installer; the core installer is for manual installation.'}
-if(@(Get-ChildItem -LiteralPath $payloadRoot -File -Recurse).Count -ne (@($manifest.files).Count+1)){throw 'Unexpected payload files'}
-Assert-LumaPackagePublicFiles -Directory $payloadRoot
+Assert-LumaInstallerPayload -Directory $payloadRoot -Manifest $manifest
+if([Diagnostics.FileVersionInfo]::GetVersionInfo($payloadRoot+'/LumaPlayer.exe').ProductVersion -cne $version){throw 'Wrong payload version'}
 if(!$manifest.cudaIncluded){Assert-LumaPackageCoreCudaOmitted -Directory $payloadRoot}
-foreach($file in $manifest.files){
- $path=[IO.Path]::GetFullPath((Join-Path $payloadRoot $file.path))
- if(!$path.StartsWith($payloadRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or !(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -ne $file.bytes -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $file.sha256){throw 'Payload manifest mismatch'}
-}
 $a=Get-Content "$PSScriptRoot/../dependencies.lock.json" -Raw | ConvertFrom-Json
 $t=Get-Content "$PSScriptRoot/../translation-dependencies.lock.json" -Raw | ConvertFrom-Json
 $models=@(New-LumaInstallerModelEntry $a.accurateModel 'runtime/models' 'accurate';New-LumaInstallerModelEntry $t.qualityModel 'runtime/translation/models' 'translation')

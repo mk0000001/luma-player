@@ -12,27 +12,39 @@ on:
         type: boolean
         default: true
 permissions:
-  contents: write
+  contents: read
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     timeout-minutes: 60
     env:
       LUMA_RELEASE_TAG: ${{ inputs.tag }}
       LUMA_RELEASE_CUDA: ${{ inputs.include_cuda }}
+    outputs:
+      tag_object: ${{ steps.version.outputs.tag_object }}
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Validate release tag name
+        shell: pwsh
+        run: |
+          if ($env:LUMA_RELEASE_TAG -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z') { throw 'Invalid version tag' }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ inputs.tag }}
-          fetch-depth: 0
-      - name: Verify version matches immutable tag
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+      - name: Verify version matches annotated tag
+        id: version
         shell: pwsh
         run: |
           $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
-          if ($env:LUMA_RELEASE_TAG -ne "v$version") { throw 'Tag does not match VERSION' }
-          if ((git cat-file -t $env:LUMA_RELEASE_TAG) -ne 'tag') { throw 'An annotated version tag is required' }
-          if ((git rev-parse "$($env:LUMA_RELEASE_TAG)^{commit}") -ne (git rev-parse HEAD)) { throw 'Tag commit differs from checked-out source' }
-          if (!(Test-Path -LiteralPath "docs/releases/$version.md")) { throw 'Release notes missing' }
+          $tag = "refs/tags/$env:LUMA_RELEASE_TAG"
+          if ($env:LUMA_RELEASE_TAG -cne "v$version") { throw 'Tag does not match VERSION' }
+          if ((git cat-file -t $tag) -cne 'tag') { throw 'An annotated version tag is required' }
+          if ((git rev-parse "$tag^{commit}") -cne (git rev-parse HEAD)) { throw 'Tag commit differs from checked-out source' }
+          if (!(Test-Path -LiteralPath "docs/releases/$version.md" -PathType Leaf)) { throw 'Release notes missing' }
+          $tagObject = git rev-parse --verify $tag
+          if ($LASTEXITCODE -ne 0 -or $tagObject -cnotmatch '\A[0-9a-f]{40}\z') { throw 'Cannot resolve annotated tag object' }
+          "tag_object=$tagObject" >> $env:GITHUB_OUTPUT
       - name: Fetch verified dependencies and local model
         shell: pwsh
         run: ./scripts/bootstrap-windows.ps1
@@ -61,19 +73,58 @@ jobs:
           ./tests/ai_acceleration_install_tests.ps1
           ./tests/asr_model_installer_tests.ps1
           ./tests/windows_installer_tests.ps1
+          ./tests/asr_encoder_install_tests.ps1
       - name: Package portable player
         shell: pwsh
         run: |
           $cuda = $env:LUMA_RELEASE_CUDA -eq 'true'
-          ./scripts/package-windows.ps1 -Version ((Get-Content -LiteralPath VERSION -Raw).Trim()) -IncludeCuda:$cuda
+          $version = $env:LUMA_RELEASE_TAG.Substring(1)
+          ./scripts/package-windows.ps1 -Version $version -IncludeCuda:$cuda
+          $flavor = if ($cuda) { 'windows-x64-cuda' } else { 'windows-x64' }
+          $archive = "LumaPlayer-$version-$flavor.zip"
+          New-Item -ItemType Directory -Path release-draft | Out-Null
+          Move-Item -LiteralPath "dist/$archive", "dist/$archive.sha256" -Destination release-draft
+          Copy-Item -LiteralPath "docs/releases/$version.md" -Destination release-draft/release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        id: artifact
+        with:
+          name: windows-release-draft-${{ github.run_attempt }}
+          path: release-draft/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+  release:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release-draft
+          merge-multiple: true
       - name: Create reviewable draft without replacing previous versions
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          LUMA_RELEASE_TAG: ${{ inputs.tag }}
+          LUMA_RELEASE_CUDA: ${{ inputs.include_cuda }}
+          LUMA_TAG_OBJECT: ${{ needs.build.outputs.tag_object }}
         run: |
-          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
-          $zip = (Get-ChildItem -LiteralPath dist -Filter '*.zip').FullName
-          $releaseArgs = @('release','create',$env:LUMA_RELEASE_TAG,$zip,"$zip.sha256",'--draft','--verify-tag','--title',"LumaPlayer $version Windows 미리보기 / Windows preview",'--notes-file',"docs/releases/$version.md")
+          if ($env:LUMA_RELEASE_TAG -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z' -or
+              $env:LUMA_TAG_OBJECT -cnotmatch '\A[0-9a-f]{40}\z') { throw 'Invalid release metadata' }
+          $version = $env:LUMA_RELEASE_TAG.Substring(1)
+          $flavor = if ($env:LUMA_RELEASE_CUDA -eq 'true') { 'windows-x64-cuda' } else { 'windows-x64' }
+          $archive = "LumaPlayer-$version-$flavor.zip"
+          $zip = "release-draft/$archive"
+          $checksum = (Get-Content -LiteralPath "$zip.sha256" -Raw).Trim()
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($checksum -cne "$actual  $archive") { throw 'Draft artifact checksum mismatch' }
+          $tagObject = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:LUMA_RELEASE_TAG" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0 -or $tagObject -cne $env:LUMA_TAG_OBJECT) { throw 'Release tag changed after the build' }
+          $releaseArgs = @('release','create',$env:LUMA_RELEASE_TAG,$zip,"$zip.sha256",'--repo',$env:GITHUB_REPOSITORY,'--draft','--verify-tag','--title',"LumaPlayer $version Windows 미리보기 / Windows preview",'--notes-file','release-draft/release-notes.md')
           if ($version.Contains('-')) { $releaseArgs += '--prerelease' }
           & gh @releaseArgs
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed; existing releases are never overwritten.' }

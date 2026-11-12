@@ -32,6 +32,10 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import okio.Buffer;
+import okio.BufferedSource;
+import okio.ForwardingSource;
+import okio.Okio;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -39,10 +43,12 @@ import org.json.JSONObject;
 final class LanClient implements Closeable {
     private static final long MAX_SESSION_BYTES = 64 * 1024;
     private static final long MAX_PAIR_BYTES = 4 * 1024;
+    private static final long MAX_SUBTITLE_BYTES = 4L * 1024 * 1024;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final LanEndpoint endpoint;
     private final OkHttpClient client;
+    private final RequestScope metadataRequests;
     private final ServerTrustManager trust;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -121,28 +127,32 @@ final class LanClient implements Closeable {
                         response.close();
                         throw new IOException("LAN session redirects are disabled");
                     }
+                    if (access == Access.PLAYBACK && response.isSuccessful()) {
+                        return checkedPlaybackResponse(response);
+                    }
                     return response;
                 });
         if (network != null) {
             builder.socketFactory(network.getSocketFactory());
         }
         client = builder.build();
+        metadataRequests = new RequestScope(client);
     }
 
     HttpUrl url(String path) {
         return endpoint.url(path);
     }
 
-    MediaRequests mediaRequests() {
-        return new MediaRequests(client);
+    RequestScope mediaRequests() {
+        return new RequestScope(client);
     }
 
-    static final class MediaRequests implements Call.Factory, Closeable {
+    static final class RequestScope implements Call.Factory, Closeable {
         private final OkHttpClient client;
         private final Set<Call> open = new HashSet<>();
         private boolean closed;
 
-        MediaRequests(OkHttpClient base) {
+        RequestScope(OkHttpClient base) {
             client = base.newBuilder().eventListener(new EventListener() {
                 @Override public void callEnd(Call call) { remove(call); }
                 @Override public void callFailed(Call call, IOException error) { remove(call); }
@@ -176,14 +186,14 @@ final class LanClient implements Closeable {
                 pending = new ArrayList<>(open);
                 open.clear();
             }
-            // The OkHttp dispatcher has already removed synchronous calls that
-            // returned response headers. The body can still hold the optical reader.
+            // Synchronous calls leave the OkHttp dispatcher when headers arrive,
+            // even if their response bodies are still being read.
             pending.forEach(Call::cancel);
         }
     }
 
     Identity fetchIdentity() throws IOException, JSONException {
-        JSONObject result = new JSONObject(readJson(LanEndpoint.IDENTITY_PATH, null, 8, MAX_PAIR_BYTES));
+        JSONObject result = LanJson.parseObject(readJson(LanEndpoint.IDENTITY_PATH, null, 8, MAX_PAIR_BYTES));
         Object name = result.get("name");
         String pin = trust.observedPin;
         if (!(name instanceof String) || !LanPairing.validName((String) name)
@@ -194,7 +204,7 @@ final class LanClient implements Closeable {
     }
 
     JSONObject postPairing(String path, JSONObject body) throws IOException, JSONException {
-        return new JSONObject(readJson(path, body, 5, MAX_PAIR_BYTES));
+        return LanJson.parseObject(readJson(path, body, 5, MAX_PAIR_BYTES));
     }
 
     LanSession fetchSession() throws IOException {
@@ -214,7 +224,7 @@ final class LanClient implements Closeable {
         if (body != null) {
             request.post(RequestBody.create(body.toString(), JSON));
         }
-        Call call = client.newCall(request.build());
+        Call call = metadataRequests.newCall(request.build());
         call.timeout().timeout(timeoutSeconds, TimeUnit.SECONDS);
         try (Response response = call.execute()) {
             if (response.code() != 200) {
@@ -232,9 +242,57 @@ final class LanClient implements Closeable {
         }
     }
 
+    static Response checkedPlaybackResponse(Response response) throws IOException {
+        if (!LanEndpoint.isSubtitlePath(response.request().url().encodedPath())) {
+            return response;
+        }
+        ResponseBody body = response.body();
+        try {
+            return response.newBuilder().body(boundedSubtitle(body)).build();
+        } catch (IOException error) {
+            if (body != null) {
+                body.close();
+            }
+            throw error;
+        }
+    }
+
+    static ResponseBody boundedSubtitle(ResponseBody body) throws IOException {
+        MediaType type = body == null ? null : body.contentType();
+        if (type == null || !"text".equals(type.type()) || !"vtt".equals(type.subtype())) {
+            throw new IOException("LAN subtitle must be WebVTT");
+        }
+        long length = body.contentLength();
+        if (length > MAX_SUBTITLE_BYTES) {
+            throw new IOException("LAN subtitle exceeds its size limit");
+        }
+        BufferedSource bounded = Okio.buffer(new ForwardingSource(body.source()) {
+            private long remaining = MAX_SUBTITLE_BYTES;
+
+            @Override public long read(Buffer sink, long byteCount) throws IOException {
+                if (byteCount == 0) {
+                    return 0;
+                }
+                if (remaining == 0) {
+                    if (super.read(new Buffer(), 1) == -1) {
+                        return -1;
+                    }
+                    throw new IOException("LAN subtitle exceeds its size limit");
+                }
+                long count = super.read(sink, Math.min(byteCount, remaining));
+                if (count > 0) {
+                    remaining -= count;
+                }
+                return count;
+            }
+        });
+        return ResponseBody.create(bounded, type, length);
+    }
+
     @Override
     public void close() {
         closed.set(true);
+        metadataRequests.close();
         client.dispatcher().cancelAll();
         client.connectionPool().evictAll();
     }

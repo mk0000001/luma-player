@@ -1,9 +1,12 @@
 package io.github.mk0000001.lumaplayer;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -14,12 +17,65 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import okhttp3.Call;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
+import okio.Buffer;
 import org.junit.Test;
 
 public final class MediaRequestsTest {
+    @Test
+    public void bothSubtitleRoutesUseTheResponseGateWithoutChangingMedia() throws Exception {
+        for (String path : new String[]{LanEndpoint.subtitlePath("fixture"), LanEndpoint.subtitleAtPath("fixture", 1000)}) {
+            Request request = new Request.Builder().url("https://192.168.0.2:48762" + path).build();
+            try (Response response = responseFor(request, "text/plain")) {
+                assertThrows(IOException.class, () -> LanClient.checkedPlaybackResponse(response));
+            }
+            try (Response response = responseFor(request, "text/vtt");
+                 Response checked = LanClient.checkedPlaybackResponse(response)) {
+                assertEquals("fixture", checked.body().string());
+            }
+        }
+        Request media = new Request.Builder().url("https://192.168.0.2:48762/v1/media").build();
+        try (Response response = responseFor(media, "video/mp4")) {
+            assertTrue(response == LanClient.checkedPlaybackResponse(response));
+        }
+    }
+
+    private static Response responseFor(Request request, String type) {
+        return new Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200)
+                .message("OK").body(ResponseBody.create("fixture", MediaType.get(type))).build();
+    }
+
+    @Test
+    public void subtitleResponsesPreserveTextAndRejectUnsupportedContent() throws Exception {
+        String cue = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSynthetic cue\n";
+        try (ResponseBody input = ResponseBody.create(cue, MediaType.get("text/vtt; charset=utf-8"));
+             ResponseBody subtitle = LanClient.boundedSubtitle(input)) {
+            assertEquals(cue, subtitle.string());
+        }
+        try (ResponseBody input = ResponseBody.create(cue, MediaType.get("text/plain"))) {
+            assertThrows(IOException.class, () -> LanClient.boundedSubtitle(input));
+        }
+    }
+
+    @Test
+    public void subtitleResponsesEnforceTheHostBudgetWithAndWithoutContentLength() throws Exception {
+        int maxBytes = 4 * 1024 * 1024;
+        MediaType vtt = MediaType.get("text/vtt");
+        try (ResponseBody declared = ResponseBody.create(new Buffer(), vtt, maxBytes + 1L)) {
+            assertThrows(IOException.class, () -> LanClient.boundedSubtitle(declared));
+        }
+        try (ResponseBody chunked = ResponseBody.create(new Buffer().write(new byte[maxBytes + 1]), vtt, -1);
+             ResponseBody subtitle = LanClient.boundedSubtitle(chunked)) {
+            subtitle.source().skip(maxBytes);
+            assertThrows(IOException.class, () -> subtitle.source().exhausted());
+        }
+    }
+
     @Test
     public void replacingMediaCancelsTheBodyAfterResponseHeadersHaveArrived() throws Exception {
         CountDownLatch releaseBody = new CountDownLatch(1);
@@ -48,7 +104,7 @@ public final class MediaRequestsTest {
             serverThread.start();
             Request request = new Request.Builder().url("http://127.0.0.1:" + server.getLocalPort() + "/media").build();
             Call sessionCall = client.newCall(request);
-            try (LanClient.MediaRequests media = new LanClient.MediaRequests(client)) {
+            try (LanClient.RequestScope media = new LanClient.RequestScope(client)) {
                 Call old = media.newCall(request);
                 try (Response response = old.execute()) {
                     assertTrue(response.isSuccessful());

@@ -53,8 +53,12 @@ final class RemotePlaybackControls {
     private final ListView chapterList;
     private LanSession session;
     private long appliedRevision = -1;
+    private long displayedPositionSeconds = -1;
+    private String durationLabel;
+    private boolean foreground;
     private boolean scrubbing, controlsVisible, portraitChapters;
     private int selectedChapter = -1;
+    private int displayedSkipSeconds;
     private String profile;
     private String hdr;
     private int skipSeconds;
@@ -127,6 +131,8 @@ final class RemotePlaybackControls {
         appliedRevision = -1;
         restorePreferences();
         scrubbing = false;
+        displayedPositionSeconds = -1;
+        durationLabel = session != null && session.durationMs > 0 ? timeLabel(session.durationMs) : null;
         if (session != null) {
             readRemoteOptions(session.options);
         } else {
@@ -186,6 +192,11 @@ final class RemotePlaybackControls {
 
     void setVisible(boolean visible) {
         controlsVisible = visible && session != null;
+        refresh();
+    }
+
+    void setForeground(boolean foreground) {
+        this.foreground = foreground;
         refresh();
     }
 
@@ -256,7 +267,7 @@ final class RemotePlaybackControls {
     private void refresh() {
         handler.removeCallbacks(tick);
         boolean chaptersVisible = chapterPanel.getVisibility() == View.VISIBLE;
-        if (session == null || (!controlsVisible && !chaptersVisible)) {
+        if (!foreground || session == null || (!controlsVisible && !chaptersVisible)) {
             return;
         }
         long current = actions.positionMs();
@@ -283,8 +294,11 @@ final class RemotePlaybackControls {
             next.setVisibility(hasChapters ? View.VISIBLE : View.GONE);
             previous.setEnabled(hasChapters && current > 0);
             next.setEnabled(hasChapters && session.chaptersMs.get(session.chaptersMs.size() - 1) > current + 500);
-            back.setText(activity.getString(R.string.skip_back_format, skipSeconds));
-            forward.setText(activity.getString(R.string.skip_forward_format, skipSeconds));
+            if (displayedSkipSeconds != skipSeconds) {
+                back.setText(activity.getString(R.string.skip_back_format, skipSeconds));
+                forward.setText(activity.getString(R.string.skip_forward_format, skipSeconds));
+                displayedSkipSeconds = skipSeconds;
+            }
             if (!scrubbing) {
                 seek.setProgress(timeBarValue(current));
                 seek.setSecondaryProgress(timeBarValue(actions.bufferedPositionMs()));
@@ -299,8 +313,12 @@ final class RemotePlaybackControls {
     }
 
     private void showTime(long time) {
-        position.setText(session.durationMs > 0
-                ? timeLabel(time) + " / " + timeLabel(session.durationMs) : timeLabel(time));
+        long seconds = Math.max(0, time / 1000);
+        if (displayedPositionSeconds != seconds) {
+            displayedPositionSeconds = seconds;
+            String current = timeLabel(time);
+            position.setText(durationLabel == null ? current : current + " / " + durationLabel);
+        }
     }
 
     private static String timeLabel(long timeMs) {

@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	ffmpegStartupTimeout    = 30 * time.Second
-	ffmpegOutputIdleTimeout = 25 * time.Second
-	maxMatroskaHeader       = 1024 * 1024
+	ffmpegStartupTimeout = 30 * time.Second
+	maxMatroskaHeader    = 1024 * 1024
 )
 
 type remuxOutcome int
@@ -65,6 +64,8 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 		return remuxFailed
 	}
 	defer stdout.Close()
+	stopPipeClose := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	defer stopPipeClose()
 	var diagnostics ffmpegDiagnostics
 	command.Stderr = &diagnostics
 	if command.Start() != nil {
@@ -91,30 +92,17 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 		err = w.controller.Flush()
 	}
 	if err == nil {
-		_, err = io.Copy(w, &ffmpegOutputReader{source: stdout, cancel: cancel})
+		_, err = io.Copy(w, &idleMediaReader{source: stdout, onIdle: cancel})
 	}
 	if err != nil {
 		cancel()
 	}
 	exitTimer := time.AfterFunc(3*time.Second, cancel)
 	defer exitTimer.Stop()
-	if waitErr := command.Wait(); waitErr != nil && err == nil && parent.Err() == nil {
+	if waitErr := command.Wait(); (waitErr != nil || err != nil) && parent.Err() == nil {
 		panic(http.ErrAbortHandler)
 	}
 	return remuxStreamed
-}
-
-// Bound a blocked optical read or encoder stall even after the first cluster.
-// A client that reads slowly is governed separately by the HTTP write deadline.
-type ffmpegOutputReader struct {
-	source io.Reader
-	cancel context.CancelFunc
-}
-
-func (r *ffmpegOutputReader) Read(p []byte) (int, error) {
-	timer := time.AfterFunc(ffmpegOutputIdleTimeout, r.cancel)
-	defer timer.Stop()
-	return r.source.Read(p)
 }
 
 type ffmpegDiagnostics struct {

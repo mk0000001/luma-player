@@ -38,6 +38,7 @@ final class LanDiscovery implements Closeable {
     private static final long PROBE_INTERVAL_MS = 600;
     private static final int VPN_BATCH_SIZE = 16;
     private static final long VPN_BATCH_INTERVAL_MS = 50;
+    private static final int MIN_DYNAMIC_PORT = 32768;
     private final ConcurrentLinkedQueue<DatagramSocket> sockets = new ConcurrentLinkedQueue<>();
     private volatile boolean closed;
 
@@ -169,19 +170,18 @@ final class LanDiscovery implements Closeable {
             }
 
             long deadline = SystemClock.elapsedRealtime() + SCAN_MS;
-            byte[] buffer = new byte[MAX_REPLY + 1];
+            DatagramPacket packet = newReplyPacket();
             while (!closed && !probes.isEmpty() && found.size() < MAX_PCS
                     && SystemClock.elapsedRealtime() < deadline) {
                 Iterator<Probe> iterator = probes.iterator();
                 while (!closed && iterator.hasNext() && found.size() < MAX_PCS
                         && SystemClock.elapsedRealtime() < deadline) {
                     Probe probe = iterator.next();
-                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     try {
                         probe.sendIfDue();
+                        packet.setLength(packet.getData().length);
                         probe.socket.receive(packet);
-                        Pc pc = parseReply(Arrays.copyOf(buffer, packet.getLength()), nonce, packet.getAddress(),
-                                probe.local, probe.prefix);
+                        Pc pc = parseReply(packet, nonce, probe.local, probe.prefix);
                         if (pc != null) {
                             found.putIfAbsent(pc.endpoint.address(), new Pc(pc.endpoint, pc.name, probe.network));
                         }
@@ -240,8 +240,7 @@ final class LanDiscovery implements Closeable {
         String nonce = nonce();
         byte[] request = discoveryRequest(nonce);
         Set<InetAddress> queried = new HashSet<>();
-        byte[] buffer = new byte[MAX_REPLY + 1];
-        DatagramPacket response = new DatagramPacket(buffer, buffer.length);
+        DatagramPacket response = newReplyPacket();
         long deadline = SystemClock.elapsedRealtime() + SCAN_MS;
         long nextSend = 0;
         int nextHost = 0;
@@ -257,10 +256,9 @@ final class LanDiscovery implements Closeable {
                 nextSend = now + VPN_BATCH_INTERVAL_MS;
             }
             try {
-                response.setLength(buffer.length);
+                response.setLength(response.getData().length);
                 socket.receive(response);
-                Pc pc = parseVpnReply(Arrays.copyOf(buffer, response.getLength()), nonce,
-                        response.getAddress(), response.getPort(), queried);
+                Pc pc = parseVpnReply(response, nonce, queried);
                 if (pc != null) {
                     found.putIfAbsent(pc.endpoint.address(), new Pc(pc.endpoint, pc.name, network));
                 }
@@ -305,34 +303,44 @@ final class LanDiscovery implements Closeable {
         }
     }
 
-    static Pc parseReply(byte[] reply, String nonce, InetAddress sender, InetAddress local, int prefix) {
-        if (prefix > 30 || !samePrivateSubnet(sender, local, prefix)) {
-            return null;
-        }
-        return parseReply(reply, nonce, sender);
+    private static DatagramPacket newReplyPacket() {
+        byte[] buffer = new byte[MAX_REPLY + 1];
+        return new DatagramPacket(buffer, buffer.length);
     }
 
-    static Pc parseVpnReply(byte[] reply, String nonce, InetAddress sender, int port, Set<InetAddress> queried) {
-        if (port != LanEndpoint.DEFAULT_PORT || !queried.contains(sender) || !LanEndpoint.isPrivate(sender)) {
+    static Pc parseReply(DatagramPacket reply, String nonce, InetAddress local, int prefix) {
+        if (prefix > 30 || !samePrivateSubnet(reply.getAddress(), local, prefix)) {
             return null;
         }
-        return parseReply(reply, nonce, sender);
+        return parseReply(reply, nonce);
     }
 
-    private static Pc parseReply(byte[] reply, String nonce, InetAddress sender) {
-        if (reply.length > MAX_REPLY) {
+    static Pc parseVpnReply(DatagramPacket reply, String nonce, Set<InetAddress> queried) {
+        int port = reply.getPort();
+        InetAddress sender = reply.getAddress();
+        // Older hosts send from a dynamically bound socket. Cover the default Windows and Linux UDP ranges.
+        if ((port != LanEndpoint.DEFAULT_PORT && port < MIN_DYNAMIC_PORT)
+                || !LanEndpoint.isPrivate(sender) || !queried.contains(sender)) {
+            return null;
+        }
+        return parseReply(reply, nonce);
+    }
+
+    private static Pc parseReply(DatagramPacket reply, String nonce) {
+        if (reply.getLength() > MAX_REPLY) {
             return null;
         }
         try {
-            String utf8 = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(reply)).toString();
-            JSONObject message = new JSONObject(utf8);
+            ByteBuffer bytes = ByteBuffer.wrap(reply.getData(), reply.getOffset(), reply.getLength());
+            String utf8 = StandardCharsets.UTF_8.newDecoder().decode(bytes).toString();
+            JSONObject message = LanJson.parseObject(utf8);
             Object name = message.get("name");
             if (!"luma-discovery-1".equals(message.get("protocol")) || !nonce.equals(message.get("nonce"))
                     || !Integer.valueOf(LanEndpoint.DEFAULT_PORT).equals(message.get("port"))
                     || !(name instanceof String) || !LanPairing.validName((String) name)) {
                 return null;
             }
-            return new Pc(LanEndpoint.parse(sender.getHostAddress()), (String) name);
+            return new Pc(LanEndpoint.parse(reply.getAddress().getHostAddress()), (String) name);
         } catch (JSONException | CharacterCodingException | IllegalArgumentException e) {
             return null;
         }

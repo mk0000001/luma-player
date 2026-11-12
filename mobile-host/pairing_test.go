@@ -90,6 +90,34 @@ func TestPairingCapsPendingAttemptsPerPeer(t *testing.T) {
 	}
 }
 
+func TestPairingDiscardsAnApprovalWhenTheDeviceLogsInAgain(t *testing.T) {
+	peer := netip.MustParseAddr("192.168.22.4")
+	nonce := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x8f}, 32))
+	p := newPlayer("PC", "test pin", make(map[string]rememberedDevice),
+		func(map[string]rememberedDevice) error { return nil }, func(playerStatus) {})
+	started, status := p.beginPairing(peer, pairStartRequest{
+		DeviceID: testPlayerDeviceID, Device: "Phone", Remember: true,
+		Commitment: pairCommitment(p.pin, testPlayerDeviceID, nonce),
+	})
+	if status != http.StatusOK {
+		t.Fatalf("could not start pairing: %d", status)
+	}
+	if status := p.revealPairing(peer, pairRevealRequest{ID: started.ID, ClientNonce: nonce}); status != http.StatusOK {
+		t.Fatalf("could not reveal pairing: %d", status)
+	}
+	if _, err := p.decidePairing(started.ID, "remember"); err != nil {
+		t.Fatal(err)
+	}
+	approved := p.pollPairing(peer, started.ID)
+	token, status := p.login(peer, testPlayerDeviceID, approved.RememberToken)
+	if status != http.StatusOK || token == "" || token == approved.Token {
+		t.Fatal("reconnecting did not rotate the access token")
+	}
+	if result := p.pollPairing(peer, started.ID); result.State != "denied" || result.Token != "" || result.RememberToken != "" {
+		t.Fatal("superseded approval still returned credentials")
+	}
+}
+
 func TestDeviceLivenessExpiresUsedTokensButAllowsInitialApprovalWindow(t *testing.T) {
 	p := newPlayer("PC", "", nil, nil, nil)
 	peer := netip.MustParseAddr("192.168.22.4")

@@ -197,3 +197,20 @@ func TestDiscCompatibleAudioReopensAfterDisconnect(t *testing.T) {
 		t.Fatal("new connection did not open a new worker")
 	}
 }
+
+type fullStreamReader struct{}
+
+func (fullStreamReader) Read(data []byte) (int, error) {
+	return len(data), nil
+}
+
+func BenchmarkStreamingRead(b *testing.B) {
+	reader := &idleMediaReader{source: fullStreamReader{}, onIdle: func() {}}
+	buffer := make([]byte, 32*1024)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := reader.Read(buffer); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

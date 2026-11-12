@@ -13,6 +13,8 @@ private slots:
         RecognitionRequest r; r.source=QString::fromUtf8("C:/영화/日本語 & $film.mkv");r.startMs=1250;r.durationMs=5000;
         const auto c=extractionCommand("runtime",r,"out file.wav");
         const int input=c.arguments.indexOf("-i");QVERIFY(input>=0);QCOMPARE(c.arguments[input+1],r.source);
+        QVERIFY(c.arguments.contains("-nostdin"));
+        QCOMPARE(c.arguments.value(c.arguments.indexOf("-protocol_whitelist")+1),QString("file,crypto"));
         QCOMPARE(c.arguments[c.arguments.indexOf("-ss")+1],QString("1.250"));QCOMPARE(c.arguments.last(),QString("out file.wav"));
         const auto w=recognitionCommand("runtime","model with spaces.bin","ja","wave.wav","out");
         QCOMPARE(w.arguments[w.arguments.indexOf("-m")+1],QString("model with spaces.bin"));QVERIFY(!w.arguments.contains("--translate"));
@@ -21,6 +23,16 @@ private slots:
         RecognitionRequest r;r.source="E:/";r.disc=true;r.title=2;r.playlist="00003";
         const auto c=extractionCommand("runtime",r,"audio.wav");
         QVERIFY(c.arguments.contains("bluray:E:/"));QCOMPARE(c.arguments[c.arguments.indexOf("-playlist")+1],QString("3"));QCOMPARE(c.arguments.last(),QString("audio.wav"));
+        QCOMPARE(c.arguments.value(c.arguments.indexOf("-protocol_whitelist")+1),QString("bluray,file"));
+    }
+    void remoteAudioHasOnlyNetworkProtocols(){
+        RecognitionRequest request;
+        request.source="https://example.invalid/stream.m3u8";
+        const auto command=extractionCommand("runtime",request,"audio.wav");
+        const auto protocols=command.arguments.value(command.arguments.indexOf("-protocol_whitelist")+1).split(',');
+        QVERIFY(protocols.contains("https") && protocols.contains("tls"));
+        QVERIFY(!protocols.contains("file") && !protocols.contains("concat") && !protocols.contains("pipe"));
+        QCOMPARE(command.arguments.value(command.arguments.indexOf("-tls_verify")+1),QString("1"));
     }
     void captionsFollowSelectedAudio() {
         RecognitionRequest r;r.source="movie.mkv";r.audioIndex=1;r.audioTrackId=4353;

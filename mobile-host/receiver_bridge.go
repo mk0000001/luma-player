@@ -247,7 +247,9 @@ func (b *playbackBridge) serveBridgeMedia(w *responseWriter, r *http.Request, me
 			span = headers[0]
 		}
 	}
-	response, err := b.peer.request(r.Context(), r.Method, "/v1/media", b.token, span, nil)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	response, err := b.peer.request(ctx, r.Method, "/v1/media", b.token, span, nil)
 	if err != nil {
 		http.Error(w, "remote playback unavailable", http.StatusBadGateway)
 		return
@@ -283,7 +285,7 @@ func (b *playbackBridge) serveBridgeMedia(w *responseWriter, r *http.Request, me
 	w.WriteHeader(expected)
 	w.flushWrites = !metadata.Seekable
 	if r.Method == http.MethodGet && w.controller.Flush() == nil {
-		if _, err := io.Copy(w, response.Body); err != nil && r.Context().Err() == nil {
+		if _, err := io.Copy(w, &idleMediaReader{source: response.Body, onIdle: cancel}); err != nil {
 			panic(http.ErrAbortHandler)
 		}
 	}

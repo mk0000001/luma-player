@@ -7,6 +7,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -63,22 +64,23 @@ public final class LanProtocolTest {
     @Test
     public void discoveryRequiresTheCurrentNonceAndLocalSubnet() throws Exception {
         String nonce = "00112233445566778899aabbccddeeff";
-        String reply = "{\"protocol\":\"luma-discovery-1\",\"nonce\":\"" + nonce
+        String json = "{\"protocol\":\"luma-discovery-1\",\"nonce\":\"" + nonce
                 + "\",\"port\":48762,\"name\":\"편집 PC\"}";
         InetAddress local = InetAddress.getByName("192.168.5.11");
         InetAddress sender = InetAddress.getByName("192.168.5.25");
-        LanDiscovery.Pc pc = LanDiscovery.parseReply(reply.getBytes(StandardCharsets.UTF_8), nonce, sender, local, 24);
+        DatagramPacket reply = discoveryPacket(json, sender, 48762);
+        LanDiscovery.Pc pc = LanDiscovery.parseReply(reply, nonce, local, 24);
         assertEquals("192.168.5.25:48762", pc.endpoint.address());
         assertEquals("편집 PC", pc.name);
-        assertNull(LanDiscovery.parseReply(reply.getBytes(StandardCharsets.UTF_8), "different", sender, local, 24));
-        assertNull(LanDiscovery.parseReply(reply.getBytes(StandardCharsets.UTF_8), nonce,
-                InetAddress.getByName("192.168.6.25"), local, 24));
-        assertNull(LanDiscovery.parseReply(reply.getBytes(StandardCharsets.UTF_8), nonce,
-                InetAddress.getByName("192.0.2.3"), local, 1));
-        assertNull(LanDiscovery.parseReply(reply.replace("48762", "80").getBytes(StandardCharsets.UTF_8),
-                nonce, sender, local, 24));
-        assertNull(LanDiscovery.parseReply(reply.replace("편집 PC", "\\u0009bad").getBytes(StandardCharsets.UTF_8),
-                nonce, sender, local, 24));
+        assertNull(LanDiscovery.parseReply(reply, "different", local, 24));
+        reply.setAddress(InetAddress.getByName("192.168.6.25"));
+        assertNull(LanDiscovery.parseReply(reply, nonce, local, 24));
+        reply.setAddress(InetAddress.getByName("192.0.2.3"));
+        assertNull(LanDiscovery.parseReply(reply, nonce, local, 1));
+        assertNull(LanDiscovery.parseReply(discoveryPacket(json.replace("48762", "80"), sender, 48762),
+                nonce, local, 24));
+        assertNull(LanDiscovery.parseReply(discoveryPacket(json.replace("편집 PC", "\\u0009bad"), sender, 48762),
+                nonce, local, 24));
     }
 
     @Test
@@ -109,17 +111,48 @@ public final class LanProtocolTest {
     }
 
     @Test
-    public void vpnDiscoveryRepliesMustComeFromTheRequestedHostAndPort() throws Exception {
+    public void vpnDiscoveryAcceptsTheRequestedHostOnFixedAndDynamicReplyPorts() throws Exception {
+        String nonce = "00112233445566778899aabbccddeeff";
+        String json = "{\"protocol\":\"luma-discovery-1\",\"nonce\":\"" + nonce
+                + "\",\"port\":48762,\"name\":\"Tunnel PC\"}";
+        InetAddress target = InetAddress.getByName("10.8.3.12");
+        Set<InetAddress> queried = Set.of(target);
+        DatagramPacket reply = discoveryPacket(json, target, 48762);
+        assertEquals("10.8.3.12:48762",
+                LanDiscovery.parseVpnReply(reply, nonce, queried).endpoint.address());
+        reply.setPort(53142);
+        assertEquals("10.8.3.12:48762",
+                LanDiscovery.parseVpnReply(reply, nonce, queried).endpoint.address());
+        reply.setPort(39612);
+        assertEquals("10.8.3.12:48762",
+                LanDiscovery.parseVpnReply(reply, nonce, queried).endpoint.address());
+        assertNull(LanDiscovery.parseVpnReply(reply, "old", queried));
+        reply.setAddress(InetAddress.getByName("10.8.3.13"));
+        assertNull(LanDiscovery.parseVpnReply(reply, nonce, queried));
+        reply.setAddress(target);
+        reply.setPort(80);
+        assertNull(LanDiscovery.parseVpnReply(reply, nonce, queried));
+        assertNull(LanDiscovery.parseVpnReply(discoveryPacket(json.replace("48762", "53142"), target, 53142),
+                nonce, queried));
+    }
+
+    @Test
+    public void discoveryParsesOnlyTheReceivedDatagramBytes() throws Exception {
         String nonce = "00112233445566778899aabbccddeeff";
         byte[] reply = ("{\"protocol\":\"luma-discovery-1\",\"nonce\":\"" + nonce
                 + "\",\"port\":48762,\"name\":\"Tunnel PC\"}").getBytes(StandardCharsets.UTF_8);
         InetAddress target = InetAddress.getByName("10.8.3.12");
-        Set<InetAddress> queried = Set.of(target);
-        assertEquals("10.8.3.12:48762",
-                LanDiscovery.parseVpnReply(reply, nonce, target, 48762, queried).endpoint.address());
-        assertNull(LanDiscovery.parseVpnReply(reply, nonce, target, 80, queried));
-        assertNull(LanDiscovery.parseVpnReply(reply, "old", target, 48762, queried));
-        assertNull(LanDiscovery.parseVpnReply(reply, nonce, InetAddress.getByName("10.8.3.13"), 48762, queried));
+        byte[] buffer = new byte[1026];
+        System.arraycopy(reply, 0, buffer, 1, reply.length);
+        DatagramPacket packet = new DatagramPacket(buffer, 1, reply.length, target, 48762);
+        assertEquals("Tunnel PC", LanDiscovery.parseVpnReply(packet, nonce, Set.of(target)).name);
+        packet.setLength(1025);
+        assertNull(LanDiscovery.parseVpnReply(packet, nonce, Set.of(target)));
+    }
+
+    private static DatagramPacket discoveryPacket(String json, InetAddress sender, int port) {
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        return new DatagramPacket(bytes, bytes.length, sender, port);
     }
 
     @Test
@@ -157,5 +190,45 @@ public final class LanProtocolTest {
         assertThrows(IOException.class, () -> LanSession.parse(disc.replace("false", "true")));
         assertThrows(IOException.class, () -> LanSession.parse(disc.replace("video/x-matroska",
                 "application/vnd.apple.mpegurl")));
+    }
+
+    @Test
+    public void sessionMetadataAllowsShallowExtensionsAndBracketsInText() throws IOException {
+        String session = """
+                {"version":1,"title":"Synthetic [cut] {\\"A\\"}","mimeType":"video/mp4","sourceKind":"file",
+                "durationMs":5000,"seekable":true,"subtitles":[],"future":[{"enabled":true}]}
+                """;
+        assertEquals("Synthetic [cut] {\"A\"}", LanSession.parse(session).title);
+    }
+
+    @Test
+    public void sessionMetadataRejectsExtensionsBeyondTheNestingBudget() {
+        String nested = "[".repeat(16) + "0" + "]".repeat(16);
+        String session = """
+                {"version":1,"title":"Synthetic","mimeType":"video/mp4","sourceKind":"file",
+                "durationMs":5000,"seekable":true,"subtitles":[],"future":%s}
+                """.formatted(nested);
+        assertThrows(IOException.class, () -> LanSession.parse(session));
+    }
+
+    @Test
+    public void alternateProfilesRequireAnAddressableRestartableTimeline() throws IOException {
+        String session = """
+                {"version":1,"title":"Synthetic","mimeType":"video/mp4","sourceKind":"file",
+                "durationMs":5000,"seekable":true,"subtitles":[],"profiles":["original","720p"],"restartable":true}
+                """;
+        assertEquals(2, LanSession.parse(session).profiles.size());
+        assertThrows(IOException.class, () -> LanSession.parse(session.replace("\"restartable\":true",
+                "\"restartable\":false")));
+    }
+
+    @Test
+    public void directFileDurationMustFitThePlayerTimeUnit() throws IOException {
+        String session = """
+                {"version":1,"title":"Synthetic","mimeType":"video/mp4","sourceKind":"file",
+                "durationMs":864000000,"seekable":true,"subtitles":[]}
+                """;
+        assertEquals(864_000_000L, LanSession.parse(session).durationMs);
+        assertThrows(IOException.class, () -> LanSession.parse(session.replace("864000000", "9223372036854776")));
     }
 }

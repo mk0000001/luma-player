@@ -1,7 +1,9 @@
 #include "subtitle.h"
 #include <QRegularExpression>
+#include <QStringView>
 #include <QTextBoundaryFinder>
 #include <algorithm>
+#include <utility>
 namespace luma {
 namespace {
 bool validTokenTimings(const SubtitleCue &cue){
@@ -13,6 +15,22 @@ bool validTokenTimings(const SubtitleCue &cue){
         if(next<cue.text.size() && cue.text[next].isLowSurrogate())return false;
     }
     return next==cue.text.size();
+}
+
+int graphemeUnits(QStringView text){
+    for(qsizetype index=0;index<text.size();++index){
+        const auto first=text[index];
+        char32_t point=first.unicode();
+        if(first.isHighSurrogate() && index+1<text.size() && text[index+1].isLowSurrogate()){
+            point=QChar::surrogateToUcs4(first,text[index+1]);
+            ++index;
+        }
+        if((point>=0x1100 && point<=0x11ff) || (point>=0x2e80 && point<=0xa4cf) ||
+           (point>=0xac00 && point<=0xd7af) || (point>=0xf900 && point<=0xfaff) ||
+           (point>=0xff01 && point<=0xff60) || (point>=0x1f000 && point<=0x1ffff) ||
+           (point>=0x20000 && point<=0x3ffff))return 2;
+    }
+    return 1;
 }
 }
 std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs){
@@ -67,9 +85,9 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
         const bool timed=validTokenTimings(cue);
         QVector<Grapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
         while((end=finder.toNextBoundary())>=0){
-            const auto text=cue.text.mid(start,end-start);int units=1;
-            for(const auto point:text.toUcs4())if((point>=0x1100 && point<=0x11ff) || (point>=0x2e80 && point<=0xa4cf) || (point>=0xac00 && point<=0xd7af) || (point>=0xf900 && point<=0xfaff) || (point>=0xff01 && point<=0xff60) || (point>=0x1f000 && point<=0x1ffff) || (point>=0x20000 && point<=0x3ffff)){units=2;break;}
-            const auto last=text.back();characters.append({start,end,units,last.isSpace(),QString::fromUtf8("。！？!?;；.\n").contains(last)});start=end;
+            static const QString sentenceEnds=QStringLiteral("。！？!?;；.\n");
+            const auto text=QStringView(cue.text).sliced(start,end-start);
+            const auto last=text.back();characters.append({start,end,graphemeUnits(text),last.isSpace(),sentenceEnds.contains(last)});start=end;
         }
         if(characters.isEmpty())continue;
         QVector<QPair<qsizetype,qsizetype>> ranges;qsizetype first=0;
@@ -131,15 +149,24 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
     }
     return result;
 }
-quint64 SubtitleTimeline::reset() { cues_.clear(); return ++generation_; }
+quint64 SubtitleTimeline::reset() { cues_.clear(); maximumEnds_.clear(); return ++generation_; }
 bool SubtitleTimeline::attach(quint64 generation, QVector<SubtitleCue> cues) {
     if (generation!=generation_) return false;
-    std::stable_sort(cues.begin(),cues.end(),[](const auto &a,const auto &b){ return a.startMs<b.startMs; });
-    cues_=std::move(cues); return true;
+    const auto byStart=[](const SubtitleCue &a,const SubtitleCue &b){return a.startMs<b.startMs;};
+    if(!std::is_sorted(cues.cbegin(),cues.cend(),byStart))std::stable_sort(cues.begin(),cues.end(),byStart);
+    cues_=std::move(cues);
+    maximumEnds_.clear();
+    maximumEnds_.reserve(cues_.size());
+    for(const auto &cue:std::as_const(cues_))
+        maximumEnds_.append(maximumEnds_.isEmpty()?cue.endMs:std::max(maximumEnds_.back(),cue.endMs));
+    return true;
 }
 QString SubtitleTimeline::at(qint64 positionMs) const {
     QStringList active;
-    for (const auto &cue : cues_) { if (cue.startMs>positionMs) break; if (positionMs<cue.endMs) active.append(cue.text); }
+    const auto first=std::upper_bound(maximumEnds_.cbegin(),maximumEnds_.cend(),positionMs)-maximumEnds_.cbegin();
+    for(auto index=first;index<cues_.size() && cues_[index].startMs<=positionMs;++index){
+        if(positionMs<cues_[index].endMs)active.append(cues_[index].text);
+    }
     return active.join('\n');
 }
 }

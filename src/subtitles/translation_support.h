@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QProcessEnvironment>
 #include <QStringList>
+#include <functional>
 #include <optional>
 #include "ai_backend.h"
 #include "core/subtitle.h"
@@ -46,6 +47,8 @@ QString parseTranslationResponse(const QByteArray &response,QString *error=nullp
 QJsonObject translationPayload(const QString &source,TranslationProfile profile=TranslationProfile::LegacyQwenJson);
 // Timed keys distinguish identical phrases in different scenes.
 QString translationCueKey(const SubtitleCue &cue);
+QVector<SubtitleCue> nearbyTranslationCues(const QVector<SubtitleCue> &cues,qint64 positionMs,
+    const std::function<bool(const QString &)> &skip);
 // The target is immutable. Context is selected from raw original cues, never display pages.
 // UTF-8 bytes provide a conservative token ceiling; an empty object means the target cannot fit.
 QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile=TranslationProfile::LegacyQwenJson,int promptByteBudget=6144,const TranslationGlossary &glossary={});

@@ -10,7 +10,40 @@
 #include <QSet>
 #include <algorithm>
 #include <limits>
+#include <utility>
 namespace luma {
+QVector<SubtitleCue> nearbyTranslationCues(const QVector<SubtitleCue> &cues,qint64 positionMs,
+    const std::function<bool(const QString &)> &skip){
+    constexpr qsizetype limit=16;
+    constexpr qint64 historyMs=5000,lookAheadMs=90000;
+    const auto position=std::max<qint64>(positionMs,0);
+    const auto latest=position+std::min(lookAheadMs,std::numeric_limits<qint64>::max()-position);
+    const auto distance=[position](const SubtitleCue &cue){
+        return cue.startMs>=position?quint64(cue.startMs)-quint64(position):quint64(position)-quint64(cue.startMs);
+    };
+    struct Candidate {const SubtitleCue *cue;QString key;};
+    const auto nearer=[&distance](const Candidate &a,const Candidate &b){return distance(*a.cue)<distance(*b.cue);};
+    QVector<Candidate> nearest;
+    nearest.reserve(limit);
+    QSet<QString> queued;
+    for(const auto &cue:cues){
+        if(cue.endMs<position-historyMs || cue.startMs>latest || cue.text.isEmpty())continue;
+        Candidate candidate{&cue,{}};
+        if(nearest.size()==limit && !nearer(candidate,nearest.back()))continue;
+        candidate.key=translationCueKey(cue);
+        if(queued.contains(candidate.key) || skip(candidate.key))continue;
+        if(nearest.size()==limit){queued.remove(nearest.back().key);nearest.removeLast();}
+        queued.insert(candidate.key);
+        // The upper bound preserves the original order of equal-distance cues.
+        const auto at=std::upper_bound(nearest.begin(),nearest.end(),candidate,nearer);
+        nearest.insert(at,std::move(candidate));
+    }
+    QVector<SubtitleCue> result;
+    result.reserve(nearest.size());
+    for(const auto &candidate:std::as_const(nearest))result.append(*candidate.cue);
+    return result;
+}
+
 TranslationQueue::TranslationQueue(int pendingLimit,int cacheLimit):pendingLimit_(std::max(1,pendingLimit)),cacheLimit_(std::max(1,cacheLimit)){}
 void TranslationQueue::enqueue(const QStringList &sources){
     QStringList prioritized;QSet<QString> seen;

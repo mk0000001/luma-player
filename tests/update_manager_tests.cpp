@@ -96,6 +96,7 @@ private slots:
     void picksHighestNumericBeta();
     void stableChannelSkipsPrereleases();
     void ignoresUnpublishedAndUnsignedReleases();
+    void ignoresReleasesWithAmbiguousAssetMetadata();
     void requiresStrictlyNewerSemver();
     void verifiesExactSignedBytes();
     void rejectsSignedWrongScopeAndDowngrades();
@@ -134,6 +135,17 @@ void UpdateManagerTests::ignoresUnpublishedAndUnsignedReleases()
                                   asset("LumaPlayer-0.6.0-beta.1-windows-x64-cuda.zip", 4)};
     const auto newest = newestRelease(json({draft, unpublished, unsignedRelease, zipOnly,
                                            release("0.2.0-beta.10")}), "0.2.0-beta.2");
+    QVERIFY(newest);
+    QCOMPARE(newest->version, QString("0.2.0-beta.10"));
+}
+
+void UpdateManagerTests::ignoresReleasesWithAmbiguousAssetMetadata()
+{
+    auto ambiguous = release("0.3.0-beta.1");
+    auto assets = ambiguous.value("assets").toArray();
+    assets.append(asset("luma-update.json", 0));
+    ambiguous["assets"] = assets;
+    const auto newest = newestRelease(json({ambiguous, release("0.2.0-beta.10")}), "0.2.0-beta.2");
     QVERIFY(newest);
     QCOMPARE(newest->version, QString("0.2.0-beta.10"));
 }

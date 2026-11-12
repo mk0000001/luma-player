@@ -71,3 +71,38 @@ func TestDiscoveryReceiverSurvivesLargeDatagram(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestUnicastDiscoverySenderUsesTheListeningEndpoint(t *testing.T) {
+	ip := netip.MustParseAddr("127.0.0.1")
+	subnet := netip.PrefixFrom(ip, 32)
+	discovery, err := startDiscovery(netip.AddrPortFrom(ip, 0), subnet, "Luma fixture", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer discovery.Close()
+	listener := discovery.(*lanDiscovery)
+	endpoint := listener.receiver.LocalAddr().(*net.UDPAddr)
+	client, err := net.ListenUDP("udp4", net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip, 0)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	const payload = "discovery fixture"
+	if _, err := listener.sender.WriteToUDP([]byte(payload), client.LocalAddr().(*net.UDPAddr)); err != nil {
+		t.Fatal(err)
+	}
+	var buffer [384]byte
+	length, source, err := client.ReadFromUDPAddrPort(buffer[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != endpoint.AddrPort() {
+		t.Fatalf("reply source %s, want %s", source, endpoint)
+	}
+	if string(buffer[:length]) != payload {
+		t.Fatalf("incorrect discovery reply: %s", buffer[:length])
+	}
+}

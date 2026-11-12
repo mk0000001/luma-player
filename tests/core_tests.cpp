@@ -54,6 +54,12 @@ private slots:
         SubtitleTimeline t; const auto old = t.reset(); const auto fresh = t.reset();
         QVERIFY(!t.attach(old,{{0,2000,"stale"}})); QVERIFY(t.attach(fresh,{{1000,3000,"one"},{2000,4000,"two"}}));
         QCOMPARE(t.at(2500),QString("one\ntwo")); QCOMPARE(t.at(4000),QString()); QCOMPARE(t.at(1000),QString("one"));
+        const auto generation=t.reset();
+        QVERIFY(t.attach(generation,{{6000,7000,"later"},{0,8000,"long"},{1000,2000,"expired"},{6000,7500,"same start"}}));
+        QCOMPARE(t.at(6500),QString("long\nlater\nsame start"));
+        QCOMPARE(t.at(7600),QString("long"));
+        QCOMPARE(t.at(8000),QString{});
+        QCOMPARE(t.at(1500),QString("long\nexpired"));
     }
     void cancelledCaptionChunkCanRetry() {
         CaptionCoverage coverage;QCOMPARE(coverage.begin(5000,90000).value(),5000);QVERIFY(!coverage.begin(5000,90000));

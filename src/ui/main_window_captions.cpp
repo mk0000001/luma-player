@@ -282,9 +282,12 @@ void MainWindow::scheduleTranslations(){
     if(preparedCaptions_ || !translation_ || !translationEnabled_->isChecked() || translationFailed_ || videoRecoveryExhausted_)return;
     translation_->setContextCues(originalCues());
     const qint64 position=active_?(pendingSeek_>=0?pendingSeek_:active_->state().positionMs):0;
-    auto cues=presentationCues_;std::stable_sort(cues.begin(),cues.end(),[position](const SubtitleCue &a,const SubtitleCue &b){return std::abs(a.startMs-position)<std::abs(b.startMs-position);});
-    QVector<SubtitleCue> work;for(const auto &cue:cues){if(work.size()>=16)break;const auto key=translationCueKey(cue);if(cue.endMs<position-5000 || cue.startMs>position+90000 || cue.text.isEmpty() || translations_.contains(key) || translationPending_.contains(key) || translationSkipped_.contains(key))continue;work.append(cue);translationPending_.insert(key);}
-    if(!work.isEmpty())translation_->requestCues(work);
+    const auto work=nearbyTranslationCues(presentationCues_,position,[this](const QString &key){
+        return translations_.contains(key) || translationPending_.contains(key) || translationSkipped_.contains(key);
+    });
+    if(work.isEmpty())return;
+    for(const auto &cue:work)translationPending_.insert(translationCueKey(cue));
+    translation_->requestCues(work);
 }
 
 void MainWindow::clearTranslationSkips(){translationSkipped_.clear();translationSkippedOrder_.clear();}
