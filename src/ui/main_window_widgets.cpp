@@ -133,15 +133,27 @@ bool confirmDeveloperUse(QWidget *parent,bool capture){
     dialog.setWindowTitle(capture?"영상 캡처 허용 확인":"개발자 모드 이용 확인");dialog.setModal(true);dialog.setMinimumWidth(520);
     auto *layout=new QVBoxLayout(&dialog);layout->setContentsMargins(26,24,26,24);layout->setSpacing(18);
     layout->addWidget(label(capture?"영상과 자막이 캡처에 포함됩니다":"개발자 기능을 사용하기 전에","section"));
-    auto *notice=label(capture?
-        "캡처 차단을 해제하면 Windows 화면 캡처와 Parsec 등 원격 화면에 영상과 자막이 표시될 수 있습니다.\n\n"
-        "본인에게 이용 권한이 있는 콘텐츠를 적법한 목적으로만 사용하고, 캡처·저장·공유에 필요한 권한과 관련 법규를 직접 확인해야 합니다. 본인의 이용 행위에 따른 책임은 사용자 본인에게 있습니다.\n\n"
-        "이 설정은 콘텐츠 이용 권한을 부여하거나 DRM·HDCP를 해제하지 않습니다. 개발자는 법률이 허용하는 범위에서 GPLv3의 무보증·책임 제한 조항에 따릅니다.":
-        "개발자 모드에는 재생 진단과 테스트용 설정이 포함됩니다. 테스트 결과와 콘텐츠의 이용 권한을 직접 확인하고 관련 법규와 라이선스를 준수해야 합니다.\n\n"
-        "사용자가 수행하는 캡처·저장·공유 등 본인의 이용 행위에 따른 책임은 사용자 본인에게 있습니다. 개발자는 법률이 허용하는 범위에서 GPLv3의 무보증·책임 제한 조항에 따릅니다.\n\n"
-        "이 동의가 법률상 책임을 일괄 면제하거나 저작권·콘텐츠 이용 권한을 부여하는 것은 아닙니다.");
+    const QString featureNotice=capture?
+        "영상 캡처를 허용하면 Windows 화면 캡처와 Parsec 등 원격 화면에 영상과 자막이 표시될 수 있습니다. "
+        "변경 범위는 LumaPlayer가 Windows에 요청하는 화면 캡처 차단에 한정됩니다. DRM·HDCP는 해당 보호 체계의 적용을 받습니다.\n\n"
+        "영상이나 자막을 저장하거나 공유하기 전에 권리자가 허락한 이용 방법과 조건 또는 법률이 허용하는 범위를 확인해 주세요. "
+        "사적 복제 예외는 공표된 저작물의 비영리 이용으로, 개인이나 가정 및 이에 준하는 한정된 범위에 적용됩니다. "
+        "기술적 보호조치에는 별도의 법률상 제한과 예외가 적용됩니다.":
+        "개발자 모드에서는 재생 진단과 테스트 설정을 사용할 수 있습니다. 영상 캡처 허용은 별도로 확인합니다.\n\n"
+        "테스트에 콘텐츠를 이용할 때는 권리자가 허락한 이용 방법과 조건 또는 법률이 허용하는 범위를 지켜 주세요.";
+    auto *notice=label(featureNotice+"\n\n"
+        "이용자와 개발자의 권리·책임은 관계 법령에 따라 판단합니다. 프로그램의 무보증과 책임 제한은 적용 법률이 허용하는 범위에서 GPLv3 제15~17조에 따릅니다.");
     notice->setWordWrap(true);notice->setTextFormat(Qt::PlainText);notice->setMaximumWidth(560);layout->addWidget(notice);
-    auto *ack=new QCheckBox("안내를 읽었으며, 적법한 이용 의무와 본인의 책임을 확인하고 동의합니다.");ack->setObjectName("consentAcknowledged");layout->addWidget(ack);
+    auto *references=label(
+        "<a href=\"https://www.law.go.kr/법령/저작권법/제46조\">저작권법 제46조</a>"
+        " · <a href=\"https://www.law.go.kr/법령/저작권법/제30조\">제30조</a>"
+        " · <a href=\"https://www.law.go.kr/법령/저작권법/제104조의2\">제104조의2</a>"
+        "<br><a href=\"https://www.law.go.kr/법령/민법/제750조\">민법 제750조</a>"
+        " · <a href=\"https://www.law.go.kr/법령/약관의규제에관한법률/제7조\">약관법 제7조</a>"
+        " · <a href=\"https://www.gnu.org/licenses/gpl-3.0.html#section15\">GPLv3 제15~17조</a>");
+    references->setTextFormat(Qt::RichText);references->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    references->setOpenExternalLinks(true);references->setWordWrap(true);layout->addWidget(references);
+    auto *ack=new QCheckBox("안내를 읽고 해당 기능을 켜는 데 동의합니다.");ack->setObjectName("consentAcknowledged");layout->addWidget(ack);
     auto *row=new QHBoxLayout;row->addStretch();auto *cancel=button("취소","consentCancel");auto *approve=button(capture?"동의하고 캡처 허용":"동의하고 개발자 모드 켜기","primary");approve->setObjectName("consentApprove");approve->setEnabled(false);row->addWidget(cancel);row->addWidget(approve);layout->addLayout(row);
     QObject::connect(ack,&QCheckBox::toggled,approve,&QPushButton::setEnabled);QObject::connect(cancel,&QPushButton::clicked,&dialog,&QDialog::reject);QObject::connect(approve,&QPushButton::clicked,&dialog,&QDialog::accept);
     return dialog.exec()==QDialog::Accepted;
