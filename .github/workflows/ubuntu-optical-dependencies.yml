@@ -1,0 +1,32 @@
+name: Ubuntu optical QA dependencies
+on:
+  push:
+    branches: [codex/ubuntu-optical-qa]
+    paths: [.github/workflows/ubuntu-optical-dependencies.yml]
+permissions:
+  contents: read
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Download signed Ubuntu runtime packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/luma-ubuntu-debs"
+          docker run --rm -v "$RUNNER_TEMP/luma-ubuntu-debs:/export" ubuntu:24.04 bash -euc '
+            rm -f /etc/apt/apt.conf.d/docker-clean
+            apt-get update -qq
+            apt-get install -y -qq --download-only --no-install-recommends libqt6widgets6 libqt6network6 qt6-qpa-plugins libvlc5 vlc-plugin-base vlc-plugin-video-output libmpv2 libaacs0 xvfb xauth
+            cp /var/cache/apt/archives/*.deb /export/
+          '
+          (cd "$RUNNER_TEMP/luma-ubuntu-debs" && sha256sum -- *.deb > SHA256SUMS)
+          echo "Packages: $(find "$RUNNER_TEMP/luma-ubuntu-debs" -name "*.deb" | wc -l)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ubuntu-optical-runtime
+          path: ${{ runner.temp }}/luma-ubuntu-debs/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
