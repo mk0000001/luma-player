@@ -90,6 +90,10 @@ func observeWorker(t *testing.T, statePath string) workerObservation {
 
 func TestDiscOriginalRemuxRetriesPCMAndJoinsWorkerOnEOF(t *testing.T) {
 	cfg, statePath := discConfig(t)
+	discPath, err := filepath.EvalSymlinks(cfg.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
 	host := startTestHost(t, cfg)
 	client := host.client(t, host.pin)
 	auth := "Bearer " + host.token
@@ -124,7 +128,7 @@ func TestDiscOriginalRemuxRetriesPCMAndJoinsWorkerOnEOF(t *testing.T) {
 	worker := observeWorker(t, statePath)
 	args := strings.Join(worker.Args, " ")
 	for _, want := range []string{
-		"-playlist 200", "-i bluray:" + filepath.ToSlash(cfg.Source),
+		"-playlist 200", "-i bluray:" + filepath.ToSlash(discPath),
 		"-map 0:v:0 -map 0:a:i:4352", "-c:v copy -c:a pcm_s24le", "-sn -dn", "-f matroska -live 1",
 	} {
 		if !strings.Contains(args, want) {
