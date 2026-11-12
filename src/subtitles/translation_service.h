@@ -27,6 +27,7 @@ public:
     void cancel();
     quint64 generation()const;
     QString selectedBackend()const;
+    bool selectedVulkanCompatibility()const;
     bool busy()const;
     void setTimeouts(int startupMs,int requestMs);
 signals:

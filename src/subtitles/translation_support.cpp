@@ -54,7 +54,10 @@ QVector<TranslationBackend> translationBackends(const QString &runtime,const AiP
             if(!gpu.startsWith("Vulkan"))result.append({"gpu",vulkan,"Vulkan0",false});
         }else if(gpu.startsWith("CUDA"))result.append({"cuda",cuda,gpu,false});
         else if(gpu.startsWith("OpenVINO:GPU"))result.append({"gpu",openvino,gpu.mid(9),true});
-        else result.append({"gpu",vulkan,gpu.isEmpty()?"Vulkan0":gpu,false});
+        else{
+            result.append({"gpu",vulkan,gpu.isEmpty()?"Vulkan0":gpu,false});
+            if(gpu.startsWith("Vulkan"))result.append({"gpu",vulkan,gpu,false,true});
+        }
     }
     result.append({"cpu",vulkan,"CPU",false});return result;
 }
@@ -65,9 +68,11 @@ TranslationLaunch translationLaunch(const TranslationBackend &backend,const QStr
     // A child inherits only local paths/settings. Never honor unrelated llama server, model, tool or proxy defaults.
     for(const auto &key:command.environment.keys())if(key.startsWith("LLAMA_ARG_")||key.startsWith("GGML_OPENVINO_")||key=="GGML_BACKEND_PATH")command.environment.remove(key);
     command.environment.insert("GGML_BACKEND_PATH",QFileInfo(backend.program).absolutePath());
-    command.arguments={"--model",model,"--host","127.0.0.1","--port",QString::number(port),"--ctx-size",backend.key=="npu"?"512":"8192",
-        "--parallel","1","--batch-size","128","--ubatch-size","128","--threads","6","--n-gpu-layers",backend.key=="cpu"?"0":"99",
-        "--flash-attn","on","--offline","--no-webui","--no-context-shift","--log-colors","off","--verbosity","4",
+    command.arguments={"--model",model,"--host","127.0.0.1","--port",QString::number(port),"--ctx-size",
+        backend.key=="npu"?"512":backend.vulkanCompatibility?"4096":"8192",
+        "--parallel","1","--batch-size","128","--ubatch-size","128","--threads","6","--n-gpu-layers",
+        backend.key=="cpu"?"0":backend.vulkanCompatibility?"12":"99",
+        "--flash-attn",backend.vulkanCompatibility?"off":"on","--offline","--no-webui","--no-context-shift","--log-colors","off","--verbosity","4",
         "--cache-ram","0","--no-slots","--api-key",token,"--jinja"};
     if(backend.openvino){command.environment.insert("GGML_OPENVINO_DEVICE",backend.device);command.environment.insert("GGML_OPENVINO_STATEFUL_EXECUTION","0");command.environment.insert("GGML_OPENVINO_PREFILL_CHUNK_SIZE","128");}
     else command.arguments.append({"--device",backend.key=="cpu"?"none":backend.device});

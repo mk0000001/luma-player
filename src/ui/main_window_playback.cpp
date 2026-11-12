@@ -185,13 +185,19 @@ void MainWindow::updateAudioOutputStatus(const PlaybackState &state){
 }
 
 void MainWindow::changeVideoAdapter(){
-    const auto selected=videoGpu_->currentData().toString();const auto current=QSettings().value("video/adapter").toString();if(current==selected)return;
+    applyFileVideoSelection(false);
+}
+
+void MainWindow::applyFileVideoSelection(bool reloadCurrentFile){
+    const auto selected=videoGpu_->currentData().toString();const auto current=QSettings().value("video/adapter").toString();
+    const bool reopen=active_==fileEngine_.get();
+    if(current==selected && (!reloadCurrentFile || !reopen))return;
     if(lanRemotePlayback_){
         const QSignalBlocker blocked(videoGpu_);videoGpu_->setCurrentIndex(videoGpu_->findData(current));
         status_->setText("PC 연결을 종료한 뒤 그래픽 장치를 바꾸세요.");return;
     }
     QSettings().setValue("video/adapter",selected);
-    const bool reopen=active_==fileEngine_.get();const qint64 position=reopen?active_->state().positionMs:0;
+    const qint64 position=reopen?active_->state().positionMs:0;
     const bool playing=reopen?wantsPlayback():false;
     if(reopen){cancelSubtitleWork();preparedApplied_=false;releaseCaptionBuffer(false);active_->stop();active_=nullptr;}
     fileEngine_.reset();fileEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::File,QString{},this);bindEngine(fileEngine_.get());updateMotionSettings();

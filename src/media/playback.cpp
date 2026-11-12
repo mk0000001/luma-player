@@ -192,11 +192,18 @@ const char *hardwareDecoder(VideoOverrides::Hardware hardware, bool copyBack) {
 #ifdef Q_OS_WIN
     case VideoOverrides::Hardware::D3D11: return copyBack ? "d3d11va-copy" : "d3d11va";
     case VideoOverrides::Hardware::DXVA2: return copyBack ? "dxva2-copy" : "dxva2";
+    case VideoOverrides::Hardware::D3D11Copy: return "d3d11va-copy";
+    case VideoOverrides::Hardware::VulkanCopy: return "vulkan-copy";
 #elif defined(Q_OS_LINUX)
     case VideoOverrides::Hardware::VAAPI: return copyBack ? "vaapi-copy" : "vaapi";
 #endif
     default: return copyBack ? "auto-copy" : "auto-safe";
     }
+}
+
+const char *fileHardwareDecoder(VideoOverrides::Hardware hardware, bool copyBack) {
+    // gpu-next requires the copy-back variant for the legacy DXVA2 API.
+    return hardwareDecoder(hardware,copyBack || hardware==VideoOverrides::Hardware::DXVA2);
 }
 
 const char *preferredDecoder(VideoOverrides::Codec codec) {
@@ -588,8 +595,11 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         auto hardware=d->discHardwareOption;
         if(d->activeVideo.hardware==VideoOverrides::Hardware::Software)
             hardware=":avcodec-hw=none";
-        else if(d->activeVideo.hardware!=VideoOverrides::Hardware::Auto){
-            const QByteArray decoder=hardwareDecoder(d->activeVideo.hardware,false);
+        else if(d->activeVideo.hardware!=VideoOverrides::Hardware::Auto &&
+                d->activeVideo.hardware!=VideoOverrides::Hardware::VulkanCopy){
+            const auto discHardware=d->activeVideo.hardware==VideoOverrides::Hardware::D3D11Copy
+                ?VideoOverrides::Hardware::D3D11:d->activeVideo.hardware;
+            const QByteArray decoder=hardwareDecoder(discHardware,false);
             if(decoder!="auto-safe")hardware=":avcodec-hw="+decoder;
         }
         d->discSoftware=std::exchange(d->nextDiscSoftware,false) || hardware.endsWith("=none");
@@ -634,7 +644,7 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
         if(d->dolbyApplied){d->command({"vf","remove","@luma_dolby"});d->dolbyApplied=false;}
         d->mpv_set_property_string(d->mpv,"interpolation","no");
-        const auto hardware=hardwareDecoder(d->activeVideo.hardware,false);
+        const auto hardware=fileHardwareDecoder(d->activeVideo.hardware,false);
         const auto decoder=preferredDecoder(d->activeVideo.codec);
         d->videoRejections.clear();
         const auto set=[&](const char *name,const char *value){
@@ -693,7 +703,12 @@ void PlaybackEngine::updateFrameInterpolation(){
     if(metadata==d->motionMetadata)return;d->motionMetadata=metadata;
     const auto plan=motionPlanForSource(d->motion,true,gamma,matrix,peak);d->state.motionStatus=plan.status;
     if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
-    d->mpv_set_property_string(d->mpv,"hwdec",hardwareDecoder(d->activeVideo.hardware,plan.requiresCopyBack));
+    const auto hardware=fileHardwareDecoder(d->activeVideo.hardware,plan.requiresCopyBack);
+    if(d->mpv_set_property_string(d->mpv,"hwdec",hardware)>=0 && !d->state.videoDecoderRequest.isEmpty()){
+        d->state.videoDecoderRequest=QString::fromLatin1(hardware);
+        const auto decoder=preferredDecoder(d->activeVideo.codec);
+        if(*decoder)d->state.videoDecoderRequest+=" / "+QString::fromLatin1(decoder);
+    }
     d->mpv_set_property_string(d->mpv,"interpolation",plan.interpolation.constData());
     d->mpv_set_property_string(d->mpv,"video-sync",plan.videoSync.constData());
     if(!plan.videoFilter.isEmpty()){

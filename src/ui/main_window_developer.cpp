@@ -3,6 +3,8 @@
 #include "player_controls.h"
 #include "luma_version.h"
 #include "media/platform_features.h"
+#include "subtitles/ai_devices.h"
+#include "subtitles/translation_devices.h"
 #include "subtitles/translation_service.h"
 
 #include <QApplication>
@@ -46,6 +48,36 @@ QJsonObject requestedAi(const AiPreferences &preferences){
     return {{"mode",knownValue(preferences.mode,{"auto","cpu","gpu","npu"})},
             {"device",deviceId(preferences.gpuDevice)}};
 }
+
+#ifdef Q_OS_WIN
+bool radeonChoice(const QComboBox *box,int index,bool compute){
+    static const QRegularExpression name(R"(\b(?:AMD|Radeon)\b)",QRegularExpression::CaseInsensitiveOption);
+    const auto id=box->itemData(index).toString();
+    return !id.isEmpty() && name.match(box->itemText(index)).hasMatch() &&
+        (!compute || deviceId(id).startsWith("Vulkan"));
+}
+
+int radeonIndex(const QComboBox *box,bool compute){
+    if(radeonChoice(box,box->currentIndex(),compute))return box->currentIndex();
+    int match=-1;
+    for(int index=1;index<box->count();++index){
+        if(!radeonChoice(box,index,compute))continue;
+        if(match>=0)return -1;
+        match=index;
+    }
+    return match;
+}
+
+QJsonArray vulkanInventory(const QComboBox *box){
+    QJsonArray devices;
+    for(int index=1;index<box->count() && devices.size()<32;++index){
+        const auto id=deviceId(box->itemData(index).toString());
+        if(!id.startsWith("Vulkan") || box->itemText(index).startsWith("저장된 GPU · "))continue;
+        devices.append(QJsonObject{{"device",id},{"radeon",radeonChoice(box,index,true)}});
+    }
+    return devices;
+}
+#endif
 
 QJsonObject translationBackendEvidence(const QString &description){
     if(description=="CPU / llama.cpp")return {{"backend","cpu"},{"accelerator","llama.cpp"},{"device","CPU"}};
@@ -203,13 +235,14 @@ void MainWindow::setDeveloperDiagnosticCollection(bool enabled){
     }
 }
 
-void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const QString &device){
+void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const QString &device,QJsonObject detail){
     if(!developerApproved_)return;
     const auto elapsed=performance_->elapsedMs();
     if(elapsed<0)return;
     QJsonObject entry{{"elapsedMs",elapsed},{"code",code},{"reason",reason}};
     const auto id=deviceId(device);
     if(!id.isEmpty())entry.insert("device",id);
+    if(!detail.isEmpty())entry.insert("detail",detail);
     if(developerEvents_.size()==testerEventLimit){
         developerEvents_.removeFirst();
         if(droppedDeveloperEvents_<std::numeric_limits<int>::max())++droppedDeveloperEvents_;
@@ -239,7 +272,7 @@ void MainWindow::connectDeveloperDiagnostics(){
     });
     connect(translation_,&TranslationService::progress,this,[this](const QString &message){
         if(!developerApproved_ || message.size()>160)return;
-        const QString fallback=" 번역 사용 불가: ",missing=" 번역 실행기가 없습니다.";
+        const QString fallback=" 번역 사용 불가: ",missing=" 번역 실행기가 없습니다.",compatibility=" 저VRAM 번역을 시도하는 중…";
         const auto separator=message.indexOf(fallback);
         if(separator>=0){
             const auto device=deviceId(message.left(separator));
@@ -248,13 +281,17 @@ void MainWindow::connectDeveloperDiagnostics(){
         }else if(message.endsWith(missing)){
             const auto device=deviceId(message.chopped(missing.size()));
             if(!device.isEmpty())recordDeveloperEvent("translation_backend_missing","worker_missing",device);
+        }else if(message.endsWith(compatibility)){
+            const auto device=deviceId(message.chopped(compatibility.size()));
+            if(device.startsWith("Vulkan"))recordDeveloperEvent("translation_backend_retry","vulkan_low_vram",device);
         }
     });
     connect(translation_,&TranslationService::backendSelected,this,[this](const QString &backend){
         if(!developerApproved_)return;
         const auto evidence=translationBackendEvidence(backend);
         if(!evidence.isEmpty())recordDeveloperEvent("translation_backend_confirmed",
-            evidence.value("gpuOffloadVerified").toBool()?"gpu_offload":"backend_verified",evidence.value("device").toString());
+            translation_->selectedVulkanCompatibility()?"vulkan_low_vram":
+                evidence.value("gpuOffloadVerified").toBool()?"gpu_offload":"backend_verified",evidence.value("device").toString());
     });
     connect(translation_,&TranslationService::failed,this,[this](const QString &message){
         recordDeveloperEvent("translation_failed",translationFailureReason(message));
@@ -304,7 +341,7 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
         {"architecture",QSysInfo::buildCpuArchitecture()}};
     const auto preferences=videoOutputPreferences();
     const auto selectedAdapter=QSettings().value("video/adapter").toString();
-    constexpr std::array hardware{"auto","software","d3d11va","dxva2","vaapi"};
+    constexpr std::array hardware{"auto","software","d3d11va","dxva2","vaapi","d3d11va-copy","vulkan-copy"};
     constexpr std::array codecs{"auto","h264","hevc","vp9","av1","libdav1d"};
     QJsonObject configured{{"hardware",hardware.at(static_cast<size_t>(preferences.hardware))},
         {"codec",codecs.at(static_cast<size_t>(preferences.codec))},
@@ -363,8 +400,7 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
         if(state.audioChannels>0 && state.audioChannels<=64)playback.insert("audioChannels",state.audioChannels);
         const auto automatic=knownValue(requested,{"auto","auto-safe","auto-copy"});
         if(!requested.isEmpty() && !current.isEmpty() && automatic.isEmpty()){
-            const auto family=[](const QString &decoder){return decoder.endsWith("-copy")?decoder.chopped(5):decoder;};
-            playback.insert("decoderFallback",family(requested)!=family(current));
+            playback.insert("decoderFallback",requested!=current);
         }
         video.insert("playback",playback);
     }
@@ -376,7 +412,13 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
         {"alignment",knownValue(job_.selectedAlignment(),{"dtw","segment","token"})}});
     QJsonObject translation{{"requested",requestedAi(translation_->preferences())},{"enabled",translationEnabled_->isChecked()},
         {"busy",translation_->busy()},{"failed",translationFailed_}};
-    const auto actualTranslation=translationBackendEvidence(translation_->selectedBackend());
+#ifdef Q_OS_WIN
+    asr.insert("detectedVulkanDevices",vulkanInventory(aiGpu_));
+    translation.insert("detectedVulkanDevices",vulkanInventory(translationGpu_));
+#endif
+    auto actualTranslation=translationBackendEvidence(translation_->selectedBackend());
+    if(actualTranslation.value("accelerator")=="vulkan")
+        actualTranslation.insert("vulkanProfile",translation_->selectedVulkanCompatibility()?"low-vram":"standard");
     if(!actualTranslation.isEmpty())translation.insert("actual",actualTranslation);
     QJsonObject report{{"schemaVersion",2},{"appVersion",LUMA_VERSION},{"qtVersion",qVersion()},{"os",os},{"graphicsAdapters",adapters},
         {"installedWorkers",installedWorkers()},{"video",video},{"asr",asr},{"translation",translation},
@@ -573,7 +615,9 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
     hardware->addItem("CPU 소프트웨어",int(Hardware::Software));
 #ifdef Q_OS_WIN
     hardware->addItem("D3D11VA",int(Hardware::D3D11));
-    hardware->addItem("DXVA2",int(Hardware::DXVA2));
+    hardware->addItem("D3D11VA · 복사",int(Hardware::D3D11Copy));
+    hardware->addItem("DXVA2 · 파일은 복사",int(Hardware::DXVA2));
+    hardware->addItem("Vulkan Video · 파일 복사 · 실험적",int(Hardware::VulkanCopy));
 #elif defined(Q_OS_LINUX)
     hardware->addItem("VAAPI",int(Hardware::VAAPI));
 #endif
@@ -639,7 +683,78 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
         const QSignalBlocker block(force);force->setChecked(false);
         save();
     });
+#ifdef Q_OS_WIN
+    buildHardwareTestProfiles(layout,hardware);
+#endif
 }
+
+#ifdef Q_OS_WIN
+void MainWindow::buildHardwareTestProfiles(QVBoxLayout *layout,QComboBox *hardware){
+    using Hardware=VideoOverrides::Hardware;
+    auto *heading=new QLabel("Radeon 가속 비교");
+    heading->setObjectName("section");
+    layout->addWidget(heading);
+    auto *profile=new ChoiceBox;
+    profile->setObjectName("hardwareTestProfile");
+    profile->addItem("CPU 기준", "cpu");
+    profile->addItem("Radeon · 영상만", "radeon-video");
+    profile->addItem("Radeon · 음성인식만", "radeon-asr");
+    profile->addItem("Radeon · 번역만", "radeon-translation");
+    profile->addItem("Radeon · 영상 + 음성인식 + 번역", "radeon-all");
+    profile->addItem("자동 설정으로 복귀", "auto");
+    layout->addWidget(profile);
+    auto *apply=new QPushButton("비교 설정 적용");
+    apply->setObjectName("applyHardwareTestProfile");
+    layout->addWidget(apply);
+    auto *refreshDevices=new QPushButton("AI GPU 다시 검색");
+    layout->addWidget(refreshDevices);
+    auto *feedback=new QLabel("AI 자막과 번역을 켠 상태에서 같은 구간을 비교하세요. 디스크는 다시 열면 디코더 설정이 적용됩니다.");
+    feedback->setWordWrap(true);
+    feedback->setTextFormat(Qt::PlainText);
+    layout->addWidget(feedback);
+    connect(refreshDevices,&QPushButton::clicked,this,[this,feedback]{
+        if(!developerApproved_)return;
+        deviceProbe_->start();
+        translationDeviceProbe_->start();
+        feedback->setText("AI GPU 목록을 갱신 중입니다. AI 자막 탭에서 검색된 장치를 확인하세요.");
+    });
+    connect(apply,&QPushButton::clicked,this,[this,profile,hardware,feedback]{
+        if(!developerApproved_)return;
+        if(lanRemotePlayback_){feedback->setText("PC 연결을 종료한 뒤 비교 설정을 적용하세요.");return;}
+        const auto id=profile->currentData().toString();
+        const bool automatic=id=="auto",all=id=="radeon-all";
+        const bool video=all || id=="radeon-video",asr=all || id=="radeon-asr",translation=all || id=="radeon-translation";
+        const int videoIndex=video?radeonIndex(videoGpu_,false):-1;
+        const int asrIndex=asr?radeonIndex(aiGpu_,true):-1;
+        const int translationIndex=translation?radeonIndex(translationGpu_,true):-1;
+        QStringList missing;
+        if(video && videoIndex<0)missing.append("파일 영상 GPU");
+        if(asr && asrIndex<0)missing.append("AI GPU");
+        if(translation && translationIndex<0)missing.append("번역 GPU");
+        if(!missing.isEmpty()){
+            feedback->setText("Radeon 장치를 확인하거나 직접 선택해 주세요. "+missing.join(" · "));
+            return;
+        }
+
+        const auto decoder=automatic?Hardware::Auto:video?Hardware::D3D11:Hardware::Software;
+        hardware->setCurrentIndex(hardware->findData(int(decoder)));
+        if(automatic || video)videoGpu_->setCurrentIndex(automatic?0:videoIndex);
+        if(automatic || asr)aiGpu_->setCurrentIndex(automatic?0:asrIndex);
+        if(automatic || translation)translationGpu_->setCurrentIndex(automatic?0:translationIndex);
+        aiMode_->setCurrentIndex(aiMode_->findData(automatic?"auto":asr?"gpu":"cpu"));
+        translationMode_->setCurrentIndex(translationMode_->findData(automatic?"auto":translation?"gpu":"cpu"));
+
+        if(liveCaptioningActive())resetSubtitleSession(true);
+        applyFileVideoSelection(true);
+        updateTranslationPreferences();
+        updateAiPreferences();
+        recordDeveloperEvent("hardware_test_profile","applied",{},
+            {{"profile",id},{"video",automatic?"auto":video?"d3d11va":"software"},
+             {"asr",requestedAi(job_.preferences())},{"translation",requestedAi(translation_->preferences())}});
+        feedback->setText(profile->currentText()+" 적용 · 실제 디코더와 자막 장치는 진단에서 확인할 수 있습니다. 디스크는 다시 열어 주세요.");
+    });
+}
+#endif
 
 void MainWindow::updateDeveloperVideoStatus(const PlaybackState &state) {
     if(!developerApproved_)return;

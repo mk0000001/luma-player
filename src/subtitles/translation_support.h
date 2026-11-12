@@ -33,7 +33,7 @@ private:
     QString active_;
     QHash<QString,QString> cache_;
 };
-struct TranslationBackend {QString key,program,device;bool openvino=false;};
+struct TranslationBackend {QString key,program,device;bool openvino=false;bool vulkanCompatibility=false;};
 struct TranslationLaunch {QString program;QStringList arguments;QProcessEnvironment environment;};
 enum class TranslationProfile {LegacyQwenJson,HyMt2Plain};
 // Only the pinned, tested dedicated model opts into its plain-output protocol.

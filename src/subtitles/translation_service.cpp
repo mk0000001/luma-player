@@ -117,7 +117,10 @@ struct TranslationService::Impl {
         if(backends.isEmpty())backends=translationBackends(runtime,preferences);
         while(++backendIndex<backends.size()){
             const auto &candidate=backends[backendIndex];
-            if(!QFileInfo::exists(candidate.program)){q->progress(candidate.device+" 번역 실행기가 없습니다.");continue;}
+            if(!QFileInfo::exists(candidate.program)){
+                if(!candidate.vulkanCompatibility)q->progress(candidate.device+" 번역 실행기가 없습니다.");
+                continue;
+            }
             QTcpServer reservation;if(!reservation.listen(QHostAddress::LocalHost,0)){failAll("로컬 번역 포트를 열 수 없습니다.");return;}
             port=reservation.serverPort();reservation.close();token=QUuid::createUuid().toString(QUuid::Id128);
             const auto command=translationLaunch(candidate,model,port,token);
@@ -135,7 +138,8 @@ struct TranslationService::Impl {
                 log+=QString::fromUtf8(worker->readAll());const auto detail=log.contains("NPU_COMPILER_DYNAMIC_QUANTIZATION")?QString("현재 NPU 드라이버가 모델 컴파일 옵션을 지원하지 않습니다."):QString("실행기가 종료되었습니다 (코드 %1).").arg(code);
                 nextBackend(detail);
             });
-            q->progress(candidate.device+" 로컬 번역 모델을 불러오는 중…");startupDeadline.start(startupMs);worker->start(command.program,command.arguments);return;
+            q->progress(candidate.device+(candidate.vulkanCompatibility?" 저VRAM 번역을 시도하는 중…":" 로컬 번역 모델을 불러오는 중…"));
+            startupDeadline.start(startupMs);worker->start(command.program,command.arguments);return;
         }
         failAll("사용 가능한 로컬 한국어 번역 실행기가 없습니다. 번역 모델·런타임과 선택한 장치를 확인해 주세요.");
     }
@@ -244,6 +248,10 @@ void TranslationService::requestCues(const QVector<SubtitleCue> &cues){
 void TranslationService::cancel(){d->clear();}
 quint64 TranslationService::generation()const{return d->queue.generation();}
 QString TranslationService::selectedBackend()const{return d->selected;}
+bool TranslationService::selectedVulkanCompatibility()const{
+    return !d->selected.isEmpty() && d->backendIndex>=0 && d->backendIndex<d->backends.size()
+        && d->backends[d->backendIndex].vulkanCompatibility;
+}
 bool TranslationService::busy()const{return d->queue.busy();}
 void TranslationService::setTimeouts(int startupMs,int requestMs){d->startupMs=qMax(100,startupMs);d->requestMs=qMax(10,requestMs);}
 }

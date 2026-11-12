@@ -2,6 +2,12 @@
 
 ## 한국어
 
+### 0.2.4
+
+- Windows 개발자 모드에서 Radeon 영상·음성인식·번역을 하나씩 또는 함께 켜고 CPU 기준과 비교할 수 있습니다.
+- 파일 디코더 비교에 D3D11VA 복사, DXVA2 복사, 실험적 Vulkan Video 복사를 추가했습니다. 지정 Vulkan 번역이 실패하면 같은 GPU의 저VRAM 구성으로 한 번 더 시도합니다.
+- 진단 파일에 비교 설정 적용 시점, 각 실행기가 감지한 Vulkan 장치, 저VRAM 재시도 결과를 기록합니다.
+
 ### 0.2.3
 
 - Windows의 첫 실행과 설정에서 GPU·NPU를 감지해 NVIDIA CUDA, Vulkan, Intel OpenVINO 패키지를 추천하고 선택 설치할 수 있습니다. Radeon의 영상 가속과 로컬 자막 가속은 같은 Windows 빌드에 포함됩니다.
@@ -141,6 +147,12 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.4
+
+- Windows Developer Mode can compare a CPU baseline with Radeon video, speech recognition, and translation separately or together.
+- File playback adds D3D11VA copy-back, DXVA2 copy-back, and experimental Vulkan Video copy-back options. A failed explicitly selected Vulkan translation backend retries on the same GPU with a lower-VRAM configuration.
+- Diagnostics record the applied profile, Vulkan devices seen by each worker, and low-VRAM retry results.
 
 ### 0.2.3
 

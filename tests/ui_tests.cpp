@@ -698,6 +698,48 @@ private slots:
         QVERIFY(!window.diagnostics().value("audioBitstreamActive").toBool());
         QVERIFY(volume->isEnabled());
     }
+#ifdef Q_OS_WIN
+    void radeonProfileUsesIndependentVulkanDevices(){
+        QSettings settings;
+        luma::MainWindow window;
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        auto *profile=window.findChild<QComboBox*>("hardwareTestProfile");
+        auto *apply=window.findChild<QPushButton*>("applyHardwareTestProfile");
+        auto *video=window.findChild<QComboBox*>("videoGpu");
+        auto *asr=window.findChild<QComboBox*>("aiGpu");
+        auto *translation=window.findChild<QComboBox*>("translationGpu");
+        QVERIFY(profile && apply && video && asr && translation);
+        video->clear();video->addItem("자동",QString{});video->addItem("AMD Radeon RX fixture","AMD Radeon RX fixture");
+        asr->clear();asr->addItem("자동",QString{});asr->addItem("AMD Radeon RX fixture · Vulkan","Vulkan2");
+        translation->clear();translation->addItem("자동",QString{});translation->addItem("Vulkan · AMD Radeon RX fixture","Vulkan0");
+        translation->addItem("Vulkan · Intel Arc fixture","Vulkan2");
+
+        profile->setCurrentIndex(profile->findData("radeon-all"));
+        apply->click();
+        QCOMPARE(settings.value("video/adapter").toString(),QString("AMD Radeon RX fixture"));
+        QCOMPARE(settings.value("ai/gpu").toString(),QString("Vulkan2"));
+        QCOMPARE(settings.value("translation/gpu").toString(),QString("Vulkan0"));
+        QCOMPARE(settings.value("ai/mode").toString(),QString("gpu"));
+        QCOMPARE(settings.value("translation/mode").toString(),QString("gpu"));
+
+        profile->setCurrentIndex(profile->findData("cpu"));
+        apply->click();
+        QCOMPARE(settings.value("ai/mode").toString(),QString("cpu"));
+        QCOMPARE(settings.value("translation/mode").toString(),QString("cpu"));
+        QCOMPARE(settings.value("developer/developerHardware").toInt(),int(luma::VideoOverrides::Hardware::Software));
+
+        translation->setCurrentIndex(0);
+        translation->addItem("Vulkan · AMD Radeon 2 fixture","Vulkan1");
+        profile->setCurrentIndex(profile->findData("radeon-translation"));
+        apply->click();
+        QCOMPARE(settings.value("translation/mode").toString(),QString("cpu"));
+        translation->setCurrentIndex(translation->findData("Vulkan1"));
+        apply->click();
+        QCOMPARE(settings.value("translation/gpu").toString(),QString("Vulkan1"));
+        QCOMPARE(settings.value("translation/mode").toString(),QString("gpu"));
+        QCOMPARE(settings.value("ai/mode").toString(),QString("cpu"));
+    }
+#endif
     void developerVideoOverridesReachFileEngine(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
@@ -778,6 +820,19 @@ private slots:
         QCOMPARE(actual.value("requestedDecoder").toString(),QString("auto-safe"));
         QCOMPARE(actual.value("requestedTransfer").toString(),QString("auto"));
         QCOMPARE(actual.value("requestedDolbyVision").toString(),QString("auto"));
+
+        for(const auto &[mode,request]:QList<QPair<Options::Hardware,QString>>{
+                {Options::Hardware::D3D11Copy,"d3d11va-copy"},
+                {Options::Hardware::DXVA2,"dxva2-copy"},
+                {Options::Hardware::VulkanCopy,"vulkan-copy"}}){
+            select(hardware,mode);
+            window.openSource(media);
+            QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("timelineReady").toBool(),10000);
+            QTRY_COMPARE(snapshot().value("requestedDecoder").toString(),request);
+            actual=snapshot();
+            QVERIFY2(actual.value("overrideStatus").toString().isEmpty(),qPrintable(actual.value("overrideStatus").toString()));
+            QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>300,5000);
+        }
     }
     void pictureInPictureKeepsVideoAndRestoresWindow(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");

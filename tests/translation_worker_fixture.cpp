@@ -19,12 +19,14 @@ int main(int argc,char **argv){
     if(value("--host")!="127.0.0.1"||!args.contains("--offline")||token.isEmpty())return 20;
     const bool npu=qEnvironmentVariable("GGML_OPENVINO_DEVICE")=="NPU";
     const bool npuBudgetFixture=npu && model.contains("fixture-npu-budget");
+    if(device=="Vulkan8" && (value("--n-gpu-layers")!="12" || value("--flash-attn")!="off"))return 8;
     if((npu && !npuBudgetFixture)||device=="Vulkan7"){
         std::fprintf(stderr,"OpenVINO NPU/device initialization failed: fixture unavailable device\n");return 1;
     }
     QFile started(model+".starts");if(started.open(QIODevice::Append)){started.write("started\n");started.close();}
     if(npuBudgetFixture)std::fprintf(stderr,"OpenVINO: using device NPU\nmodel loaded\n");
     else if(device=="none")std::fprintf(stderr,"llama_context: CPU compute buffer size = 32 MiB\n");
+    else if(device=="Vulkan8")std::fprintf(stderr,"using device Vulkan8 (Fixture GPU)\noffloaded 12/29 layers to GPU\n");
     else std::fprintf(stderr,"llama_prepare_model_devices: using device Vulkan0 (Fixture GPU)\nload_tensors: offloaded 29/29 layers to GPU\n");
     std::fflush(stderr);
     QTcpServer server;if(!server.listen(QHostAddress::LocalHost,value("--port").toUShort()))return 21;

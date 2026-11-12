@@ -20,6 +20,14 @@
 
 처음 실행할 때 Windows에서 감지한 GPU와 NPU에 맞춰 AI 가속 라이브러리를 추천합니다. 이후 **설정 → AI 가속 설정**에서도 설치할 수 있습니다. NVIDIA CUDA, AMD Radeon을 포함한 Vulkan, Intel OpenVINO 중 원하는 항목을 직접 선택할 수 있습니다. 설치는 LumaPlayer 폴더에 적용되며, 가속 사용은 장치와 드라이버가 해당 백엔드를 지원할 때 시작됩니다. Radeon은 Windows의 D3D11 영상 디코딩과 Vulkan 음성 인식·번역 경로를 사용합니다.
 
+### Radeon 가속 비교
+
+Windows **설정 → 개발자 모드 → Radeon 가속 비교**에서 **CPU 기준**, **영상만**, **음성인식만**, **번역만**, **세 가지 동시**를 적용할 수 있습니다. 각각의 Vulkan 장치 목록에 Radeon이 여러 개 있으면 **AI 자막** 탭에서 음성인식 GPU와 번역 GPU를 따로 고르세요. GPU 번호는 두 실행기에서 다를 수 있습니다. 재생 중인 파일은 현재 위치에서 다시 열리며, Blu-ray는 디코더를 바꾼 뒤 직접 다시 엽니다.
+
+AI 경로를 시험할 때는 사전 생성 자막이나 외부 자막을 사용하지 않는 파일에서 **AI 자동자막**과 **한국어 번역**을 켜고 같은 구간을 반복하세요. 프리셋을 적용하면 실시간 자막 버퍼를 다시 채웁니다. 지정한 Vulkan 번역이 실패하면 같은 GPU에서 오프로딩을 12개 레이어로 줄이고 Flash Attention을 끈 뒤 한 번 재시도합니다. **영상 디코딩과 색상**에서 D3D11VA 복사, DXVA2 복사, 실험적 Vulkan Video 복사도 비교할 수 있습니다. 복사 디코더는 드라이버가 선택한 장치를 쓸 수 있으며, 파일 영상 GPU 설정은 D3D11 렌더러 선택입니다.
+
+**테스트 진단 JSON 저장**에는 프리셋 적용 시점과 각 실행기의 Vulkan 장치, 실제 디코더, 가속 재시도가 기록됩니다. 모델을 그대로 두고 먼저 CPU 기준, 다음으로 각 가속 경로, 마지막으로 동시 가속을 비교하세요. 비교가 5분을 넘으면 각 단계 직후에 저장하세요. CPU 기준은 소프트웨어 디코딩과 CPU 추론을 사용하며 영상 표시에는 GPU가 쓰일 수 있습니다.
+
 ### 원문·독음·번역과 긴 자막
 
 **원문**, **일본어 한글 독음**, **한국어 번역**을 각각 켜거나 끌 수 있습니다. 독음과 번역은 원문과 별도로 보관됩니다. 음성 인식과 번역의 장치 설정도 독립적이며, 화면의 실제 사용 장치를 확인하세요. 음성 인식의 NPU 표시는 번역까지 NPU로 처리한다는 뜻이 아닙니다.
@@ -136,6 +144,14 @@ A manual pause remains paused when preparation finishes. Failures show status an
 ### Windows AI acceleration setup
 
 On first launch, LumaPlayer recommends AI libraries based on the GPUs and NPUs detected on Windows. Open **설정 → AI 가속 설정** to install them later. NVIDIA CUDA, Vulkan (including AMD Radeon), and Intel OpenVINO are also available for manual selection. Installation is scoped to the LumaPlayer directory. Acceleration requires a device and driver that support the backend. Radeon uses Windows D3D11 for video decoding and Vulkan for speech recognition and translation.
+
+### Comparing Radeon acceleration
+
+In Windows **Settings → Developer Mode → Radeon acceleration comparison**, apply a CPU baseline, video only, recognition only, translation only, or all three. If either worker detects multiple Radeon GPUs, select the recognition and translation devices separately under **AI captions**. Their Vulkan indices can differ. An open file resumes from the current position after applying a profile. Reopen a Blu-ray to change its decoder.
+
+For a live AI comparison, enable automatic captions and Korean translation, use a file with no prepared or external subtitles, and repeat the same interval. Applying a profile refills the live caption buffer. A failed explicitly selected Vulkan translation retries on the same GPU with 12 offloaded layers and Flash Attention disabled. **Video decoding and color** also offers D3D11VA copy-back, DXVA2 copy-back, and experimental Vulkan Video copy-back. Copy-back decoders may use the device selected by their driver. The file video GPU setting selects the D3D11 renderer.
+
+**Save tester diagnostics JSON** records profile transitions, Vulkan device lists per worker, the observed decoder, and acceleration retries. Keep the model fixed and compare the CPU baseline, each accelerated path, and then simultaneous acceleration. If the comparison takes more than five minutes, save after each step. The CPU baseline uses software decoding and CPU inference, with the GPU still available for rendering.
 
 ### Source, reading, translation and long captions
 

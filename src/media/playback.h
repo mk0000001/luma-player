@@ -15,7 +15,7 @@ struct LanMediaSource {
 };
 bool validLanMediaSource(const LanMediaSource &source);
 struct VideoOverrides {
-    enum class Hardware { Auto, Software, D3D11, DXVA2, VAAPI };
+    enum class Hardware { Auto, Software, D3D11, DXVA2, VAAPI, D3D11Copy, VulkanCopy };
     enum class Codec { Auto, H264, HEVC, VP9, AV1, Dav1d };
     enum class Color { Auto, SDR, HDR10, HLG };
     enum class DolbyVision { Auto, Apply, Ignore, BaseLayer };

@@ -62,7 +62,10 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         appendLog("번역 한 구간 제외: "+message);QTimer::singleShot(0,this,&MainWindow::scheduleTranslations);
     });
     connect(translation_,&TranslationService::progress,translationStatus_,&QLabel::setText);
-    connect(translation_,&TranslationService::backendSelected,this,[this](const QString &backend){translationBackend_->setText("번역 · "+backend);});
+    connect(translation_,&TranslationService::backendSelected,this,[this](const QString &backend){
+        const QString compatibility=translation_->selectedVulkanCompatibility()?" · 저VRAM":QString{};
+        translationBackend_->setText("번역 · "+backend+compatibility);
+    });
     connect(translation_,&TranslationService::failed,this,[this](const QString &message){translationPending_.clear();translationFailed_=true;translationStatus_->setText(message);appendLog("번역: "+message);});
     discEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::Disc,QString{},this);
     fileEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::File,QString{},this);bindEngine(discEngine_.get());bindEngine(fileEngine_.get());

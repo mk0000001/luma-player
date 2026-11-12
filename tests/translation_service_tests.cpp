@@ -153,6 +153,21 @@ private slots:
         QTemporaryDir dir;TranslationService service(dir.path());QSignalSpy errors(&service,&TranslationService::failed),results(&service,&TranslationService::translated);
         service.request({"こんにちは"});QTRY_COMPARE_WITH_TIMEOUT(errors.count(),1,1000);QCOMPARE(results.count(),0);QVERIFY(!service.busy());
     }
+    void selectedVulkanCanRecoverWithPartialOffload(){
+        QTemporaryDir dir;
+        const auto model=prepare(dir);
+        TranslationService service(dir.path());
+        service.setModel(model);
+        service.setPreferences({"gpu","Vulkan8"});
+        service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translated),errors(&service,&TranslationService::failed);
+
+        service.request({"こんにちは"});
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,4000);
+        QCOMPARE(errors.count(),0);
+        QCOMPARE(service.selectedBackend(),QString("GPU / Vulkan8 / Fixture GPU"));
+        QVERIFY(service.selectedVulkanCompatibility());
+    }
     void missingRuntimeDoesNotReturnAPlaceholderTranslation(){
         QTemporaryDir dir;QFile model(dir.filePath("fixture.gguf"));QVERIFY(model.open(QIODevice::WriteOnly));model.write("test fixture");model.close();
         TranslationService service(dir.path());service.setModel(model.fileName());

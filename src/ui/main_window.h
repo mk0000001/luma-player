@@ -130,6 +130,9 @@ private:
     bool stopLanShareForSourceChange();
     void buildDeveloperTools(QVBoxLayout *layout);
     void buildDeveloperVideoTools(QVBoxLayout *layout);
+#ifdef Q_OS_WIN
+    void buildHardwareTestProfiles(QVBoxLayout *layout,QComboBox *hardware);
+#endif
     void buildAudioSettings(QVBoxLayout *layout);
     VideoOverrides videoOutputPreferences() const;
     AudioOutputOptions audioOutputPreferences() const;
@@ -141,7 +144,7 @@ private:
     void setDeveloperDiagnosticCollection(bool enabled);
     void connectDeveloperDiagnostics();
     void connectDeveloperPlaybackDiagnostics(PlaybackEngine *engine);
-    void recordDeveloperEvent(const char *code,const char *reason,const QString &device={});
+    void recordDeveloperEvent(const char *code,const char *reason,const QString &device={},QJsonObject detail={});
     QJsonObject testerDiagnosticReport() const;
     QJsonArray developerEvents_;
     int droppedDeveloperEvents_=0;
@@ -167,6 +170,7 @@ private:
     void updateNpuStatus();
     void updateTranslationPreferences();
     void changeVideoAdapter();
+    void applyFileVideoSelection(bool reloadCurrentFile);
     void updateMotionSettings();
     void togglePlayback();
     void toggleMute();

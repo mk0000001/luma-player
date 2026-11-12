@@ -205,7 +205,14 @@ private slots:
     }
     void selectedGpuCannotSilentlyChangeToAnotherGpu() {
         AiPreferences preferences;preferences.mode="gpu";preferences.gpuDevice="Vulkan7";
-        auto backends=translationBackends("C:/runtime",preferences);QCOMPARE(backends.size(),2);QCOMPARE(backends[0].device,QString("Vulkan7"));QCOMPARE(backends[1].key,QString("cpu"));
+        auto backends=translationBackends("C:/runtime",preferences);
+        QCOMPARE(backends.size(),3);
+        QCOMPARE(backends[0].device,QString("Vulkan7"));
+        QCOMPARE(backends[1].device,QString("Vulkan7"));
+        QCOMPARE(backends[2].key,QString("cpu"));
+        const auto compatible=translationLaunch(backends[1],"model.gguf",54321,"private-session-token").arguments;
+        QCOMPARE(compatible[compatible.indexOf("--n-gpu-layers")+1],QString("12"));
+        QCOMPARE(compatible[compatible.indexOf("--flash-attn")+1],QString("off"));
         preferences.gpuDevice="OpenVINO:GPU.1";backends=translationBackends("C:/runtime",preferences);QCOMPARE(backends[0].device,QString("GPU.1"));QVERIFY(backends[0].openvino);
         preferences.mode="npu";backends=translationBackends("C:/runtime",preferences);QCOMPARE(backends.size(),2);QCOMPARE(backends[0].device,QString("NPU"));QCOMPARE(backends[1].key,QString("cpu"));
         preferences.mode="cpu";QCOMPARE(translationBackends("C:/runtime",preferences).size(),1);
