@@ -48,7 +48,11 @@ int main(int argc,char **argv){
             std::ofstream sidecar(prefix+".timings.json");
             sidecar<<"{\"schema\":1,\"format\":\"luma-asr-timing-v1\",\"alignment\":\"dtw\",\"audioMs\":2000,\"segments\":[{\"startMs\":200,\"endMs\":2000,\"text\":\"ABCDEFGH\",\"tokens\":[{\"byteStart\":"<<(std::string(timing)=="invalid"?1:0)<<",\"byteEnd\":4,\"startMs\":200,\"endMs\":1800},{\"byteStart\":4,\"byteEnd\":8,\"startMs\":1800,\"endMs\":2000}]}]}";
         }
-        if(!device.empty() && payload.find("silent-cpu")==std::string::npos)std::cout<<"LUMA_BACKEND="<<device<<std::endl;
+        if(!device.empty() && payload.find("silent-cpu")==std::string::npos){
+            const auto accelerator=device=="NPU"?"OpenVINO encoder":device=="GPU"?"Vulkan GPU":"CPU encoder";
+            std::cout<<"LUMA_ACCELERATOR="<<accelerator<<'\n'<<"LUMA_DEVICE="<<(device=="GPU"?"Vulkan0":device)
+                     <<'\n'<<"LUMA_BACKEND="<<device<<std::endl;
+        }
         if(!out)return 1;
         if(!server)return 0;
         std::cout<<"LUMA_DONE="<<prefix<<std::endl;

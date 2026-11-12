@@ -46,6 +46,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     const auto qualityTranslation=QCoreApplication::applicationDirPath()+"/runtime/translation/models/Hy-MT2-7B-Q4_K_M.gguf";
     translation_->setModel(QSettings().value("translation/model",QFileInfo::exists(qualityTranslation)?qualityTranslation:QString{}).toString());
     translation_->setGlossary(configuredTranslationGlossary());
+    connectDeveloperDiagnostics();
     connect(translation_,&TranslationService::translatedCue,this,[this](quint64 generation,const QString &key,const QString &,const QString &korean){
         if(generation!=translation_->generation() || !translationEnabled_->isChecked())return;
         translationPending_.remove(key);translations_.insert(key,korean);rebuildManagedCaptions();translationStatus_->setText(QString("문맥을 참고한 한국어 번역 %1개 준비됨").arg(translations_.size()));
@@ -116,7 +117,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     });
 }
 
-MainWindow::~MainWindow(){stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
+MainWindow::~MainWindow(){discProbeClosing_=true;discPlayPending_=false;stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 

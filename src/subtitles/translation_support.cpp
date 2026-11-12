@@ -49,8 +49,9 @@ QVector<TranslationBackend> translationBackends(const QString &runtime,const AiP
     if(mode=="auto"||mode=="gpu"){
         const auto gpu=preferences.gpuDevice;
         if(mode=="auto"){
+            if(gpu.startsWith("Vulkan"))result.append({"gpu",vulkan,gpu,false});
             if(QFileInfo::exists(cuda))result.append({"cuda",cuda,gpu.startsWith("CUDA")?gpu:QString("CUDA0"),false});
-            result.append({"gpu",vulkan,gpu.startsWith("Vulkan")?gpu:QString("Vulkan0"),false});
+            if(!gpu.startsWith("Vulkan"))result.append({"gpu",vulkan,"Vulkan0",false});
         }else if(gpu.startsWith("CUDA"))result.append({"cuda",cuda,gpu,false});
         else if(gpu.startsWith("OpenVINO:GPU"))result.append({"gpu",openvino,gpu.mid(9),true});
         else result.append({"gpu",vulkan,gpu.isEmpty()?"Vulkan0":gpu,false});

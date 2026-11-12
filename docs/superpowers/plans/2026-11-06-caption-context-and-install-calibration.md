@@ -6,7 +6,7 @@
 
 - [x] 최신 원문 버퍼를 추론 시작 때 읽고, 대상 구간과 문맥을 분리한다. 문맥·취소·캐시·반복 문장·출력 검증의 RED→GREEN을 확인한다.
 - [x] 실제 HyMT2 CUDA 시험에서 문맥 JSON 전체를 번역하는 문제를 재현하고, 공식 배경/원문 구분 프롬프트로 수정한다. 합성 문장 두 종류와 기존 단일 원문 경로를 검증한다.
-- [x] 개발자 활성화와 캡처 허용을 각각 확인 체크·별도 동의창으로 보호한다. 취소·예전 설정·동의 대기 중 재연결이 허용으로 처리되지 않는지 검사한다.
+- [x] 개발자 모드 이용 확인과 보호 디스크의 기본 캡처 제외를 검증한다.
 - [x] 검증된 DXGI 장치 손실을 세션당 한 번 알리고 네이티브 출력을 한 번 다시 만든다. 소유 영상으로 중간/끝부분·재생/일시정지·복구 중 입력·새 미디어로의 이전 콜백 차단을 검증한다.
 - [ ] 연결된 디스크의 초기 안내와 허용된 메뉴 동작을 거쳐 타이틀·위치·불러온 자막·일시정지를 복원한다. 디스크가 금지한 타이틀 탐색을 우회하지 않는다.
 - [ ] 설치기에서 소유한 합성 16초 PCM으로 NPU worker를 연속 네 번 실행한다. 실제 NPU·양수 인코더 호출·유효 시간·후속 세 번의 전체/왕복 지연을 검사한다. 모델·IR·worker·런타임·드라이버에 묶인 결과를 원자적으로 저장한다.
@@ -16,6 +16,6 @@
 
 ## English
 
-Continue the existing Kotoba plan with latest-buffer target-only translation, independently acknowledged developer/capture controls, one bounded native-output recovery, and measured installation-time NPU selection. Do not equate advertised INT8 TOPS with FP16/FP32 TFLOPS or model latency.
+Continue the existing Kotoba plan with latest-buffer target-only translation, developer-mode acknowledgment and default capture exclusion, one bounded native-output recovery, and measured installation-time NPU selection. Do not equate advertised INT8 TOPS with FP16/FP32 TFLOPS or model latency.
 
-Completed checks above cover context/cancellation/cache isolation, the real HyMT2 JSON-echo regression and official background/source prompt correction, both consent gates, and owned-video recovery cases. Remaining gates are the connected disc's permitted navigation and full pause/caption restoration, four-request synthetic NPU calibration bound to all relevant identities, conservative automatic selection, an isolated modern-runtime inference assessment, full tests/review/CI, immutable packaging and an observed restart. Synthetic audio is a hardware-path timing probe, not speech-quality evidence. Public artifacts exclude protected-disc content.
+Completed checks above cover context/cancellation/cache isolation, the real HyMT2 JSON-echo regression and official background/source prompt correction, the developer-mode acknowledgment and capture exclusion, and owned-video recovery cases. Remaining gates are the connected disc's permitted navigation and full pause/caption restoration, four-request synthetic NPU calibration bound to all relevant identities, conservative automatic selection, an isolated modern-runtime inference assessment, full tests/review/CI, immutable packaging and an observed restart. Synthetic audio is a hardware-path timing probe, not speech-quality evidence. Public artifacts exclude protected-disc content.

@@ -231,8 +231,8 @@ private slots:
         failure_("Missing AACS configuration file!",0);
         QTRY_COMPARE(errors.count(),1);
         const auto detail=errors.first().first().toString();
-        QVERIFY2(detail.startsWith("이번 재생에서 AACS 설정을 불러오지 못했습니다."),qPrintable(detail));
-        QVERIFY(!detail.contains("누락"));QVERIFY(!detail.contains("복사"));
+        QVERIFY2(detail.startsWith("AACS 설정 파일을 찾거나 열 수 없습니다."),qPrintable(detail));
+        QVERIFY(detail.contains("현재 사용자 계정의 AACS 설정을 확인한 뒤"));
         QCOMPARE(engine.lastError(),detail);
         QTRY_VERIFY(updates.count()>=2);
         QCOMPARE(engine.lastError(),detail);QCOMPARE(errors.count(),1);

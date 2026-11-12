@@ -40,6 +40,7 @@ jobs:
           ./tests/package_tests.ps1
           ./tests/translation_cuda_installer_tests.ps1
           ./tests/asr_cuda_installer_tests.ps1
+          ./tests/ai_acceleration_install_tests.ps1
           ./tests/asr_model_installer_tests.ps1
           ./tests/windows_installer_tests.ps1
           ./tests/asr_encoder_install_tests.ps1

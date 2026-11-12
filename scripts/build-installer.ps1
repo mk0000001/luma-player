@@ -24,9 +24,14 @@ if($version -ceq '0.1.0-alpha.10'){
  $expectedCommit=(Get-LumaPackageSource -ProjectRoot $projectRoot).Commit
  $installerVersion=$version
 }
-if($manifest.sourceCommit -cne $expectedCommit -or $manifest.sourceDirty -or !$manifest.cudaIncluded){throw 'Wrong immutable CUDA payload source'}
+$flavor=if($manifest.cudaIncluded -eq $true){'windows-x64-cuda'}else{'windows-x64'}
+if($manifest.sourceCommit -cne $expectedCommit -or $manifest.sourceDirty -or
+   ($version -ceq '0.1.0-alpha.10' -and !$manifest.cudaIncluded) -or
+   ($version -cne '0.1.0-alpha.10' -and $manifest.packageFlavor -cne $flavor)){throw 'Wrong immutable installer payload source'}
+if($SignUpdateManifest -and !$manifest.cudaIncluded){throw 'The existing automatic-update channel requires the CUDA installer; the core installer is for manual installation.'}
 if(@(Get-ChildItem -LiteralPath $payloadRoot -File -Recurse).Count -ne (@($manifest.files).Count+1)){throw 'Unexpected payload files'}
 Assert-LumaPackagePublicFiles -Directory $payloadRoot
+if(!$manifest.cudaIncluded){Assert-LumaPackageCoreCudaOmitted -Directory $payloadRoot}
 foreach($file in $manifest.files){
  $path=[IO.Path]::GetFullPath((Join-Path $payloadRoot $file.path))
  if(!$path.StartsWith($payloadRoot+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase) -or !(Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -ne $file.bytes -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine $file.sha256){throw 'Payload manifest mismatch'}
@@ -37,9 +42,9 @@ $models=@(New-LumaInstallerModelEntry $a.accurateModel 'runtime/models' 'accurat
 New-Item -ItemType Directory -Path $outRoot | Out-Null
 Copy-Item "$PSScriptRoot/windows-installer.iss" ($outRoot+'/windows-installer.iss')
 [IO.File]::WriteAllText($outRoot+'/models.iss',($models -join "`r`n"),[Text.UTF8Encoding]::new($true))
-& $Compiler ('/DPayload='+$payloadRoot) ('/DOutput='+$outRoot) ('/DPlayerVersion='+$version) ('/DInstallerVersion='+$installerVersion) ($outRoot+'/windows-installer.iss')
+& $Compiler ('/DPayload='+$payloadRoot) ('/DOutput='+$outRoot) ('/DPlayerVersion='+$version) ('/DInstallerVersion='+$installerVersion) ('/DPayloadFlavor='+$flavor) ($outRoot+'/windows-installer.iss')
 if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
-$exe=Get-Item ($outRoot+"/LumaPlayer-$version-setup.1-windows-x64-cuda.exe")
+$exe=Get-Item ($outRoot+"/LumaPlayer-$version-setup.1-$flavor.exe")
 $hash=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText($exe.FullName+'.sha256',"$hash  $($exe.Name)`n",[Text.UTF8Encoding]::new($false))
 if($SignUpdateManifest){

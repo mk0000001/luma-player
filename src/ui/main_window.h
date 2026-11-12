@@ -1,9 +1,11 @@
 #pragma once
 #include <QDeadlineTimer>
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QTemporaryDir>
 #include <QSet>
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QPointer>
 #include "core/disc.h"
@@ -31,6 +33,7 @@ public:
     QJsonObject diagnostics()const;
 protected:
     bool nativeEvent(const QByteArray &eventType,void *message,qintptr *result)override;
+    void closeEvent(QCloseEvent *event)override;
     bool eventFilter(QObject *object,QEvent *event)override;
     void dragEnterEvent(QDragEnterEvent *event)override;
     void dropEvent(QDropEvent *event)override;
@@ -86,8 +89,10 @@ private:
     QSet<QString> translationSkipped_;
     QStringList translationSkippedOrder_;
     CaptionCoverage coverage_;
-    DiscInfo discInfo_,driveInfo_;
+    DiscInfo discInfo_;
     QString source_,model_,discPath_;
+    quint64 discPlayRequest_=0,discProbeRevision_=0;
+    bool discProbeRunning_=false,discPlayPending_=false,discProbeClosing_=false;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
     bool lanDiscSharing_=false,lanDiscAwaitingPause_=false,lanDiscResume_=false,lanSourceChanging_=false;
     bool lanRemotePlayback_=false,lanRemoteSeekable_=false;
@@ -134,11 +139,21 @@ private:
     void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
-    bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0,const LanReceiverPlayback *remote=nullptr);
+    void connectDeveloperDiagnostics();
+    void connectDeveloperPlaybackDiagnostics(PlaybackEngine *engine);
+    void recordDeveloperEvent(const char *code,const char *reason,const QString &device={});
+    QJsonObject testerDiagnosticReport() const;
+    QElapsedTimer developerEventClock_;
+    QJsonArray developerEvents_;
+    int droppedDeveloperEvents_=0;
+    bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0,const LanReceiverPlayback *remote=nullptr,const DiscInfo *inspectedDisc=nullptr);
     qint64 discTargetDurationMs_=0;
     void bindEngine(PlaybackEngine *engine);
     void recoverVideoOutput(PlaybackEngine *engine,const QString &message);
     void discoverDisc();
+    void discMediaChanged();
+    void playConnectedDisc();
+    void clearDiscPlayRequest();
     void refresh();
     void appendLog(const QString &message);
     void toggleFullScreen();

@@ -123,6 +123,7 @@ void SubtitleJob::setAcceleratorTimeout(int milliseconds){acceleratorTimeoutMs_=
 void SubtitleJob::setPreferences(const AiPreferences &preferences){
     if(preferences_.mode==preferences.mode && preferences_.gpuDevice==preferences.gpuDevice)return;
     shutdown();preferences_=preferences;rejected_.clear();selectedBackend_.clear();
+    selectedAccelerator_.clear();selectedDevice_.clear();
 }
 quint64 SubtitleJob::start(const RecognitionRequest &request,const QString &model){
     if(busy())cancel();else{++generation_;temp_.reset();}
@@ -194,6 +195,19 @@ void SubtitleJob::completed(int code,QProcess::ExitStatus status){
             cues=std::move(aligned->cues);selectedAlignment_=aligned->alignment;
         }
     }
-    const auto completedGeneration=generation_;selectedBackend_=backends_[backendIndex_].key;stage_=0;emit backendSelected(selectedBackend_);emit ready(completedGeneration,cues);
+    const auto &backend=backends_[backendIndex_];
+    selectedBackend_=backend.key;
+    if(backend.key=="CPU"){
+        selectedAccelerator_=backend.device.isEmpty()?"whisper-cli":"whisper-worker";
+        selectedDevice_="CPU";
+    }else{
+        static const QRegularExpression accelerator(R"((?:\A|\n)LUMA_ACCELERATOR=(Vulkan GPU|CUDA GPU|OpenVINO encoder)\r?(?=\n|\z))");
+        static const QRegularExpression device(R"((?:\A|\n)LUMA_DEVICE=((?:OpenVINO:)?(?:GPU|NPU)(?:\.[0-9]{1,3})?|(?:Vulkan|CUDA)[0-9]{1,3})\r?(?=\n|\z))");
+        const auto confirmed=accelerator.match(lastOutput_).captured(1);
+        selectedAccelerator_=confirmed=="Vulkan GPU"?QString("vulkan"):confirmed=="CUDA GPU"?QString("cuda"):
+                             confirmed=="OpenVINO encoder"?QString("openvino"):QString{};
+        selectedDevice_=device.match(lastOutput_).captured(1);
+    }
+    const auto completedGeneration=generation_;stage_=0;emit backendSelected(selectedBackend_);emit ready(completedGeneration,cues);
 }
 }

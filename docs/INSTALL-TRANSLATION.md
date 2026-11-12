@@ -4,6 +4,8 @@
 
 포터블에는 번역 실행기와 Whisper large-v3-turbo Q5 음성 인식 모델이 들어갑니다. `windows-x64` 코어는 CUDA를 생략하고, `windows-x64-cuda`는 음성 인식·번역 CUDA 실행기를 함께 포함합니다. **번역 가중치는 두 구성 모두 별도 선택 설치**입니다. 번역 모델 없이도 영상·음성 재생, 원문 자막과 일본어 한글 독음을 사용할 수 있습니다. 설치할 때 인터넷을 쓰며, 완료 후 인식·번역은 로컬에서 실행합니다. 외부 API 계정·키·Python은 필요하지 않습니다.
 
+Windows 패키지의 첫 일반 실행이나 설정의 **AI 가속 설정**에서 GPU와 사용 가능한 NPU를 확인하고 라이브러리를 설치할 수 있습니다. NVIDIA에는 CUDA, AMD Radeon과 Intel GPU에는 Vulkan, Intel GPU와 NPU에는 OpenVINO를 권장합니다. 권장 여부와 관계없이 설치할 수 있습니다. Vulkan·OpenVINO 음성 인식 런타임은 패키지에 포함되며, 이 두 항목의 설치 버튼은 번역 런타임을 추가하거나 복구합니다. 설치 후 LumaPlayer를 다시 열어 장치를 확인하세요.
+
 ### 번역 모델 선택
 
 | 프로필 | 파일 | 다운로드 크기 |
@@ -98,6 +100,8 @@ pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 ## English
 
 The portable player includes the translation runtime and Whisper large-v3-turbo Q5 ASR model. The `windows-x64` core omits CUDA, while `windows-x64-cuda` bundles both ASR and translation CUDA runtimes. **Translation weights remain optional in both.** Playback, source captions and Japanese Hangul readings work without translation weights. Installation uses the internet; subsequent recognition/translation runs locally, without an external API account/key or Python.
+
+On the first normal launch of a Windows package, or under **AI 가속 설정** in Settings, LumaPlayer scans GPU and available NPU hardware and offers acceleration packages. It recommends CUDA for NVIDIA, Vulkan for AMD Radeon and Intel GPUs, and OpenVINO for Intel GPUs and NPUs. Every package remains selectable regardless of the recommendation. Vulkan and OpenVINO recognition libraries are bundled, and their install buttons add or repair the translation runtime. Reopen LumaPlayer after installation to refresh device detection.
 
 ### Choose a translation model
 

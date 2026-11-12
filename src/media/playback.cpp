@@ -161,7 +161,7 @@ namespace {
 QString discFailureDetail(const QString &message){
     const auto has=[&](const char *text){return message.contains(QString::fromLatin1(text),Qt::CaseInsensitive);};
     const auto retry=QStringLiteral(" 디스크를 다시 열어 주세요. 계속되면 개발자 모드의 진단을 확인하세요.");
-    if(has("Missing AACS configuration file"))return QStringLiteral("이번 재생에서 AACS 설정을 불러오지 못했습니다.")+retry;
+    if(has("Missing AACS configuration file"))return QStringLiteral("AACS 설정 파일을 찾거나 열 수 없습니다. 현재 사용자 계정의 AACS 설정을 확인한 뒤 디스크를 다시 열어 주세요.");
     if(has("needs a library for AACS decoding"))return QStringLiteral("AACS 읽기 라이브러리를 불러오지 못했습니다. 설치 파일과 개발자 모드의 진단을 확인하세요.");
     if(has("No valid processing key found in AACS config file"))return QStringLiteral("이 디스크에 사용할 수 있는 AACS 처리 키를 확인하지 못했습니다. 개발자 모드의 진단을 확인하세요.");
     if(has("No valid host certificate found in AACS config file"))return QStringLiteral("유효한 AACS 호스트 인증서를 확인하지 못했습니다. 개발자 모드의 진단을 확인하세요.");

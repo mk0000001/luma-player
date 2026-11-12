@@ -7,6 +7,7 @@
 #include "ui/main_window.h"
 #include "luma_version.h"
 #ifdef Q_OS_WIN
+#include "ui/ai_acceleration_setup.h"
 #include "ui/update_manager.h"
 #include <windows.h>
 #endif
@@ -21,6 +22,8 @@ int main(int argc,char **argv){
         window.startLanDiscovery();
 #ifdef Q_OS_WIN
         if(auto *updates=window.findChild<luma::UpdateManager*>())updates->checkAtStartup();
+        if(parser.optionNames().isEmpty() && parser.positionalArguments().isEmpty())
+            QTimer::singleShot(0,&window,[&window]{luma::offerAiAccelerationSetup(&window);});
 #endif
     }
     if(parser.isSet("ai") && !parser.isSet("prepared-project"))QTimer::singleShot(500,&window,[&window,&parser]{window.enableAutomaticSubtitles(parser.value("ai"));});if(parser.isSet("exit-after")){bool ok=false;const auto delay=parser.value("exit-after").toInt(&ok);if(ok && delay>0)QTimer::singleShot(delay,&app,&QCoreApplication::quit);}

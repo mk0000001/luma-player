@@ -107,13 +107,14 @@ private slots:
     }
     void acceleratorFallback_data(){
         QTest::addColumn<QString>("source");QTest::addColumn<QString>("backend");
-        QTest::newRow("NPU-success")<<QString("accelerated.wav")<<QString("NPU");
-        QTest::newRow("NPU-unavailable")<<QString("npu-fails.wav")<<QString("GPU");
-        QTest::newRow("silent-CPU-fallback")<<QString("silent-cpu.wav")<<QString("CPU");
-        QTest::newRow("NPU-deadline")<<QString("stall-npu.wav")<<QString("GPU");
+        QTest::addColumn<QString>("accelerator");QTest::addColumn<QString>("device");
+        QTest::newRow("NPU-success")<<QString("accelerated.wav")<<QString("NPU")<<QString("openvino")<<QString("NPU");
+        QTest::newRow("NPU-unavailable")<<QString("npu-fails.wav")<<QString("GPU")<<QString("vulkan")<<QString("Vulkan0");
+        QTest::newRow("silent-CPU-fallback")<<QString("silent-cpu.wav")<<QString("CPU")<<QString("whisper-cli")<<QString("CPU");
+        QTest::newRow("NPU-deadline")<<QString("stall-npu.wav")<<QString("GPU")<<QString("vulkan")<<QString("Vulkan0");
     }
     void acceleratorFallback(){
-        QFETCH(QString,source);QFETCH(QString,backend);QTemporaryDir dir;
+        QFETCH(QString,source);QFETCH(QString,backend);QFETCH(QString,accelerator);QFETCH(QString,device);QTemporaryDir dir;
         for(const auto &folder:{"tools","whisper","ai","models"})QVERIFY(QDir(dir.path()).mkpath(folder));
 #ifdef Q_OS_WIN
         const QString suffix=".exe";
@@ -130,6 +131,8 @@ private slots:
         QSignalSpy errors(&job,&SubtitleJob::failed),results(&job,&SubtitleJob::ready),selection(&job,&SubtitleJob::backendSelected);
         RecognitionRequest request;request.source=source;const auto generation=job.start(request);
         QTRY_COMPARE_WITH_TIMEOUT(results.count(),1,4000);QCOMPARE(errors.count(),0);QCOMPARE(selection.count(),1);QCOMPARE(selection[0][0].toString(),backend);QCOMPARE(job.selectedBackend(),backend);QCOMPARE(results[0][0].toULongLong(),generation);QVERIFY(!job.busy());
+        QCOMPARE(job.selectedAccelerator(),accelerator);
+        QCOMPARE(job.selectedDevice(),device);
         // Cancel after the fixture acknowledges in-flight inference on every backend.
         request.source="cancel-running.wav";job.start(request);
         QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(working).size()>0,3000);QVERIFY(job.busy());QCOMPARE(results.count(),1);job.cancel();

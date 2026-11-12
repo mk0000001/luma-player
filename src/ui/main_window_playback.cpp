@@ -22,6 +22,7 @@
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QStorageInfo>
+#include <QThread>
 #include <QTimer>
 #include <algorithm>
 #include <cmath>
@@ -39,12 +40,44 @@ void syncCombo(QComboBox *box,const QVector<MediaItem> &items){
     QSignalBlocker guard(box);const auto selected=box->currentData();box->clear();for(const auto &item:items)box->addItem(item.label,item.id);
     const int index=box->findData(selected);if(index>=0)box->setCurrentIndex(index);
 }
+
+struct DiscProbeResult {
+    DiscInfo disc;
+    bool opticalDrivePresent=false;
+};
+
+DiscProbeResult probeConnectedDisc(){
+    DiscProbeResult result;
+    QStringList roots;
+#ifdef Q_OS_WIN
+    // An empty optical drive can otherwise display a Win32 critical-error dialog.
+    SetThreadErrorMode(SEM_FAILCRITICALERRORS,nullptr);
+    const auto drives=GetLogicalDrives();
+    for(int index=0;index<26;++index){
+        if(!(drives & (1u<<index)))continue;
+        const QString root=QString(QChar('A'+index))+":/";
+        if(GetDriveTypeW(reinterpret_cast<LPCWSTR>(root.utf16()))==DRIVE_CDROM)roots.append(root);
+    }
+    result.opticalDrivePresent=!roots.isEmpty();
+#else
+    for(const auto &volume:QStorageInfo::mountedVolumes())roots.append(volume.rootPath());
+#ifdef Q_OS_LINUX
+    result.opticalDrivePresent=!QDir("/sys/class/block").entryList({"sr[0-9]*"},QDir::Dirs).isEmpty();
+#endif
+#endif
+    for(const auto &root:roots){
+        auto disc=inspectDisc(root);
+        if(disc.valid){result.disc=std::move(disc);break;}
+    }
+    return result;
+}
 }
 
 void MainWindow::bindEngine(PlaybackEngine *engine){
     engine->setVideoOverrides(videoOutputPreferences());
     engine->setAudioOutputOptions(audioOutputPreferences());
     engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
+    connectDeveloperPlaybackDiagnostics(engine);
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){
         if(engine==active_ && lanRemotePlayback_){
@@ -176,24 +209,83 @@ void MainWindow::updateMotionSettings(){
 }
 
 void MainWindow::discoverDisc(){
+    if(discProbeRunning_ || discProbeClosing_)return;
+    discProbeRunning_=true;
+    const auto request=discPlayPending_?discPlayRequest_:0;
+    const auto revision=discProbeRevision_;
+    const auto result=std::make_shared<DiscProbeResult>();
+    // Optical I/O can remain blocked inside Windows after a tray closes.
+    // The worker has no window references and can finish after the window closes.
+    auto *worker=QThread::create([result]{*result=probeConnectedDisc();});
+    connect(worker,&QThread::finished,worker,&QObject::deleteLater);
+    connect(worker,&QThread::finished,this,[this,request,revision,result]{
+        if(discProbeClosing_)return;
+        discProbeRunning_=false;
+        if(revision!=discProbeRevision_ || (discPlayPending_ && request!=discPlayRequest_)){discoverDisc();return;}
+        const auto &disc=result->disc;
+        discPath_=disc.root;
+        if(disc.valid){
+            QString title=disc.label;title.replace('_',' ');discLabel_->setText(title.isEmpty()?"Blu-ray":title);
+            discDetails_->setText(QString("%1\n%2개 플레이리스트\n%3").arg(discPath_).arg(disc.titles.size()).arg(disc.aacs || disc.bdplus?"보호 디스크 감지":"일반 디스크"));
+        }else{
+            discLabel_->setText(discPlayPending_ && result->opticalDrivePresent?"디스크 준비 중…":"연결된 디스크 없음");
+            discDetails_->clear();
+        }
+        if(!discPlayPending_)return;
+        if(disc.valid){
+            clearDiscPlayRequest();
+            openSourceImpl(disc.root,false,0,nullptr,&disc);
+        }else if(result->opticalDrivePresent){
+            QTimer::singleShot(400,this,[this,request]{if(discPlayPending_ && request==discPlayRequest_)discoverDisc();});
+        }else{
+            clearDiscPlayRequest();
+            status_->setText("연결된 Blu-ray 드라이브를 찾지 못했습니다.");
+        }
+    });
+    worker->start();
+}
+
+void MainWindow::discMediaChanged(){
+    if(discProbeClosing_)return;
+    ++discProbeRevision_;
     discPath_.clear();
-#ifdef Q_OS_WIN
-    for(wchar_t drive=L'A';drive<=L'Z';++drive){const QString root=QString(QChar(drive))+":/";if(GetDriveTypeW(reinterpret_cast<LPCWSTR>(root.utf16()))==DRIVE_CDROM && QFileInfo::exists(root+"BDMV/index.bdmv")){discPath_=root;break;}}
-#else
-    for(const auto &volume:QStorageInfo::mountedVolumes())if(QFileInfo::exists(volume.rootPath()+"/BDMV/index.bdmv")){discPath_=volume.rootPath();break;}
-#endif
-    if(discPath_.isEmpty()){discLabel_->setText("연결된 디스크 없음");discDetails_->clear();return;}
-    driveInfo_=inspectDisc(discPath_);QString title=driveInfo_.label;title.replace('_',' ');discLabel_->setText(title.isEmpty()?"Blu-ray":title);
-    discDetails_->setText(QString("%1\n%2개 플레이리스트\n%3").arg(discPath_).arg(driveInfo_.titles.size()).arg(driveInfo_.aacs || driveInfo_.bdplus?"보호 디스크 감지":"일반 디스크"));
+    discLabel_->setText(discPlayPending_?"디스크 준비 중…":"디스크 확인 중…");
+    discDetails_->clear();
+    discoverDisc();
+}
+
+void MainWindow::playConnectedDisc(){
+    if(discPlayPending_)return;
+    discPlayPending_=true;
+    const auto request=++discPlayRequest_;
+    discButton_->setEnabled(false);
+    discPath_.clear();
+    discLabel_->setText("디스크 준비 중…");
+    discDetails_->clear();
+    status_->setProperty("error",false);
+    status_->setText("Blu-ray 드라이브가 준비되기를 기다리는 중…");
+    QTimer::singleShot(15000,this,[this,request]{
+        if(!discPlayPending_ || request!=discPlayRequest_)return;
+        clearDiscPlayRequest();
+        discLabel_->setText("디스크를 읽을 수 없음");
+        status_->setText("Blu-ray 드라이브가 아직 준비되지 않았습니다. 디스크를 확인한 뒤 다시 시도해 주세요.");
+    });
+    discoverDisc();
+}
+
+void MainWindow::clearDiscPlayRequest(){
+    discPlayPending_=false;
+    discButton_->setEnabled(true);
 }
 
 void MainWindow::openSource(const QString &source){openSourceImpl(source,false);}
 
-bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs,const LanReceiverPlayback *remote){
-    const bool disc=!remote && isDiscSource(source);
+bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs,const LanReceiverPlayback *remote,const DiscInfo *inspectedDisc){
+    const bool disc=!remote && (inspectedDisc || isDiscSource(source));
     const auto input=remote ? std::optional<QString>(QString{}) : normalizedPlaybackSource(source,disc);
     if(!input){status_->setText("지원하지 않는 미디어 주소입니다.");return false;}
     if(remote && !validLanMediaSource(remote->source)){status_->setText("PC 재생 주소를 확인할 수 없습니다.");return false;}
+    clearDiscPlayRequest();
     if(!stopLanShareForSourceChange())return false;
     if(!remote)stopLanReceiver();
     savePlaybackProgress(true);
@@ -208,7 +300,7 @@ bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
         status_->setText("PC와의 연결이 종료되었습니다.");return false;
     }
     lanRemotePlayback_=remote!=nullptr;lanRemoteSeekable_=remote && remote->seekable;
-    source_=*input;if(disc)discInfo_=inspectDisc(source_);else if(remote)discInfo_={};
+    source_=*input;if(disc)discInfo_=inspectedDisc?*inspectedDisc:inspectDisc(source_);else if(remote)discInfo_={};
     discTargetDurationMs_=disc?preparedDiscDurationMs:0;
     resumeIdentity_=remote?QString{}:resumeIdentity(source_,disc?&discInfo_:nullptr);
     if(!remote)pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);

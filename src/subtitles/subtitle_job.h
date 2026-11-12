@@ -26,6 +26,8 @@ public:
     void setStageTimeouts(int extractionMs,int recognitionMs);
     void setAcceleratorTimeout(int milliseconds);
     QString selectedBackend()const{return selectedBackend_;}
+    QString selectedAccelerator()const{return selectedAccelerator_;}
+    QString selectedDevice()const{return selectedDevice_;}
     QString selectedAlignment()const{return selectedAlignment_;}
     void setPreferences(const AiPreferences &preferences);
     AiPreferences preferences()const{return preferences_;}
@@ -56,7 +58,7 @@ private:
     QTimer timeout_;
     int extractionTimeoutMs_=90000,recognitionTimeoutMs_=120000;
     int acceleratorTimeoutMs_=90000;
-    QString selectedBackend_;
+    QString selectedBackend_,selectedAccelerator_,selectedDevice_;
     QString selectedAlignment_="segment";
     AiPreferences preferences_;
     QString resultPrefix_,rejectionModel_;

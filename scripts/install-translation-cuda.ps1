@@ -15,8 +15,10 @@ function Get-LumaCudaScopedPath {
     return $path
 }
 function Get-LumaCudaCrtFiles {
-    param([string]$Directory,[switch]$Development)
-    $candidates=@((Get-LumaCudaScopedPath -Directory $Directory -RelativePath 'runtime/translation/vulkan'),[IO.Path]::GetFullPath($Directory))
+    param([string]$Directory,[switch]$Development,[switch]$PreferPlayerRoot)
+    $root=[IO.Path]::GetFullPath($Directory)
+    $vulkan=Get-LumaCudaScopedPath -Directory $Directory -RelativePath 'runtime/translation/vulkan'
+    $candidates=if($PreferPlayerRoot){@($root,$vulkan)}else{@($vulkan,$root)}
     if($Development){
         $vswhere=Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
         if(Test-Path -LiteralPath $vswhere){

@@ -17,7 +17,7 @@ New-Item -ItemType Directory -Path $package | Out-Null
 Copy-Item -LiteralPath $executable,(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'CHANGELOG.md'),(Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'translation-dependencies.lock.json') -Destination $package
 Copy-LumaPackageTrackedDocuments -ProjectRoot $projectRoot -Destination $package
 New-Item -ItemType Directory -Path (Join-Path $package 'tools') -Force | Out-Null
-foreach($name in 'install-translation.ps1','install-translation-cuda.ps1','install-asr-cuda.ps1','install-asr-model.ps1','install-asr-encoder.ps1','measure-asr.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $package 'tools') }
+foreach($name in 'install-ai-acceleration.ps1','install-translation.ps1','install-translation-cuda.ps1','install-asr-cuda.ps1','install-asr-model.ps1','install-asr-encoder.ps1','measure-asr.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $package 'tools') }
 Copy-Item -LiteralPath (Join-Path $package 'docs/INSTALL-TRANSLATION.md') -Destination (Join-Path $package 'tools/README-translation.md')
 $lock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json') -Raw | ConvertFrom-Json
 $qt = $lock.windows | Where-Object id -eq 'qt'

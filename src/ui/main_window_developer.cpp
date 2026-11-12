@@ -2,24 +2,309 @@
 #include "performance_overlay.h"
 #include "player_controls.h"
 #include "luma_version.h"
+#include "media/platform_features.h"
 #include "subtitles/translation_service.h"
 
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QPlainTextEdit>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QSysInfo>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <limits>
 
 namespace luma {
+namespace {
+constexpr qsizetype testerEventLimit=64;
+constexpr qsizetype testerReportByteLimit=32*1024;
+
+QString knownValue(const QString &value,std::initializer_list<const char *> allowed){
+    for(const auto *item:allowed)if(value==item)return value;
+    return {};
+}
+
+QString deviceId(const QString &value){
+    static const QRegularExpression pattern(
+        R"(\A(?:(?:OpenVINO:)?(?:GPU|NPU)(?:\.[0-9]{1,3})?|CPU|(?:CUDA|Vulkan)[0-9]{1,3})\z)");
+    return value.size()<=16 && pattern.match(value).hasMatch()?value:QString{};
+}
+
+QJsonObject requestedAi(const AiPreferences &preferences){
+    return {{"mode",knownValue(preferences.mode,{"auto","cpu","gpu","npu"})},
+            {"device",deviceId(preferences.gpuDevice)}};
+}
+
+QJsonObject translationBackendEvidence(const QString &description){
+    if(description=="CPU / llama.cpp")return {{"backend","cpu"},{"accelerator","llama.cpp"},{"device","CPU"}};
+    const auto fields=description.left(64).split(" / ");
+    if(fields.size()<3)return {};
+    const auto backend=knownValue(fields[0],{"GPU","NPU"}).toLower();
+    if(backend.isEmpty())return {};
+    if(fields[1]=="OpenVINO"){
+        const auto device=deviceId(fields[2]);
+        if(!device.startsWith(fields[0]))return {};
+        return {{"backend",backend},{"accelerator","openvino"},{"device",device}};
+    }
+    const auto device=deviceId(fields[1]);
+    const bool vulkan=device.startsWith("Vulkan"),cuda=device.startsWith("CUDA");
+    if(backend!="gpu" || (!vulkan && !cuda))return {};
+    return {{"backend","gpu"},{"accelerator",vulkan?"vulkan":"cuda"},{"device",device},{"gpuOffloadVerified",true}};
+}
+
+const char *asrFallbackReason(const QString &reason){
+    if(reason=="시간 초과")return "timeout";
+    if(reason=="처리 실패")return "process_failed";
+    if(reason=="실행할 수 없음")return "launch_failed";
+    if(reason=="가속 실행 확인 실패")return "acceleration_unconfirmed";
+    if(reason=="자막 결과 없음")return "result_missing";
+    if(reason=="모델 준비 시간 초과")return "model_start_timeout";
+    return "other";
+}
+
+const char *asrFailureReason(const QString &message){
+    if(message.startsWith("음성인식 모델을 찾을 수 없습니다."))return "model_missing";
+    if(message.startsWith("사용 가능한 로컬 음성인식 장치를 찾지 못했습니다."))return "backends_exhausted";
+    if(message.startsWith("음성 읽기 시간이 초과되었습니다."))return "audio_timeout";
+    if(message.startsWith("AI 자막 처리 실패:"))return "audio_extraction_failed";
+    if(message.startsWith("AI 도구를 실행할 수 없습니다:"))return "launch_failed";
+    if(message.startsWith("이 구간의 음성을 읽을 수 없습니다."))return "audio_unavailable";
+    return "other";
+}
+
+const char *translationFallbackReason(const QString &reason){
+    if(reason=="모델 시작 시간이 초과되었습니다.")return "startup_timeout";
+    if(reason=="현재 NPU 드라이버가 모델 컴파일 옵션을 지원하지 않습니다.")return "driver_option_unsupported";
+    if(reason=="OpenVINO 모델 컴파일 또는 추론에 실패했습니다.")return "openvino_failed";
+    if(reason=="네이티브 번역 실행기를 시작하지 못했습니다.")return "launch_failed";
+    if(reason.startsWith("실행기가 종료되었습니다 (코드 "))return "process_exited";
+    if(reason=="현재 NPU 실행기의 입력 한도로 문맥 번역을 처리할 수 없어 다음 장치를 시도합니다.")return "input_limit";
+    if(reason=="로컬 번역 추론 요청이 실패했습니다.")return "inference_failed";
+    if(reason=="실제 실행 장치를 확인하지 못했습니다.")return "acceleration_unconfirmed";
+    return "other";
+}
+
+const char *translationFailureReason(const QString &message){
+    if(message.startsWith("한국어 번역 모델이 없습니다."))return "model_missing";
+    if(message=="로컬 번역 포트를 열 수 없습니다.")return "localhost_unavailable";
+    if(message.startsWith("사용 가능한 로컬 한국어 번역 실행기가 없습니다."))return "backends_exhausted";
+    return "other";
+}
+
+QString hardwareDecoderId(const QString &value){
+    if(value=="CPU · Blu-ray 호환 디코딩" || value=="no" || value=="none")return "software";
+    return knownValue(value.toLower(),{"auto","auto-safe","auto-copy","software","d3d11va","d3d11va-copy","dxva2",
+        "dxva2-copy","vaapi","vaapi-copy","nvdec","nvdec-copy","vulkan","vulkan-copy","videotoolbox","videotoolbox-copy"});
+}
+
+QString videoCodecId(const QString &value){
+    const auto codec=value.toLower();
+    if(codec.startsWith("h.264") || codec=="avc1")return "h264";
+    if(codec.startsWith("hevc") || codec=="h265" || codec=="hvc1")return "hevc";
+    if(codec.startsWith("mpeg-2 video") || codec=="mpgv" || codec=="mp2v")return "mpeg2video";
+    if(codec.startsWith("av1") || codec=="av01" || codec=="alliance for open media av1")return "av1";
+    if(codec.startsWith("vp9") || codec=="vp09")return "vp9";
+    return knownValue(codec,{"h264","libdav1d","vp8","mpeg1video","mpeg2video","mpeg4","vc1","prores","ffv1","theora"});
+}
+
+QString videoDecoderId(const QString &value){
+    return knownValue(value.toLower(),{"h264","h264_mf","hevc","hevc_mf","vp8","vp9","vp9_mf","av1","av1_mf","libdav1d",
+        "mpeg1video","mpeg2video","mpeg4","vc1","prores","ffv1","theora"});
+}
+
+QJsonObject installedWorkers(){
+    const QDir runtime(QCoreApplication::applicationDirPath()+"/runtime");
+#ifdef Q_OS_WIN
+    const QString suffix=".exe";
+#else
+    const QString suffix;
+#endif
+    const auto exists=[&](const QString &file){return QFileInfo(runtime.filePath(file)).isFile();};
+    QJsonObject result{{"asrNative",exists("ai/luma-whisper-worker"+suffix)},{"asrCli",exists("whisper/whisper-cli"+suffix)},
+        {"translationVulkan",exists("translation/vulkan/llama-server"+suffix)},
+        {"translationCuda",exists("translation/cuda/llama-server"+suffix)},
+        {"translationOpenVino",exists("translation/openvino/llama-server"+suffix)}};
+#ifdef Q_OS_WIN
+    result.insert("asrVulkan",exists("ai/ggml-vulkan.dll"));
+    result.insert("asrCuda",exists("ai/ggml-cuda.dll"));
+    result.insert("asrOpenVino",exists("ai/openvino.dll"));
+#endif
+    return result;
+}
+
+QJsonObject lastAccelerationInstall(){
+    const auto saved=QSettings().value("ai/accelerationLastInstall").toMap();
+    const auto backend=knownValue(saved.value("backend").toString(),{"vulkan","cuda","openvino"});
+    const auto result=knownValue(saved.value("result").toString(),{"verified","cancelled","failed"});
+    bool codeValid=false;
+    const auto code=saved.value("exitCode").toInt(&codeValid);
+    if(backend.isEmpty() || result.isEmpty() || !codeValid)return {};
+    return {{"backend",backend},{"result",result},{"exitCode",code}};
+}
+}
+
+void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const QString &device){
+    QJsonObject entry{{"elapsedMs",developerEventClock_.elapsed()},{"code",code},{"reason",reason}};
+    const auto id=deviceId(device);
+    if(!id.isEmpty())entry.insert("device",id);
+    if(developerEvents_.size()==testerEventLimit){
+        developerEvents_.removeFirst();
+        if(droppedDeveloperEvents_<std::numeric_limits<int>::max())++droppedDeveloperEvents_;
+    }
+    developerEvents_.append(entry);
+}
+
+void MainWindow::connectDeveloperDiagnostics(){
+    developerEventClock_.start();
+    connect(&job_,&SubtitleJob::progress,this,[this](const QString &message){
+        if(message.size()>128)return;
+        static const QRegularExpression fallback(R"(\A(GPU|NPU|CPU) 사용 불가 \(([^)]+)\) · 다음 장치로 전환 중…\z)");
+        const auto match=fallback.match(message);
+        if(match.hasMatch())recordDeveloperEvent("asr_fallback",asrFallbackReason(match.captured(2)),match.captured(1));
+    });
+    connect(&job_,&SubtitleJob::failed,this,[this](const QString &message){
+        recordDeveloperEvent("asr_failed",asrFailureReason(message));
+    });
+    connect(&job_,&SubtitleJob::backendSelected,this,[this,last=QString{}](const QString &backend) mutable {
+        const auto kind=knownValue(backend,{"CPU","GPU","NPU"});
+        if(kind.isEmpty())return;
+        const auto device=deviceId(job_.selectedDevice());
+        const auto identity=kind+'/'+device+'/'+job_.selectedAccelerator();
+        if(identity==last)return;
+        last=identity;
+        recordDeveloperEvent("asr_backend_confirmed",kind=="GPU"?"gpu":kind=="NPU"?"npu":"cpu",device);
+    });
+    connect(translation_,&TranslationService::progress,this,[this](const QString &message){
+        if(message.size()>160)return;
+        const QString fallback=" 번역 사용 불가: ",missing=" 번역 실행기가 없습니다.";
+        const auto separator=message.indexOf(fallback);
+        if(separator>=0){
+            const auto device=deviceId(message.left(separator));
+            if(!device.isEmpty())
+                recordDeveloperEvent("translation_fallback",translationFallbackReason(message.mid(separator+fallback.size())),device);
+        }else if(message.endsWith(missing)){
+            const auto device=deviceId(message.chopped(missing.size()));
+            if(!device.isEmpty())recordDeveloperEvent("translation_backend_missing","worker_missing",device);
+        }
+    });
+    connect(translation_,&TranslationService::backendSelected,this,[this](const QString &backend){
+        const auto evidence=translationBackendEvidence(backend);
+        if(!evidence.isEmpty())recordDeveloperEvent("translation_backend_confirmed",
+            evidence.value("gpuOffloadVerified").toBool()?"gpu_offload":"backend_verified",evidence.value("device").toString());
+    });
+    connect(translation_,&TranslationService::failed,this,[this](const QString &message){
+        recordDeveloperEvent("translation_failed",translationFailureReason(message));
+    });
+    connect(translation_,&TranslationService::skippedCue,this,[this]{
+        recordDeveloperEvent("translation_cue_skipped","request_skipped");
+    });
+}
+
+void MainWindow::connectDeveloperPlaybackDiagnostics(PlaybackEngine *engine){
+    const bool disc=engine==discEngine_.get();
+    if(!engine->available())recordDeveloperEvent("video_runtime_unavailable",disc?"libvlc":"libmpv");
+    connect(engine,&PlaybackEngine::videoOutputLost,this,[this](const QString &message){
+        const auto *reason=message.endsWith("(DXGI_ERROR_DEVICE_REMOVED, 0x887a0005)")?"dxgi_device_removed":
+                           message.endsWith("(DXGI_ERROR_DEVICE_RESET, 0x887a0007)")?"dxgi_device_reset":
+                           message=="Blu-ray GPU 영상이 멈춰 호환 디코딩으로 복구합니다."?"decoder_stalled":"other";
+        recordDeveloperEvent("video_output_lost",reason);
+    });
+    connect(engine,&PlaybackEngine::errorOccurred,this,[this,disc](const QString &message){
+        const auto *reason=message.startsWith("AACS 설정 파일을 찾거나 열 수 없습니다.")?"aacs_config_unavailable":
+                           message=="video output initialization failed"?"video_output_init_failed":
+                           message=="audio output initialization failed"?"audio_output_init_failed":
+                           message=="loading failed"?"loading_failed":disc?"libvlc":"libmpv";
+        recordDeveloperEvent("video_failed",reason);
+    });
+    connect(engine,&PlaybackEngine::logMessage,this,[this](const QString &message){
+        if(message.startsWith("재생 엔진이 거부한 설정 · "))
+            recordDeveloperEvent("video_option_rejected","runtime_rejected_override");
+    });
+}
+
+QJsonObject MainWindow::testerDiagnosticReport() const{
+    static const QRegularExpression kernelVersion(R"(\A[0-9]{1,6}(?:\.[0-9]{1,6}){0,3})");
+    static const QRegularExpression driverVersion(R"(\A[0-9]{1,5}(?:\.[0-9]{1,5}){3}\z)");
+    static const QRegularExpression engineVersion(R"(\A(?:mpv )?v?([0-9]{1,4}\.[0-9]{1,4}(?:\.[0-9]{1,4}){0,2})(?=[-+ ]|\z))");
+    const QJsonObject os{{"kernel",knownValue(QSysInfo::kernelType(),{"winnt","linux","darwin","freebsd","openbsd","netbsd"})},
+        {"kernelVersion",kernelVersion.match(QSysInfo::kernelVersion()).captured(0)},
+        {"architecture",QSysInfo::buildCpuArchitecture()}};
+    const auto preferences=videoOutputPreferences();
+    const auto selectedAdapter=QSettings().value("video/adapter").toString();
+    constexpr std::array hardware{"auto","software","d3d11va","dxva2","vaapi"};
+    constexpr std::array codecs{"auto","h264","hevc","vp9","av1","libdav1d"};
+    QJsonObject configured{{"hardware",hardware.at(static_cast<size_t>(preferences.hardware))},
+        {"codec",codecs.at(static_cast<size_t>(preferences.codec))},
+        {"adapterSelection",selectedAdapter.isEmpty()?"auto":"manual"}};
+    QJsonArray adapters;
+    for(const auto &value:videoAdapters(true)){
+        const auto adapter=value.toObject();
+        const int vendor=adapter.value("vendorId").toInt(-1),device=adapter.value("deviceId").toInt(-1);
+        if(vendor<0 || vendor>0xffff || device<0 || device>0xffff)continue;
+        const auto version=adapter.value("driverVersion").toString();
+        QJsonObject entry{{"vendorId",vendor},{"deviceId",device}};
+        if(driverVersion.match(version).hasMatch())entry.insert("driverVersion",version);
+        const auto memory=adapter.value("dedicatedMemoryMiB").toDouble(-1);
+        if(std::isfinite(memory) && memory>=0 && memory<=1024*1024)entry.insert("dedicatedMemoryMiB",memory);
+        if(!selectedAdapter.isEmpty() && adapter.value("id").toString()==selectedAdapter)configured.insert("adapter",entry);
+        if(adapters.size()<16)adapters.append(entry);
+    }
+    QJsonObject video{{"configured",configured},{"recoveries",videoRecoveryCount_},{"recoveryExhausted",videoRecoveryExhausted_},
+        {"libmpvAvailable",fileEngine_ && fileEngine_->available()},{"libvlcAvailable",discEngine_ && discEngine_->available()}};
+    if(active_){
+        const auto &state=active_->state();
+        const auto requested=hardwareDecoderId(state.videoDecoderRequest.section(" / ",0,0));
+        const auto actualDecoder=videoDecoderId(state.videoDecoder);
+        const auto current=state.videoCodec.isEmpty() && actualDecoder.isEmpty()?QString{}:hardwareDecoderId(state.hardwareDecoder);
+        auto codec=videoCodecId(state.videoCodec);
+        if(codec.isEmpty())
+            codec=actualDecoder=="libdav1d"?QString("av1"):actualDecoder.endsWith("_mf")?actualDecoder.chopped(3):actualDecoder;
+        QJsonObject playback{{"engine",active_==discEngine_.get()?"libvlc":"libmpv"},{"playing",state.playing},{"failed",state.failed},
+            {"buffering",state.buffering || state.fileCacheHolding},
+            {"requestedHardware",requested},{"requestedDecoder",videoDecoderId(state.videoDecoderRequest.section(" / ",1,1))},
+            {"actualHardware",current},{"actualDecoder",actualDecoder},{"videoCodec",codec},
+            {"droppedFrames",state.droppedVideoFrames},{"overrideRejected",!state.videoOverrideStatus.isEmpty()}};
+        const auto runtime=engineVersion.match(state.runtimeVersion).captured(1);
+        if(!runtime.isEmpty())playback.insert("engineVersion",runtime);
+        if(std::isfinite(state.sourceFps) && state.sourceFps>0 && state.sourceFps<=1000)playback.insert("sourceFps",state.sourceFps);
+        const auto transfer=knownValue(state.transferFunction,{"pq","hlg","bt.1886","srgb","linear","gamma2.2","gamma2.4"});
+        if(!transfer.isEmpty())playback.insert("inputTransfer",transfer);
+        const auto primaries=knownValue(state.colorPrimaries,{"bt.601-525","bt.601-625","bt.709","bt.2020","dci-p3","display-p3"});
+        if(!primaries.isEmpty())playback.insert("inputPrimaries",primaries);
+        const auto automatic=knownValue(requested,{"auto","auto-safe","auto-copy"});
+        if(!requested.isEmpty() && !current.isEmpty() && automatic.isEmpty()){
+            const auto family=[](const QString &decoder){return decoder.endsWith("-copy")?decoder.chopped(5):decoder;};
+            playback.insert("decoderFallback",family(requested)!=family(current));
+        }
+        video.insert("playback",playback);
+    }
+    QJsonObject asr{{"requested",requestedAi(job_.preferences())}};
+    const auto asrBackend=knownValue(job_.selectedBackend(),{"CPU","GPU","NPU"}).toLower();
+    if(!asrBackend.isEmpty())asr.insert("lastConfirmed",QJsonObject{{"backend",asrBackend},
+        {"accelerator",job_.selectedAccelerator()},{"device",deviceId(job_.selectedDevice())},
+        {"alignment",knownValue(job_.selectedAlignment(),{"dtw","segment","token"})}});
+    QJsonObject translation{{"requested",requestedAi(translation_->preferences())}};
+    const auto actualTranslation=translationBackendEvidence(translation_->selectedBackend());
+    if(!actualTranslation.isEmpty())translation.insert("actual",actualTranslation);
+    QJsonObject report{{"schemaVersion",1},{"appVersion",LUMA_VERSION},{"os",os},{"graphicsAdapters",adapters},
+        {"installedWorkers",installedWorkers()},{"video",video},{"asr",asr},{"translation",translation},
+        {"events",developerEvents_},{"droppedEvents",droppedDeveloperEvents_}};
+    const auto installer=lastAccelerationInstall();
+    if(!installer.isEmpty())report.insert("lastAccelerationInstall",installer);
+    return report;
+}
 
 PerformanceInput MainWindow::performanceInput() const {
     PerformanceInput input;
@@ -102,6 +387,8 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         return button;
     };
     auto *copy = addButton("진단 요약 복사", "copyDiagnostics");
+    auto *exportTester = addButton("테스트 진단 JSON 저장", "exportTesterDiagnostics");
+    exportTester->setToolTip("GPU·드라이버, 디코더, AI 실행 상태를 JSON 파일로 저장합니다.");
     auto *exportCsv = addButton("성능 기록 CSV 저장", "exportPerformance");
     auto *clear = addButton("성능 기록 초기화", "clearPerformance");
     auto *clearLog = addButton("재생 로그 지우기", "clearDeveloperLog");
@@ -140,6 +427,16 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         QApplication::clipboard()->setText(QString::fromUtf8(QJsonDocument(developerSnapshot()).toJson()));
         feedback->setText("진단 요약을 복사했습니다.");
     });
+    connect(exportTester, &QPushButton::clicked, this, [this, feedback] {
+        if(!developerApproved_)return;
+        const auto path=QFileDialog::getSaveFileName(this,"테스트 진단 저장","LumaPlayer-diagnostics.json","JSON (*.json)");
+        if(path.isEmpty() || !developerApproved_)return;
+        const auto report=QJsonDocument(testerDiagnosticReport()).toJson();
+        QSaveFile output(path);
+        const bool saved=report.size()<=testerReportByteLimit && output.open(QIODevice::WriteOnly) &&
+            output.write(report)==report.size() && output.commit();
+        feedback->setText(saved?"테스트 진단을 저장했습니다.":"테스트 진단을 저장하지 못했습니다.");
+    });
     connect(exportCsv, &QPushButton::clicked, this, [this, feedback] {
         if (!developerApproved_)
             return;
@@ -162,8 +459,12 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         }
     });
     connect(clearLog, &QPushButton::clicked, this, [this] {
-        if (developerApproved_)
+        if (developerApproved_) {
             log_->clear();
+            developerEvents_={};
+            droppedDeveloperEvents_=0;
+            developerEventClock_.restart();
+        }
     });
     buildDeveloperVideoTools(layout);
 }

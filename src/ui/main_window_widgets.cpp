@@ -8,6 +8,7 @@
 #include "subtitles/subtitle_file.h"
 #include "subtitles/translation_service.h"
 #ifdef Q_OS_WIN
+#include "ai_acceleration_setup.h"
 #include "update_manager.h"
 #endif
 #include <QApplication>
@@ -17,6 +18,7 @@
 #include <QDialog>
 #include <QDesktopServices>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontDatabase>
@@ -272,25 +274,46 @@ void MainWindow::buildUi(){
 #endif
     buildAudioSettings(settingsLayout);
 #ifdef Q_OS_WIN
+    auto *aiAcceleration=button("AI 가속 설정","aiAccelerationSettings");
+    settingsLayout->addWidget(aiAcceleration);
+    connect(aiAcceleration,&QPushButton::clicked,this,[this]{showAiAccelerationSetup(this);});
     auto *updates=new UpdateManager(this);
     updates->addControls(settingsLayout);
 #endif
-    captureStatus_=label("보호 디스크를 재생하면 캡처 차단을 적용합니다.","captureStatus");captureStatus_->setWordWrap(true);settingsLayout->addWidget(captureStatus_);auto *privacyNote=label("개발용 캡처 허용은 개발자 모드에서 별도 동의 후 설정할 수 있습니다. Windows 캡처 제외는 DRM·HDCP 인증과는 별개입니다.","muted");privacyNote->setWordWrap(true);settingsLayout->addWidget(privacyNote);
+    captureStatus_=label("보호 디스크를 재생하면 캡처 차단을 적용합니다.","captureStatus");captureStatus_->setWordWrap(true);settingsLayout->addWidget(captureStatus_);
     developerEnabled_=new QCheckBox("개발자 모드");developerEnabled_->setObjectName("developerMode");
     developerEnabled_->setChecked(QSettings().value("ui/developerMode",false).toBool() && QSettings().value("privacy/developerConsentVersion",0).toInt()==privacyConsentVersion);settingsLayout->addWidget(developerEnabled_);
     developerApproved_=developerEnabled_->isChecked();
     auto *developerPanel=new QWidget;developerPanel->setObjectName("developerDiagnostics");auto *developerLayout=new QVBoxLayout(developerPanel);developerLayout->setContentsMargins(0,0,0,0);
     captureAllowed_=new QCheckBox("개발용 영상 캡처 허용");captureAllowed_->setObjectName("captureAllowed");captureAllowed_->setToolTip("캡처 차단을 해제하면 Parsec과 화면 캡처에 영상·자막이 보일 수 있습니다.");
     captureAllowed_->setChecked(developerEnabled_->isChecked() && QSettings().value("privacy/captureAllowed",false).toBool() && QSettings().value("privacy/captureConsentVersion",0).toInt()==privacyConsentVersion);developerLayout->addWidget(captureAllowed_);
+    captureAllowed_->hide();
     captureApproved_=captureAllowed_->isChecked();
     if(!captureAllowed_->isChecked()){QSettings().setValue("privacy/captureAllowed",false);QSettings().setValue("privacy/captureConsentVersion",0);}
     buildDeveloperTools(developerLayout);
-    developerLayout->addWidget(label("PLAYBACK LOG","section"));log_=new QPlainTextEdit;log_->setReadOnly(true);log_->setMaximumBlockCount(500);log_->setMinimumHeight(170);developerLayout->addWidget(log_);developerPanel->setVisible(developerEnabled_->isChecked());codec_->setVisible(developerEnabled_->isChecked());settingsLayout->addWidget(developerPanel,1);settingsLayout->addStretch();tabs->addTab(scrollPanel(settingsTab),"설정");
+    developerLayout->addWidget(label("PLAYBACK LOG","section"));log_=new QPlainTextEdit;log_->setReadOnly(true);log_->setMaximumBlockCount(500);log_->setMinimumHeight(170);developerLayout->addWidget(log_);developerPanel->setVisible(developerEnabled_->isChecked());codec_->setVisible(developerEnabled_->isChecked());settingsLayout->addWidget(developerPanel,1);settingsLayout->addStretch();
+    const int settingsIndex=tabs->addTab(scrollPanel(settingsTab),"설정");
+    connect(tabs,&QTabWidget::tabBarClicked,this,[this,settingsIndex,clicks=0,window=QElapsedTimer{}](int index) mutable {
+        if(index!=settingsIndex || !developerApproved_ || !captureAllowed_->isHidden()){
+            clicks=0;
+            window.invalidate();
+            return;
+        }
+        if(!window.isValid() || window.hasExpired(4000)){
+            clicks=0;
+            window.start();
+        }
+        if(++clicks==5){
+            captureAllowed_->show();
+            clicks=0;
+            window.invalidate();
+        }
+    });
     connect(developerEnabled_,&QCheckBox::toggled,this,[this,developerPanel](bool enabled){
         if(enabled && !confirmDeveloperUse(this,false)){QSignalBlocker guard(developerEnabled_);developerEnabled_->setChecked(false);enabled=false;}
         developerApproved_=enabled;
         QSettings().setValue("ui/developerMode",enabled);QSettings().setValue("privacy/developerConsentVersion",enabled?privacyConsentVersion:0);
-        if(!enabled){captureAllowed_->setChecked(false);performanceEnabled_->setChecked(false);}
+        if(!enabled){captureAllowed_->hide();captureAllowed_->setChecked(false);performanceEnabled_->setChecked(false);}
         developerPanel->setVisible(enabled);codec_->setVisible(enabled);applyCapturePolicy();applyVideoOutputPreferences();
     });
     connect(captureAllowed_,&QCheckBox::toggled,this,[this](bool allowed){
@@ -307,7 +330,7 @@ void MainWindow::buildUi(){
     for(int i=0;i<actions.size();++i)remoteMenu->addAction(names[i],this,[this,action=actions[i]]{if(!lanDiscSharing_ && active_==discEngine_.get())active_->navigate(discActionCode(action));});
     connect(themeButton_,&QPushButton::clicked,this,[this]{setPlayerDarkTheme(!playerUsesDarkTheme());applyTheme();});
     connect(open,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"미디어 열기",{},"미디어 (*.mkv *.mp4 *.webm *.mov *.avi *.m2ts *.ts *.flac *.alac *.m4a *.mp3 *.wav);;모든 파일 (*)");if(!path.isEmpty())openSource(path);});connect(files,&QPushButton::clicked,open,&QPushButton::click);
-    connect(rescan,&QPushButton::clicked,this,&MainWindow::discoverDisc);connect(discButton_,&QPushButton::clicked,this,[this]{if(discPath_.isEmpty())discoverDisc();if(!discPath_.isEmpty())openSource(discPath_);else status_->setText("연결된 Blu-ray를 찾지 못했습니다.");});
+    connect(rescan,&QPushButton::clicked,this,&MainWindow::discoverDisc);connect(discButton_,&QPushButton::clicked,this,&MainWindow::playConnectedDisc);
     connect(play_,&QPushButton::clicked,this,&MainWindow::togglePlayback);
     connect(back,&QPushButton::clicked,this,[this]{if(active_)seekTo(active_->state().positionMs-10000);});connect(forward,&QPushButton::clicked,this,[this]{if(active_)seekTo(active_->state().positionMs+10000);});
     connect(previous,&QPushButton::clicked,this,[this]{if(active_)selectChapter(std::max(0,active_->state().currentChapter-1));});connect(next,&QPushButton::clicked,this,[this]{if(active_)selectChapter(active_->state().currentChapter+1);});

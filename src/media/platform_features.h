@@ -5,7 +5,7 @@
 #include <QPointer>
 #include <QWidget>
 namespace luma {
-QJsonArray videoAdapters();
+QJsonArray videoAdapters(bool includeDriverVersion=false);
 QJsonObject displayCapabilities(WId windowId);
 class CaptureGuard:public QObject {
     Q_OBJECT

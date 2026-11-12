@@ -12,12 +12,12 @@ namespace luma {
 QJsonArray parseTranslationDevices(const QByteArray &output,const QString &backend){
     if(output.size()>65536 || (backend!="CUDA" && backend!="Vulkan" && backend!="OpenVINO"))return {};
     QStringDecoder decoder(QStringDecoder::Utf8,QStringConverter::Flag::Stateless);const QString text=decoder(output);if(decoder.hasError())return {};
-    static const QRegularExpression row(R"(^\s*((?:CUDA|Vulkan|OpenVINO)\d+): (.+) \((\d+) MiB, (\d+) MiB free\)\s*$)");
+    static const QRegularExpression row(R"(^\s*((?:CUDA|Vulkan|(?i:OpenVINO))\d+): (.+) \((\d+) MiB, (\d+) MiB free\)\s*$)");
     static const QRegularExpression openvino(R"(^GGML_OPENVINO_DEVICE=((?:GPU|NPU)(?:\.\d+)?)(?: \(selected\))? - (.+)$)");
     QJsonArray devices;QSet<QString> seen;bool inventory=false;
     for(const auto &line:text.split('\n')){
         if(line.trimmed()=="Available devices:"){inventory=true;continue;}
-        if(!inventory)continue;const auto match=row.match(line);if(!match.hasMatch() || !match.captured(1).startsWith(backend))continue;
+        if(!inventory)continue;const auto match=row.match(line);if(!match.hasMatch() || !match.captured(1).startsWith(backend,Qt::CaseInsensitive))continue;
         auto id=match.captured(1),name=match.captured(2);QString type="gpu";
         if(backend=="OpenVINO"){
             const auto device=openvino.match(name);if(!device.hasMatch())continue;

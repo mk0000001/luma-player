@@ -39,6 +39,15 @@ private slots:
         QCOMPARE(backends.size(),2);QCOMPARE(backends[0].key,QString("cuda"));QCOMPARE(backends[0].device,QString("CUDA2"));
         QVERIFY(backends[0].program.contains("/cuda/"));QCOMPARE(backends[1].key,QString("cpu"));
     }
+    void automaticPrefersTheSelectedVulkanGpuBeforeCuda(){
+        QTemporaryDir root;QVERIFY(root.isValid());runtimeFile(root.path(),"cuda");runtimeFile(root.path(),"vulkan");runtimeFile(root.path(),"openvino");
+        const auto devices=parseTranslationDevices("Available devices:\n Vulkan1: AMD Radeon RX 7900 XTX (24576 MiB, 24000 MiB free)\n","Vulkan");
+        QCOMPARE(devices.size(),1);
+        const auto selected=devices[0].toObject().value("id").toString();
+        const auto backends=translationBackends(root.path(),{"auto",selected});
+        QCOMPARE(backends.size(),4);QCOMPARE(backends[0].key,QString("npu"));
+        QCOMPARE(backends[1].device,QString("Vulkan1"));QCOMPARE(backends[2].device,QString("CUDA0"));QCOMPARE(backends[3].key,QString("cpu"));
+    }
     void cudaLaunchPinsOneExactDevice(){
         QTemporaryDir root;QVERIFY(root.isValid());const auto directory=QDir(root.path()).filePath("translation/cuda");
         QVERIFY(QDir().mkpath(root.path()+"/cuda"));
@@ -67,7 +76,7 @@ private slots:
         QVERIFY(parseTranslationDevices(QByteArray("Available devices:\n CUDA0: NVIDIA (100 MiB, 50 MiB free)\n")+char(-30),"CUDA").isEmpty());
     }
     void mapsOpenVinoInventoryToItsActualEnvironmentDevice(){
-        const auto devices=parseTranslationDevices("Available devices:\n OpenVINO0: GGML_OPENVINO_DEVICE=GPU.1 (selected) - NVIDIA RTX (12000 MiB, 10000 MiB free)\n OpenVINO1: GGML_OPENVINO_DEVICE=NPU - Intel AI Boost (0 MiB, 0 MiB free)\n OpenVINO2: GGML_OPENVINO_DEVICE=CPU - CPU (0 MiB, 0 MiB free)\n","OpenVINO");
+        const auto devices=parseTranslationDevices("Available devices:\n OPENVINO0: GGML_OPENVINO_DEVICE=GPU.1 (selected) - NVIDIA RTX (12000 MiB, 10000 MiB free)\n OpenVINO1: GGML_OPENVINO_DEVICE=NPU - Intel AI Boost (0 MiB, 0 MiB free)\n OPENVINO2: GGML_OPENVINO_DEVICE=CPU - CPU (0 MiB, 0 MiB free)\n","OpenVINO");
         QCOMPARE(devices.size(),2);QCOMPARE(devices[0].toObject().value("id").toString(),QString("OpenVINO:GPU.1"));
         QCOMPARE(devices[1].toObject().value("type").toString(),QString("npu"));
     }

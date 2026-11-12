@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QDialog>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -28,6 +29,7 @@
 
 #ifdef Q_OS_WIN
 #include <windows.h>
+#include <dbt.h>
 #endif
 
 namespace luma {
@@ -68,6 +70,14 @@ bool MainWindow::eventFilter(QObject *object,QEvent *event){
 
 bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *result){
 #ifdef Q_OS_WIN
+    if(eventType=="windows_generic_MSG"){
+        const auto *event=static_cast<const MSG *>(message);
+        if(event->message==WM_DEVICECHANGE && (event->wParam==DBT_DEVICEARRIVAL || event->wParam==DBT_DEVICEREMOVECOMPLETE) && event->lParam){
+            const auto *header=reinterpret_cast<const DEV_BROADCAST_HDR *>(event->lParam);
+            if(header->dbch_size>=sizeof(DEV_BROADCAST_VOLUME) && header->dbch_devicetype==DBT_DEVTYP_VOLUME &&
+               (reinterpret_cast<const DEV_BROADCAST_VOLUME *>(header)->dbcv_flags & DBTF_MEDIA))discMediaChanged();
+        }
+    }
     if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_DISPLAYCHANGE)
         QTimer::singleShot(0,this,&MainWindow::updateDisplayStatus);
     if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_MOVING &&
@@ -76,6 +86,11 @@ bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *
         return true;
 #endif
     return QMainWindow::nativeEvent(eventType,message,result);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event){
+    clearDiscPlayRequest();
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasUrls())event->acceptProposedAction();}

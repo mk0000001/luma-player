@@ -1,23 +1,46 @@
 #include "platform_features.h"
 #include <QEvent>
+#include <QScopeGuard>
 #include <QTimer>
 #include <QSet>
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <dwmapi.h>
+#include <dxcore.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 #endif
 namespace luma {
-QJsonArray videoAdapters(){
+#ifdef Q_OS_WIN
+namespace {
+QString displayDriverVersion(IDXCoreAdapterFactory *factory,const LUID &luid){
+    if(!factory)return {};
+    Microsoft::WRL::ComPtr<IDXCoreAdapter> adapter;
+    quint64 version=0;
+    if(FAILED(factory->GetAdapterByLuid(luid,adapter.GetAddressOf())) ||
+       FAILED(adapter->GetProperty(DXCoreAdapterProperty::DriverVersion,&version)) || !version)return {};
+    return QString("%1.%2.%3.%4").arg(version>>48).arg((version>>32)&0xffff)
+                                 .arg((version>>16)&0xffff).arg(version&0xffff);
+}
+}
+#endif
+QJsonArray videoAdapters(bool includeDriverVersion){
     QJsonArray result;
 #ifdef Q_OS_WIN
     Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
     if(FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))return result;
+    const auto module=includeDriverVersion?LoadLibraryExW(L"dxcore.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32):nullptr;
+    const auto release=qScopeGuard([module]{if(module)FreeLibrary(module);});
+    Microsoft::WRL::ComPtr<IDXCoreAdapterFactory> driverFactory;
+    if(module){
+        using CreateFactory=HRESULT (WINAPI *)(REFIID,void **);
+        const auto create=reinterpret_cast<CreateFactory>(GetProcAddress(module,"DXCoreCreateAdapterFactory"));
+        if(create)create(IID_PPV_ARGS(&driverFactory));
+    }
     QSet<QString> selectableNames;
     for(UINT i=0;;++i){
         Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-        if(factory->EnumAdapters1(i,&adapter)==DXGI_ERROR_NOT_FOUND)break;
+        if(FAILED(factory->EnumAdapters1(i,&adapter)))break;
         if(!adapter)continue;
         DXGI_ADAPTER_DESC1 desc{};if(FAILED(adapter->GetDesc1(&desc)) || desc.Flags&DXGI_ADAPTER_FLAG_SOFTWARE)continue;
         const auto name=QString::fromWCharArray(desc.Description);
@@ -25,8 +48,14 @@ QJsonArray videoAdapters(){
         // same name cannot be selected independently.
         if(name.isEmpty() || selectableNames.contains(name))continue;
         selectableNames.insert(name);
-        result.append(QJsonObject{{"id",name},{"name",name},{"backend","D3D11"},{"dedicatedMemoryMiB",double(desc.DedicatedVideoMemory)/(1024*1024)}});
+        QJsonObject entry{{"id",name},{"name",name},{"backend","D3D11"},{"vendorId",int(desc.VendorId)},{"deviceId",int(desc.DeviceId)},
+                          {"dedicatedMemoryMiB",double(desc.DedicatedVideoMemory)/(1024*1024)}};
+        const auto driver=displayDriverVersion(driverFactory.Get(),desc.AdapterLuid);
+        if(!driver.isEmpty())entry.insert("driverVersion",driver);
+        result.append(entry);
     }
+#else
+    Q_UNUSED(includeDriverVersion);
 #endif
     return result;
 }

@@ -16,6 +16,10 @@
 
 준비 중 직접 일시정지하면 준비가 끝나도 일시정지를 유지합니다. 실패하면 상태와 재시도를 표시하며 AI 선택을 자동으로 끄지 않습니다. **자막 다시 시도**로 재시도하거나, **자막 없이 계속**으로 대기를 건너뛸 수 있습니다. 후자를 선택해도 AI는 계속 준비합니다. AI를 직접 끄면 자막 준비 대기도 해제합니다.
 
+### Windows AI 가속 설치
+
+처음 실행할 때 Windows에서 감지한 GPU와 NPU에 맞춰 AI 가속 라이브러리를 추천합니다. 이후 **설정 → AI 가속 설정**에서도 설치할 수 있습니다. NVIDIA CUDA, AMD Radeon을 포함한 Vulkan, Intel OpenVINO 중 원하는 항목을 직접 선택할 수 있습니다. 설치는 LumaPlayer 폴더에 적용되며, 가속 사용은 장치와 드라이버가 해당 백엔드를 지원할 때 시작됩니다. Radeon은 Windows의 D3D11 영상 디코딩과 Vulkan 음성 인식·번역 경로를 사용합니다.
+
 ### 원문·독음·번역과 긴 자막
 
 **원문**, **일본어 한글 독음**, **한국어 번역**을 각각 켜거나 끌 수 있습니다. 독음과 번역은 원문과 별도로 보관됩니다. 음성 인식과 번역의 장치 설정도 독립적이며, 화면의 실제 사용 장치를 확인하세요. 음성 인식의 NPU 표시는 번역까지 NPU로 처리한다는 뜻이 아닙니다.
@@ -85,6 +89,8 @@ CPU·GPU·NPU·RAM은 **시스템 전체 / 플레이어** 순으로 비교합니
 
 **진단 요약 복사**는 재생 상태와 최근 수치의 JSON을 복사합니다. **성능 기록 CSV 저장**은 최근 샘플을 저장하고, **성능 기록 초기화**와 **재생 로그 지우기**는 각 화면의 기록을 비웁니다. JSON과 CSV에는 파일 경로, 자막 본문, 재생 로그가 들어가지 않습니다.
 
+가속 문제를 재현한 뒤 앱을 닫기 전에 **설정 → 개발자 모드 → 테스트 진단 JSON 저장**을 누르세요. 보고서에는 GPU 하드웨어 ID와 드라이버 버전, 선택한 설정, 실제 디코더와 AI 장치, 가속 라이브러리 설치 결과와 최근 오류 코드가 들어갑니다. 미디어 경로, 원본 로그, 자막과 네트워크 주소는 제외합니다. 테스트 담당자가 검토한 JSON 파일을 직접 공유할 수 있습니다.
+
 **설정 → 파일 HDR 출력**의 기본값은 자동입니다. Windows HDR이 활성화된 화면에서 파일 렌더러가 HDR 출력을 협상합니다. **끔 · SDR 출력**은 HDR 파일을 SDR로 톤 매핑합니다. 두 선택은 재생 중에도 바꿀 수 있습니다. 화면을 옮기면 디스플레이 상태가 갱신됩니다.
 
 **개발자 모드 → 영상 디코딩과 색상**에서는 SDR, HDR10(PQ), HLG를 지정할 수 있습니다. **SDR 화면에서도 HDR 렌더링 강제**는 출력 협상 결과와 별도로 파일 렌더러의 HDR 타깃을 강제하고 SDR 소스에 역톤 매핑을 허용합니다. 실제 모니터 모드는 설정의 디스플레이 상태에서 확인할 수 있습니다. 디코딩 장치와 파일 디코더 우선순위, Dolby Vision 메타데이터 옵션은 미디어를 다시 열면 적용됩니다. Blu-ray 메뉴 재생은 디스크 엔진의 영상 출력을 사용합니다. [mpv 옵션 문서](https://mpv.io/manual/master/)
@@ -99,7 +105,7 @@ Windows 시험에서 츠키 무도관 Blu-ray의 D3D11VA 재생, 합성 AV1 파�
 
 ### Windows 캡처 제외와 확인 범위
 
-보호 디스크는 지원되는 Windows 캡처 제외 API를 영상 창과 자막 창에 기본 적용합니다. **본창, 설정, 메뉴와 재생바는 캡처할 수 있게 유지**합니다. Parsec 등에서 개발용 영상을 보려면 **설정 → 개발자 모드 → 개발용 영상 캡처 허용**을 사용합니다. 개발자 모드와 캡처 허용은 각각 안내·확인 체크·별도 동의가 필요하며 취소하면 허용되지 않습니다. 개발자 모드를 끄면 허용도 해제됩니다. 안내는 적법한 이용 책임을 설명하며 일괄 법적 면책을 부여하지 않습니다. 화면의 적용 상태를 확인하세요. 이 기능은 DRM·HDCP 인증이나 모든 캡처 방법을 막는 보증과는 별개입니다.
+보호 디스크를 재생하면 Windows에서 지원하는 캡처 제외를 영상 창과 자막 창에 기본 적용합니다. 본창, 설정, 메뉴와 재생바는 계속 캡처할 수 있습니다. 적용 상태는 플레이어 설정에 표시됩니다.
 
 2026-11-06 기준으로 구현과 확인 범위는 다음과 같이 구분합니다.
 
@@ -126,6 +132,10 @@ Enable **AI 자동자막 켜기** and select the spoken language. Before startin
 After the minimum is ready, work continues toward **60 seconds ahead**. Fifteen-second processing chunks and seek correction may take coverage slightly beyond that target. Playback does not wait for the full 60 seconds initially. Disc menus and startup navigation do not wait for the main-title caption buffer.
 
 A manual pause remains paused when preparation finishes. Failures show status and retry without automatically clearing the AI setting. Use **자막 다시 시도** to retry or **자막 없이 계속** to bypass the wait while AI continues preparing. Manually disabling AI also releases the caption wait.
+
+### Windows AI acceleration setup
+
+On first launch, LumaPlayer recommends AI libraries based on the GPUs and NPUs detected on Windows. Open **설정 → AI 가속 설정** to install them later. NVIDIA CUDA, Vulkan (including AMD Radeon), and Intel OpenVINO are also available for manual selection. Installation is scoped to the LumaPlayer directory. Acceleration requires a device and driver that support the backend. Radeon uses Windows D3D11 for video decoding and Vulkan for speech recognition and translation.
 
 ### Source, reading, translation and long captions
 
@@ -196,6 +206,8 @@ CPU, GPU, NPU, and RAM show **system / player**. Solid graph lines show the syst
 
 **Copy diagnostics** copies a JSON snapshot of playback and current metrics. **Save performance CSV** saves recent samples. **Reset performance history** and **Clear playback log** clear their respective records. JSON and CSV omit file paths, subtitle text, and playback logs.
 
+After reproducing an acceleration issue, select **설정 → 개발자 모드 → 테스트 진단 JSON 저장** before closing the app. The report includes GPU hardware IDs and driver versions, selected settings, active decoders and AI devices, acceleration installation results, and recent error codes. It omits media paths, raw logs, caption text, and network addresses. The tester can review and share the saved JSON directly.
+
 **Settings → File HDR output** defaults to Auto. The file renderer negotiates HDR when the Windows display has HDR active. **Off · SDR output** tone maps HDR files to SDR. Either option can be changed during playback. The display status follows the monitor as you move the window.
 
 **Developer mode → Video decoding and color** can request SDR, HDR10 (PQ), or HLG. **Force HDR rendering on an SDR display** overrides the renderer target independently of the negotiated display mode and enables inverse tone mapping for SDR sources. Settings separately reports the monitor's active mode. Decoder device, file decoder preference, and Dolby Vision metadata choices take effect when you reopen media. Blu-ray menu playback uses the disc engine's video output. [mpv option reference](https://mpv.io/manual/master/)
@@ -210,7 +222,7 @@ Windows tests observed D3D11VA playback on the Tuki Budokan Blu-ray, `libdav1d` 
 
 ### Windows capture exclusion and verification
 
-Protected discs request Windows capture exclusion for the video and caption windows by default. **The main UI, settings, menus and transport remain capturable.** For development through Parsec or capture software, use **설정 → 개발자 모드 → 개발용 영상 캡처 허용**. Developer mode and capture allowance require separately acknowledged dialogs; cancellation grants neither, and disabling developer mode revokes allowance. Notices explain lawful-use responsibilities without blanket legal immunity. Check the displayed status; this is separate from certified DRM/HDCP or a guarantee against every capture method.
+On supported Windows configurations, protected discs request capture exclusion for the video and caption windows by default. The main UI, settings, menus and transport remain capturable. The player settings show the current capture status.
 
 Implementation and verification as of 2026-11-06 are distinct:
 

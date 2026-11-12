@@ -7,6 +7,7 @@
 #include <QLabel>
 #include <QTimer>
 #include <QFile>
+#include <QFileDialog>
 #include "ui/caption_overlay.h"
 #include "ui/theme.h"
 #include <QFontDatabase>
@@ -182,6 +183,106 @@ private slots:
         developer->setChecked(false);
         QVERIFY(!enabled->isChecked() && !overlay->isVisible());
         QVERIFY(!overlay->summary().value("enabled").toBool());
+    }
+    void developerTesterReportKeepsBoundedTechnicalEvidence(){
+        QTemporaryDir output;
+        QVERIFY(output.isValid());
+        const auto path=output.filePath("diagnostics.json");
+        const bool previousDialogSetting=QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,true);
+        const auto restoreDialogs=qScopeGuard([previousDialogSetting]{
+            QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,previousDialogSetting);
+        });
+
+        {
+            luma::MainWindow gated;
+            auto *blocked=gated.findChild<QPushButton*>("exportTesterDiagnostics");
+            QVERIFY(blocked);
+            bool opened=false;
+            QTimer guard;
+            guard.setSingleShot(true);
+            connect(&guard,&QTimer::timeout,&gated,[&]{
+                if(auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget())){
+                    opened=true;
+                    dialog->reject();
+                }
+            });
+            guard.start(0);
+            blocked->click();
+            QVERIFY(!opened);
+        }
+
+        restorePerformancePreferences();
+        luma::MainWindow window;
+        // The test supplies events directly and does not need queued startup probes.
+        QCoreApplication::removePostedEvents(&window,QEvent::MetaCall);
+        auto *save=window.findChild<QPushButton*>("exportTesterDiagnostics");
+        auto *job=window.findChild<luma::SubtitleJob*>();
+        auto *translation=window.findChild<luma::TranslationService*>();
+        const auto engines=window.findChildren<luma::PlaybackEngine*>();
+        QVERIFY(save && job && translation && !engines.isEmpty());
+        const QString privateData="C:/Users/private-user/test-title.mkv secret-subtitle key=private-token";
+        QSettings().setValue("ai/accelerationLastInstall",QVariantMap{{"backend","vulkan"},{"result","failed"},
+            {"exitCode",27},{"message",privateData}});
+        job->setPreferences({"gpu","Vulkan2"});
+        translation->setPreferences({"gpu","Vulkan2"});
+        for(int i=0;i<70;++i)job->failed(privateData);
+        job->progress("GPU 사용 불가 (가속 실행 확인 실패) · 다음 장치로 전환 중…");
+        translation->backendSelected("GPU / Vulkan2 / "+privateData);
+        translation->progress("Vulkan2 번역 사용 불가: 로컬 번역 추론 요청이 실패했습니다.");
+        engines.front()->logMessage(privateData);
+        engines.front()->videoOutputLost("영상 출력 장치를 사용할 수 없어 영상 출력을 다시 준비해야 합니다. (DXGI_ERROR_DEVICE_REMOVED, 0x887a0005)");
+        engines.front()->errorOccurred("AACS 설정 파일을 찾거나 열 수 없습니다. "+privateData);
+
+        bool dialogSeen=false;
+        QTimer::singleShot(0,&window,[&]{
+            if(auto *dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){
+                dialogSeen=true;
+                dialog->selectFile(path);
+                static_cast<QDialog*>(dialog)->accept();
+            }
+        });
+        save->click();
+        QVERIFY(dialogSeen);
+        QFile report(path);
+        QVERIFY(report.open(QIODevice::ReadOnly));
+        const auto bytes=report.readAll();
+        QVERIFY(bytes.size()<32768);
+        for(const auto forbidden:{"private-user","test-title.mkv","secret-subtitle","private-token","recentMessages","luid"})
+            QVERIFY2(!bytes.contains(forbidden),forbidden);
+        const auto json=QJsonDocument::fromJson(bytes).object();
+        QCOMPARE(json.value("schemaVersion").toInt(),1);
+        QVERIFY(json.value("graphicsAdapters").isArray());
+        for(const auto &value:json.value("graphicsAdapters").toArray()){
+            const auto adapter=value.toObject();
+            QVERIFY(adapter.value("vendorId").isDouble() && adapter.value("deviceId").isDouble());
+            QVERIFY(adapter.value("dedicatedMemoryMiB").toDouble(-1)>=0);
+            if(adapter.contains("driverVersion"))
+                QVERIFY(QRegularExpression(R"(\A[0-9]{1,5}(?:\.[0-9]{1,5}){3}\z)").match(adapter.value("driverVersion").toString()).hasMatch());
+        }
+        QVERIFY(json.value("installedWorkers").isObject());
+        const auto installer=json.value("lastAccelerationInstall").toObject();
+        QCOMPARE(installer.value("backend").toString(),QString("vulkan"));
+        QCOMPARE(installer.value("result").toString(),QString("failed"));
+        QCOMPARE(installer.value("exitCode").toInt(),27);
+        QVERIFY(!json.value("os").toObject().value("kernelVersion").toString().isEmpty());
+        QCOMPARE(json.value("asr").toObject().value("requested").toObject().value("device").toString(),QString("Vulkan2"));
+        QCOMPARE(json.value("translation").toObject().value("requested").toObject().value("device").toString(),QString("Vulkan2"));
+        const auto events=json.value("events").toArray();
+        QCOMPARE(events.size(),qsizetype(64));
+        QVERIFY(json.value("droppedEvents").toInt()>0);
+        const auto hasEvent=[&](const char *code,const char *reason,const char *device=nullptr){
+            return std::any_of(events.begin(),events.end(),[&](const QJsonValue &entry){
+                const auto event=entry.toObject();
+                return event.value("code").toString()==code && event.value("reason").toString()==reason &&
+                    (!device || event.value("device").toString()==device);
+            });
+        };
+        QVERIFY(hasEvent("asr_fallback","acceleration_unconfirmed","GPU"));
+        QVERIFY(hasEvent("translation_backend_confirmed","gpu_offload","Vulkan2"));
+        QVERIFY(hasEvent("translation_fallback","inference_failed","Vulkan2"));
+        QVERIFY(hasEvent("video_output_lost","dxgi_device_removed"));
+        QVERIFY(hasEvent("video_failed","aacs_config_unavailable"));
     }
     void seekTrackClickCommitsPosition(){
         luma::MainWindow window;
@@ -967,6 +1068,24 @@ private slots:
         QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!details->isHidden());QVERIFY(QSettings().value("ui/developerMode").toBool());
         luma::MainWindow restored;auto *restoredMode=restored.findChild<QCheckBox*>("developerMode");QVERIFY(restoredMode);QVERIFY(restoredMode->isChecked());
     }
+    void discPlayQueuesPreparationAndAFileOpenCancelsIt(){
+        luma::MainWindow window;
+        QPushButton *discPlay=nullptr;
+        for(auto *button:window.findChildren<QPushButton*>())if(button->text()=="Blu-ray 재생"){discPlay=button;break;}
+        auto *status=window.findChild<QLabel*>("status");
+        QVERIFY(discPlay);QVERIFY(status);
+        discPlay->click();
+        QVERIFY(!discPlay->isEnabled());
+        QVERIFY(status->text().contains("Blu-ray 드라이브가 준비되기를 기다리는 중"));
+        QTemporaryDir folder;QVERIFY(folder.isValid());
+        window.openSource(folder.filePath("synthetic-cancel-disc.mkv"));
+        QVERIFY(discPlay->isEnabled());
+        QVERIFY(!status->text().contains("Blu-ray 드라이브가 준비되기를 기다리는 중"));
+        discPlay->click();
+        QVERIFY(!discPlay->isEnabled());
+        QVERIFY(window.close());
+        QVERIFY(discPlay->isEnabled());
+    }
     void motionChoicesPersistWithoutClaimingRequestedFpsAsOutput(){
         luma::MainWindow window;window.show();QTest::qWait(40);
         auto *mode=window.findChild<QComboBox*>("motionMode");auto *fps=window.findChild<QComboBox*>("motionFps");
@@ -983,11 +1102,18 @@ private slots:
         QVERIFY(panel->isAncestorOf(capture));QVERIFY(!mode->isChecked());QVERIFY(!capture->isChecked());
         QVERIFY(answerConsent(window,"developerConsentDialog",false));QVERIFY(!mode->isChecked());QVERIFY(panel->isHidden());
         QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(mode->isChecked());QVERIFY(!capture->isChecked());
+        auto *tabs=window.findChild<QTabWidget*>("settingsTabs");QVERIFY(tabs);
+        const auto settingsTab=tabs->count()-1;
+        QVERIFY(capture->isHidden());
+        for(int i=0;i<4;++i)tabs->tabBarClicked(settingsTab);
+        QVERIFY(capture->isHidden());
+        tabs->tabBarClicked(settingsTab);
+        QVERIFY(!capture->isHidden());QVERIFY(!capture->isChecked());
         QVERIFY(answerConsent(window,"captureConsentDialog",false));QVERIFY(!capture->isChecked());
         QVERIFY(answerConsent(window,"captureConsentDialog",true));QVERIFY(capture->isChecked());
         {luma::MainWindow restored;QVERIFY(restored.findChild<QCheckBox*>("developerMode")->isChecked());QVERIFY(restored.findChild<QCheckBox*>("captureAllowed")->isChecked());}
         mode->setChecked(false);QVERIFY(!capture->isChecked());QVERIFY(!QSettings().value("privacy/captureAllowed").toBool());
-        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!capture->isChecked());
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!capture->isChecked());QVERIFY(capture->isHidden());
     }
     void legacyDeveloperAndCaptureSettingsDoNotBypassConsent(){
         QSettings().setValue("ui/developerMode",true);QSettings().setValue("privacy/captureProtectedDisc",false);QSettings().setValue("privacy/captureAllowed",true);QSettings().setValue("privacy/captureConsentVersion",1);
