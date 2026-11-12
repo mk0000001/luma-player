@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDeadlineTimer>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -46,6 +47,7 @@ const auto manifestName = QStringLiteral("luma-update.json");
 const auto signatureName = QStringLiteral("luma-update.sig");
 const auto notificationSetting = QStringLiteral("update/notifyOnStartup");
 const QUrl releaseListUrl(QStringLiteral("https://api.github.com/repos/mk0000001/luma-player/releases?per_page=30"));
+const QUrl publicReleasesUrl(QStringLiteral("https://github.com/mk0000001/luma-player/releases/latest"));
 constexpr char trustedCoordinates[] =
     "030d278213ed871b4be26a45ebf038a93ce8af23bc55a7d0933855b4c7e1e73e"
     "b5bea934a2ad48dfd6a4fdae5254849c10299ea1a15a4e35fa01d3a7a003a96f";
@@ -1023,6 +1025,13 @@ void UpdateManager::State::finish(const QString &message, bool warning)
                                    QStringLiteral("LumaPlayer 업데이트"), message, QMessageBox::Ok, window);
     notice->setTextFormat(Qt::PlainText);
     notice->setAttribute(Qt::WA_DeleteOnClose);
+    if (warning) {
+        notice->setInformativeText(QStringLiteral("공식 릴리스에서 설치 파일을 직접 받을 수 있습니다."));
+        auto *releases = notice->addButton(QStringLiteral("공식 다운로드 열기"), QMessageBox::ActionRole);
+        QObject::connect(releases, &QPushButton::clicked, notice, [] {
+            QDesktopServices::openUrl(publicReleasesUrl);
+        });
+    }
     notice->open();
 }
 

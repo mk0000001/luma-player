@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.2.6
+
+- Windows의 인앱 업데이트 확인이나 다운로드가 실패하면 오류 창에서 공식 다운로드 페이지를 열 수 있습니다.
+
 ### 0.2.5
 
 - Android에서 LAN 응답의 JSON 깊이와 WebVTT 응답 크기를 제한하고, 연결 취소 시 진행 중인 메타데이터 읽기도 중단합니다.
@@ -157,6 +161,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.6
+
+- The Windows updater offers a link to the official downloads when a check or download fails.
 
 ### 0.2.5
 
