@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playback_toggle">재생 또는 일시 정지</string>
+    <string name="playback_captions">자막</string>
+    <string name="playback_fullscreen">전체 화면</string>
+    <string name="playback_speed">재생 속도</string>
+    <string name="playback_speed_format">재생 속도 · %1$s×</string>
+    <string name="playback_audio_tracks">오디오 트랙</string>
+    <string name="chapters_title">챕터</string>
+    <string name="chapter_row">챕터 %1$d · %2$s</string>
+    <string name="quality_presets">화질 프리셋</string>
+    <string name="preset_maximum">최대 화질 · 원본 HDR 우선</string>
+    <string name="preset_balanced">균형 · 최대 1080p SDR</string>
+    <string name="preset_saver">데이터 절약 · 최대 480p SDR</string>
+</resources>

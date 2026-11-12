@@ -3,22 +3,32 @@
 #include "core/subtitle.h"
 #include <QDialog>
 #include <QHostAddress>
+#include <QJsonObject>
 #include <QPointer>
 #include <QProcess>
 #include <QTimer>
+#ifdef Q_OS_WIN
+#include "windows_direct.h"
+#include <QElapsedTimer>
+#endif
 
+class QCheckBox;
 class QComboBox;
+class QGroupBox;
+class QHideEvent;
 class QJsonArray;
-class QJsonObject;
 class QLabel;
 class QPushButton;
 class QShowEvent;
+class QSpinBox;
 class QTreeWidget;
 
 namespace luma {
 
 struct LanPlaybackMedia {
     QString source, title, playlist, subtitles;
+    QString videoRange = "unknown";
+    QVector<qint64> chaptersMs;
     qint64 durationMs = 0;
     int audioIndex = -1, audioTrackId = -1;
     bool disc = false;
@@ -28,6 +38,7 @@ struct LanPrivateInterface {
     QString name;
     QHostAddress address;
     int prefixLength;
+    int interfaceIndex = 0;
 };
 
 QString lanPrivateSubnet(const QHostAddress &address, int prefixLength);
@@ -62,10 +73,12 @@ signals:
 
 protected:
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 private:
     enum class MediaState { Idle, Preparing, Starting, Sharing, Stopping };
     void refreshInterfaces();
+    bool startHost(const QString &address, const QString &subnet);
     void restartDiscovery();
     void closeHost();
     void stopSharing();
@@ -73,6 +86,10 @@ private:
     void requestDevices();
     void updateDevices(const QJsonArray &devices);
     void manageDevice(bool forget);
+    void syncDeviceOptions();
+    void loadDeviceOptions(const QJsonObject &options);
+    QJsonObject deviceOptionValues() const;
+    void applyDeviceOptions();
     bool writeMessage(const QJsonObject &message);
     void readReply();
     void handleReply(const QJsonObject &message);
@@ -83,21 +100,42 @@ private:
     void finishShare(bool cleanupConfirmed);
     void setSharing(bool sharing);
     void updateControls();
+#ifdef Q_OS_WIN
+    void toggleDirect();
+    void pollDirect();
+    void stopDirect(const QString &message);
+#endif
 
     QProcess host_;
-    QTimer watchdog_;
+    QTimer watchdog_, deviceRefresh_;
     QByteArray startupConfiguration_, reply_;
     QString endpoint_, pairingId_;
+    QString optionsDeviceId_, pendingOptionsDeviceId_;
+    QJsonObject optionsSnapshot_, savedOptions_;
+    qint64 pendingOptionsRevision_ = 0;
     QPointer<QDialog> pairingDialog_;
     QComboBox *interfaces_, *audioMode_;
     QLabel *address_, *status_;
     QPushButton *start_, *stop_, *retry_, *forget_, *disconnectDevice_, *forgetDevice_;
     QTreeWidget *devices_;
+    QGroupBox *deviceOptionsBox_;
+    QComboBox *deviceProfile_, *deviceHdr_, *deviceSkip_, *deviceFill_;
+    QCheckBox *deviceSubtitleDelayEnabled_;
+    QSpinBox *deviceSubtitleDelay_;
+    QPushButton *applyOptions_, *resetOptions_;
     MediaState mediaState_ = MediaState::Idle;
     bool ready_ = false, sharing_ = false, mediaAvailable_ = false, hasActiveDevice_ = false;
     bool autoShare_ = true;
     bool forgetting_ = false, shuttingDown_ = false, closingHost_ = false, protocolFailed_ = false;
     bool cleanupConfirmed_ = true;
+#ifdef Q_OS_WIN
+    std::unique_ptr<WindowsDirectConnection> direct_;
+    std::optional<WindowsDirectBinding> directBinding_, retiredDirectBinding_;
+    QElapsedTimer directStartup_;
+    QTimer directPoll_;
+    QPushButton *directButton_ = nullptr;
+    QLabel *directDetails_ = nullptr;
+#endif
 };
 
 }

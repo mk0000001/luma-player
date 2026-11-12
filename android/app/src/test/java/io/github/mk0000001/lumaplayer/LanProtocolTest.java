@@ -81,6 +81,24 @@ public final class LanProtocolTest {
     }
 
     @Test
+    public void directRoutesMatchPrivateIpv4PrefixesIncludingHostRoutes() throws Exception {
+        InetAddress local = InetAddress.getByName("10.0.2.14");
+        InetAddress peer = InetAddress.getByName("10.0.2.15");
+        assertTrue(LanDiscovery.samePrivateSubnet(peer, local, 31));
+        assertTrue(LanDiscovery.samePrivateSubnet(local, local, 32));
+        assertFalse(LanDiscovery.samePrivateSubnet(peer, local, 32));
+        assertFalse(LanDiscovery.samePrivateSubnet(peer, local, 0));
+        assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("192.168.5.25"), local, 24));
+        assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("192.0.2.3"), local, 1));
+        assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("fd00::1"), local, 24));
+    }
+
+    @Test
+    public void pairingRequiresASelectedNetwork() {
+        assertThrows(NullPointerException.class, () -> new PairingConnection(LanEndpoint.parse("192.168.5.25"), null));
+    }
+
+    @Test
     public void validatesSidecarPathsBeforeTheyCanBePassedToThePlayer() throws IOException {
         String json = """
                 {"version":1,"title":"Synthetic","mimeType":"video/mp4","sourceKind":"file",

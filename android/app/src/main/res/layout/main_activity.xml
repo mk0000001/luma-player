@@ -16,6 +16,41 @@
         android:orientation="vertical"
         android:visibility="gone">
 
+        <FrameLayout
+            android:id="@+id/playback_canvas"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.media3.ui.PlayerView
+                android:id="@+id/player_view"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@android:color/black"
+                app:animation_enabled="false"
+                app:controller_layout_id="@layout/playback_navigation"
+                app:show_buffering="when_playing"
+                app:show_fastforward_button="false"
+                app:show_next_button="false"
+                app:show_previous_button="false"
+                app:show_rewind_button="false"
+                app:show_subtitle_button="true"
+                app:surface_type="surface_view" />
+
+            <io.github.mk0000001.lumaplayer.SeekFeedbackView
+                android:id="@+id/skip_feedback"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/playback_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
         <LinearLayout
             android:id="@+id/playback_header"
             android:layout_width="match_parent"
@@ -61,18 +96,6 @@
                 android:textColor="@color/luma_accent" />
         </LinearLayout>
 
-        <androidx.media3.ui.PlayerView
-            android:id="@+id/player_view"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:background="@android:color/black"
-            app:show_buffering="when_playing"
-            app:show_next_button="false"
-            app:show_previous_button="false"
-            app:show_subtitle_button="true"
-            app:surface_type="surface_view" />
-
         <LinearLayout
             android:id="@+id/playback_footer"
             android:layout_width="match_parent"
@@ -100,6 +123,36 @@
                 android:text="@string/playback_info_action"
                 android:textAllCaps="false"
                 android:textColor="@color/luma_accent" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/portrait_chapters"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityHeading="true"
+                android:paddingVertical="8dp"
+                android:text="@string/chapters_title"
+                android:textColor="@color/luma_text"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <ListView
+                android:id="@+id/portrait_chapter_list"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:choiceMode="singleChoice"
+                android:divider="@android:color/transparent"
+                android:dividerHeight="4dp" />
+        </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

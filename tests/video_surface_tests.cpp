@@ -4,8 +4,14 @@
 #include <QCloseEvent>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QFileInfo>
 #include <QMimeData>
+#include <QWindow>
+#include "ui/performance_overlay.h"
 #include "ui/video_surface.h"
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 namespace {
 class VideoEventHost:public QWidget {
 public:
@@ -48,6 +54,87 @@ private slots:
         QCOMPARE(image.pixelColor(image.width()/2,image.height()/2),QColor(Qt::black));
         QVERIFY(video->window()!=host.window());QVERIFY(!host.windowFlags().testFlag(Qt::Tool));
     }
+#ifdef Q_OS_WIN
+    void performanceOverlayStaysAboveTheNativeVideo(){
+        if(QGuiApplication::platformName()!="windows")QSKIP("Requires native Windows window stacking");
+        QWidget host;
+        host.resize(720,480);
+        auto *layout=new QVBoxLayout(&host);
+        layout->setContentsMargins(0,0,0,0);
+        luma::VideoSurface surface;
+        layout->addWidget(&surface);
+        std::unique_ptr<luma::PlaybackEngine> playback;
+        luma::PerformanceOverlay overlay(&surface,[&]{
+            luma::PerformanceInput input;
+            if(playback)input.playback=playback->state();
+            return input;
+        });
+        host.show();
+        surface.setVideoActive(true);
+        auto *video=surface.videoWindow();
+        const auto fixture=qEnvironmentVariable("LUMA_VIDEO_STACK_FIXTURE");
+        if(fixture.isEmpty())video->setStyleSheet("#nativeVideoWindow{background:#3344cc;}");
+        else{
+            QVERIFY(QFileInfo(fixture).isFile());
+            playback=std::make_unique<luma::PlaybackEngine>(luma::PlaybackEngine::Kind::File,qEnvironmentVariable("LUMA_TEST_RUNTIME"));
+            QVERIFY2(playback->open(fixture,surface.videoWindowId()),qPrintable(playback->lastError()));
+            playback->setVolume(0);
+            QTRY_VERIFY_WITH_TIMEOUT(playback->state().positionMs>100,10000);
+        }
+        overlay.setMonitoring(true);
+        QTRY_VERIFY(video->isVisible() && overlay.isVisible());
+        QVERIFY(overlay.testAttribute(Qt::WA_TransparentForMouseEvents));
+        QVERIFY(overlay.windowFlags().testFlag(Qt::WindowTransparentForInput));
+        constexpr DWORD captureExclusion=0x11;
+        const bool captureApplied=SetWindowDisplayAffinity(reinterpret_cast<HWND>(video->winId()),captureExclusion);
+        const auto above=[&]{
+            const auto layer=reinterpret_cast<HWND>(overlay.internalWinId());
+            const auto nativeVideo=reinterpret_cast<HWND>(video->internalWinId());
+            if(!layer || !nativeVideo)return false;
+            for(auto previous=GetWindow(nativeVideo,GW_HWNDPREV);previous;previous=GetWindow(previous,GW_HWNDPREV))
+                if(previous==layer)return true;
+            return false;
+        };
+        const auto verifyMode=[&](const char *mode,bool topmost){
+            QTRY_VERIFY(video->isVisible() && overlay.isVisible());
+            const auto owner=reinterpret_cast<HWND>(host.winId());
+            const auto layer=reinterpret_cast<HWND>(overlay.winId());
+            const auto nativeVideo=reinterpret_cast<HWND>(video->winId());
+            QCOMPARE(GetWindow(layer,GW_OWNER),owner);
+            QCOMPARE(GetWindow(nativeVideo,GW_OWNER),owner);
+            QCOMPARE(bool(GetWindowLongPtrW(owner,GWL_EXSTYLE)&WS_EX_TOPMOST),topmost);
+            const bool overlayTopmost=GetWindowLongPtrW(layer,GWL_EXSTYLE)&WS_EX_TOPMOST;
+            const bool videoTopmost=GetWindowLongPtrW(nativeVideo,GWL_EXSTYLE)&WS_EX_TOPMOST;
+            if(!topmost){QVERIFY(!overlayTopmost);QVERIFY(!videoTopmost);}
+            QTRY_VERIFY2_WITH_TIMEOUT(above(),mode,1500);
+            // A renderer or native activation can raise the video without a QWidget z-order event.
+            QVERIFY(SetWindowPos(nativeVideo,HWND_TOP,0,0,0,0,
+                SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER|SWP_NOSENDCHANGING));
+            QTRY_VERIFY2_WITH_TIMEOUT(above(),mode,1500);
+            QCOMPARE(bool(GetWindowLongPtrW(layer,GWL_EXSTYLE)&WS_EX_TOPMOST),overlayTopmost);
+            QCOMPARE(bool(GetWindowLongPtrW(nativeVideo,GWL_EXSTYLE)&WS_EX_TOPMOST),videoTopmost);
+            if(captureApplied){
+                DWORD affinity=0;
+                QVERIFY(GetWindowDisplayAffinity(nativeVideo,&affinity));
+                QCOMPARE(affinity,captureExclusion);
+            }
+        };
+        verifyMode("Windowed overlay must stay above a native video raise",false);
+        if(QTest::currentTestFailed())return;
+        host.showFullScreen();
+        verifyMode("Fullscreen overlay must stay above a native video raise",false);
+        if(QTest::currentTestFailed())return;
+        host.showNormal();
+        host.resize(440,270);
+        host.windowHandle()->setFlag(Qt::WindowStaysOnTopHint,true);
+        verifyMode("PiP overlay must stay above a native video raise",true);
+        if(QTest::currentTestFailed())return;
+        host.windowHandle()->setFlag(Qt::WindowStaysOnTopHint,false);
+        host.resize(720,480);
+        verifyMode("Restored overlay must stay above a native video raise",false);
+        if(captureApplied && !QTest::currentTestFailed())qInfo("Video capture exclusion survived all native stacking checks.");
+    }
+#endif
     void closingVideoToolClosesTheHost(){
         VideoEventHost host;host.resize(500,320);auto *layout=new QVBoxLayout(&host);luma::VideoSurface surface;layout->addWidget(&surface);
         host.show();surface.setVideoActive(true);QCoreApplication::processEvents();auto *video=surface.videoWindow();QVERIFY(video->isVisible());

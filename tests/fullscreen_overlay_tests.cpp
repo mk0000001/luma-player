@@ -38,6 +38,37 @@ private slots:
         dialog.close();QTRY_VERIFY(controls.isVisible());QVERIFY(controller.reservedHeight()>0);
     }
 #ifdef Q_OS_WIN
+    void modelessDialogStaysAboveTransportWhenControlsAreRevealed(){
+        if (QGuiApplication::platformName() != QStringLiteral("windows"))
+            QSKIP("Requires the native Windows window manager");
+        QWidget host;
+        host.resize(700, 450);
+        auto *layout = new QVBoxLayout(&host);
+        QWidget video, controls;
+        controls.setFixedHeight(74);
+        layout->addWidget(&video);
+        layout->addWidget(&controls);
+        luma::FullscreenControls controller(&host, &controls, &video);
+        host.show();
+        controller.setActive(false);
+        QTRY_VERIFY(controls.isVisible());
+        QDialog dialog(&host);
+        dialog.resize(300, 160);
+        dialog.move(controls.mapToGlobal(QPoint(100, -55)));
+        dialog.show();
+        dialog.raise();
+        QCoreApplication::processEvents();
+
+        controller.activity();
+        const auto dialogWindow = reinterpret_cast<HWND>(dialog.winId());
+        const auto controlsWindow = reinterpret_cast<HWND>(controls.winId());
+        bool dialogAbove = false;
+        for (auto window = GetWindow(controlsWindow, GW_HWNDPREV); window; window = GetWindow(window, GW_HWNDPREV))
+            dialogAbove |= window == dialogWindow;
+        QVERIFY(dialogAbove);
+        QVERIFY(controls.isVisible());
+    }
+
     void nativeCaptureNotificationSurvivesCompletedClickAndIgnoresOtherEvents(){
         luma::NativeCaptureObserver observer;QVERIFY(observer.available());
         const auto window=CreateWindowExW(0,L"STATIC",L"Luma native input fixture",0,0,0,0,0,HWND_MESSAGE,nullptr,GetModuleHandleW(nullptr),nullptr);

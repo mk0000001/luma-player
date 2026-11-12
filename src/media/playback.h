@@ -39,6 +39,7 @@ struct PlaybackState {
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
     QString colorPrimaries,transferFunction,outputPrimaries,outputTransferFunction,audioOutput,runtimeVersion;
+    QString sourceVideoRange = "unknown";
     QString videoDecoder, videoDecoderRequest, videoColorRequest, dolbyVisionRequest, videoOverrideStatus;
     bool videoColorForced=false;
     std::optional<int> dolbyVisionProfile;
@@ -52,6 +53,7 @@ struct PlaybackState {
     quint32 discInputBytes=0, discDemuxBytes=0;
     std::optional<double> cacheSeconds, avSyncMs;
     QVector<MediaItem> audioTracks, subtitleTracks, chapters, titles;
+    QVector<qint64> chapterOffsetsMs;
 };
 bool isDiscSource(const QString &source);
 std::optional<QString> normalizedPlaybackSource(const QString &source, bool disc);

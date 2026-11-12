@@ -3,10 +3,14 @@
 #include "player_controls.h"
 #include "subtitles/runtime_environment.h"
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHostAddress>
@@ -14,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
 #include <QNetworkInterface>
 #include <QPushButton>
@@ -21,10 +26,13 @@
 #include <QScopeGuard>
 #include <QSet>
 #include <QSignalBlocker>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QSysInfo>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
+#include <algorithm>
 #ifdef Q_OS_WIN
 #include <string>
 #include <windows.h>
@@ -38,8 +46,10 @@ constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
 constexpr qsizetype maxCaptionBytes = 1024 * 1024;
+constexpr qsizetype maxChapters = 512;
 constexpr int activeDeviceRole = Qt::UserRole + 1;
 constexpr int rememberedDeviceRole = Qt::UserRole + 2;
+constexpr int deviceOptionsRole = Qt::UserRole + 3;
 
 QByteArray messageLine(const QJsonObject &message) {
     return QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -59,13 +69,16 @@ QLabel *plainLabel(const QString &text, QWidget *parent) {
 }
 
 #ifdef Q_OS_WIN
-QString bundledDiscTool() {
+QString bundledFfmpeg() {
     const auto path = QDir::toNativeSeparators(QApplication::applicationDirPath() + "/runtime/tools/ffmpeg.exe").toStdWString();
     const auto file = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE)
         return {};
     const auto close = qScopeGuard([file] { CloseHandle(file); });
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(file, &info) || (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+        return {};
     // Qt can leave a directory junction in its canonical path on Windows.
     const auto capacity = GetFinalPathNameByHandleW(file, nullptr, 0, VOLUME_NAME_DOS);
     if (!capacity)
@@ -104,7 +117,7 @@ QList<LanPrivateInterface> lanPrivateInterfaces() {
             if (lanPrivateSubnet(address, entry.prefixLength()).isEmpty() || listed.contains(address))
                 continue;
             listed.insert(address);
-            const LanPrivateInterface adapter{network.humanReadableName(), address, entry.prefixLength()};
+            const LanPrivateInterface adapter{network.humanReadableName(), address, entry.prefixLength(), network.index()};
             if (network.type() == QNetworkInterface::Wifi)
                 interfaces.prepend(adapter);
             else
@@ -186,7 +199,37 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     auto *receive = new QPushButton("PC에서 받기", this);
     receive->setObjectName("lanReceive");
     shareButtons->addWidget(receive);
+#ifdef Q_OS_WIN
+    auto *wirelessDisplay = new QPushButton("Windows 무선 디스플레이", this);
+    wirelessDisplay->setObjectName("lanWindowsWirelessDisplay");
+    auto *wirelessMenu = new QMenu(wirelessDisplay);
+    wirelessDisplay->setMenu(wirelessMenu);
+    const auto addSettingAction = [this, wirelessMenu](const QString &label, const QString &name, const QUrl &url) {
+        auto *action = wirelessMenu->addAction(label);
+        action->setObjectName(name);
+        connect(action, &QAction::triggered, this, [this, url] {
+            if (!QDesktopServices::openUrl(url))
+                status_->setText("Windows 무선 디스플레이 설정을 열 수 없습니다.");
+        });
+    };
+    addSettingAction("무선 디스플레이에 보내기 (Win+K)", "lanWindowsWirelessDisplaySend", QUrl("ms-settings:display"));
+    addSettingAction("이 PC를 무선 디스플레이로 사용", "lanWindowsWirelessDisplayReceive", QUrl("ms-settings:project"));
+    shareButtons->addWidget(wirelessDisplay);
+#endif
     layout->addLayout(shareButtons);
+#ifdef Q_OS_WIN
+    directButton_ = new QPushButton("공유기 없이 휴대폰 연결", this);
+    directButton_->setObjectName("lanWindowsDirect");
+    directButton_->setVisible(WindowsDirectConnection::available());
+    layout->addWidget(directButton_, 0, Qt::AlignLeft);
+    directDetails_ = plainLabel({}, this);
+    directDetails_->setObjectName("lanWindowsDirectStatus");
+    directDetails_->hide();
+    layout->addWidget(directDetails_);
+    directPoll_.setInterval(200);
+    connect(directButton_, &QPushButton::clicked, this, &LanPlaybackDialog::toggleDirect);
+    connect(&directPoll_, &QTimer::timeout, this, &LanPlaybackDialog::pollDirect);
+#endif
 
     devices_ = new QTreeWidget(this);
     devices_->setObjectName("lanDevices");
@@ -208,6 +251,55 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     deviceButtons->addStretch();
     layout->addLayout(deviceButtons);
 
+    deviceOptionsBox_ = new QGroupBox("선택 기기 재생 설정", this);
+    deviceOptionsBox_->setObjectName("lanDeviceOptions");
+    auto *optionsLayout = new QGridLayout(deviceOptionsBox_);
+    const auto addChoice = [this, optionsLayout](const QString &label, const QString &objectName, int row, int column) {
+        auto *choice = new ChoiceBox(deviceOptionsBox_);
+        choice->setObjectName(objectName);
+        choice->setAccessibleName(label);
+        choice->addItem("기기 설정 사용");
+        auto *caption = new QLabel(label, deviceOptionsBox_);
+        caption->setBuddy(choice);
+        optionsLayout->addWidget(caption, row, column);
+        optionsLayout->addWidget(choice, row, column + 1);
+        return choice;
+    };
+    deviceProfile_ = addChoice("화질", "lanDeviceProfile", 0, 0);
+    deviceProfile_->addItem("자동", "auto");
+    deviceProfile_->addItem("원본", "original");
+    for (const auto *profile : {"1080p", "720p", "480p"})
+        deviceProfile_->addItem(profile, profile);
+    deviceHdr_ = addChoice("HDR", "lanDeviceHdr", 0, 2);
+    deviceHdr_->addItem("자동", "auto");
+    deviceHdr_->addItem("원본 유지", "original");
+    deviceHdr_->addItem("SDR", "sdr");
+    deviceSkip_ = addChoice("건너뛰기", "lanDeviceSkip", 1, 0);
+    for (const int seconds : {5, 10, 15, 30})
+        deviceSkip_->addItem(QString::number(seconds) + "초", seconds);
+    deviceFill_ = addChoice("화면", "lanDeviceFill", 1, 2);
+    deviceFill_->addItem("원본 비율", false);
+    deviceFill_->addItem("화면 채우기", true);
+    deviceSubtitleDelayEnabled_ = new QCheckBox("자막 지연 지정", deviceOptionsBox_);
+    deviceSubtitleDelayEnabled_->setObjectName("lanDeviceSubtitleDelayEnabled");
+    deviceSubtitleDelay_ = new QSpinBox(deviceOptionsBox_);
+    deviceSubtitleDelay_->setObjectName("lanDeviceSubtitleDelay");
+    deviceSubtitleDelay_->setAccessibleName("자막 지연");
+    deviceSubtitleDelay_->setRange(-5000, 5000);
+    deviceSubtitleDelay_->setSingleStep(100);
+    deviceSubtitleDelay_->setSuffix(" ms");
+    optionsLayout->addWidget(deviceSubtitleDelayEnabled_, 2, 0);
+    optionsLayout->addWidget(deviceSubtitleDelay_, 2, 1);
+    resetOptions_ = new QPushButton("기기 기본값", deviceOptionsBox_);
+    resetOptions_->setObjectName("lanDeviceResetOptions");
+    applyOptions_ = new QPushButton("적용", deviceOptionsBox_);
+    applyOptions_->setObjectName("lanDeviceApplyOptions");
+    optionsLayout->addWidget(resetOptions_, 2, 2);
+    optionsLayout->addWidget(applyOptions_, 2, 3);
+    optionsLayout->setColumnStretch(1, 1);
+    optionsLayout->setColumnStretch(3, 1);
+    layout->addWidget(deviceOptionsBox_);
+
     auto *connectionButtons = new QHBoxLayout;
     retry_ = new QPushButton("주소 적용 / 다시 시작", this);
     retry_->setObjectName("lanRetry");
@@ -221,6 +313,8 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     layout->addLayout(connectionButtons);
 
     watchdog_.setSingleShot(true);
+    deviceRefresh_.setInterval(5000);
+    connect(&deviceRefresh_, &QTimer::timeout, this, &LanPlaybackDialog::requestDevices);
     host_.setStandardErrorFile(QProcess::nullDevice());
     connect(start_, &QPushButton::clicked, this, [this] {
         autoShare_ = true;
@@ -233,7 +327,19 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     connect(receive, &QPushButton::clicked, this, &LanPlaybackDialog::receiveRequested);
     connect(disconnectDevice_, &QPushButton::clicked, this, [this] { manageDevice(false); });
     connect(forgetDevice_, &QPushButton::clicked, this, [this] { manageDevice(true); });
-    connect(devices_, &QTreeWidget::currentItemChanged, this, &LanPlaybackDialog::updateControls);
+    connect(devices_, &QTreeWidget::currentItemChanged, this, [this] {
+        syncDeviceOptions();
+        updateControls();
+    });
+    for (auto *choice : {deviceProfile_, deviceHdr_, deviceSkip_, deviceFill_})
+        connect(choice, &QComboBox::currentIndexChanged, this, &LanPlaybackDialog::updateControls);
+    connect(deviceSubtitleDelayEnabled_, &QCheckBox::toggled, this, &LanPlaybackDialog::updateControls);
+    connect(deviceSubtitleDelay_, &QSpinBox::valueChanged, this, &LanPlaybackDialog::updateControls);
+    connect(applyOptions_, &QPushButton::clicked, this, &LanPlaybackDialog::applyDeviceOptions);
+    connect(resetOptions_, &QPushButton::clicked, this, [this] {
+        loadDeviceOptions({});
+        updateControls();
+    });
     connect(retry_, &QPushButton::clicked, this, &LanPlaybackDialog::restartDiscovery);
     connect(forget_, &QPushButton::clicked, this, &LanPlaybackDialog::forgetDevices);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
@@ -291,24 +397,57 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
 
 LanPlaybackDialog::~LanPlaybackDialog() {
     shuttingDown_ = true;
+    deviceRefresh_.stop();
+#ifdef Q_OS_WIN
+    directPoll_.stop();
+#endif
+    // Item models can emit selection changes while QWidget deletes its children.
+    devices_->disconnect(this);
+    for (auto *choice : {deviceProfile_, deviceHdr_, deviceSkip_, deviceFill_})
+        choice->disconnect(this);
+    deviceSubtitleDelayEnabled_->disconnect(this);
+    deviceSubtitleDelay_->disconnect(this);
     dismissPairRequest();
     closeHost();
+#ifdef Q_OS_WIN
+    direct_.reset();
+#endif
 }
 
 void LanPlaybackDialog::showEvent(QShowEvent *event) {
     QDialog::showEvent(event);
     requestDevices();
+    deviceRefresh_.start();
+}
+
+void LanPlaybackDialog::hideEvent(QHideEvent *event) {
+    deviceRefresh_.stop();
+    QDialog::hideEvent(event);
 }
 
 void LanPlaybackDialog::refreshInterfaces() {
     const auto preferred = interfaces_->currentData().toStringList().value(0);
     QSignalBlocker blocked(interfaces_);
     interfaces_->clear();
+#ifdef Q_OS_WIN
+    bool retiredPresent = false;
+#endif
     for (const auto &adapter : lanPrivateInterfaces()) {
+#ifdef Q_OS_WIN
+        if (retiredDirectBinding_ && quint32(adapter.interfaceIndex) == retiredDirectBinding_->interfaceIndex &&
+            adapter.address.toIPv4Address() == retiredDirectBinding_->address) {
+            retiredPresent = true;
+            continue;
+        }
+#endif
         const auto address = adapter.address.toString();
         const auto subnet = lanPrivateSubnet(adapter.address, adapter.prefixLength);
         interfaces_->addItem(adapter.name + " · " + address, QStringList{address, subnet});
     }
+#ifdef Q_OS_WIN
+    if (!retiredPresent)
+        retiredDirectBinding_.reset();
+#endif
     int selected = 0;
     for (int index = 0; index < interfaces_->count(); ++index) {
         if (interfaces_->itemData(index).toStringList().value(0) == preferred) {
@@ -322,6 +461,10 @@ void LanPlaybackDialog::refreshInterfaces() {
 void LanPlaybackDialog::startDiscovery() {
     if (shuttingDown_ || host_.state() != QProcess::NotRunning)
         return;
+#ifdef Q_OS_WIN
+    if (direct_)
+        return;
+#endif
     refreshInterfaces();
     const auto selected = interfaces_->currentData().toStringList();
     if (selected.size() != 2) {
@@ -329,6 +472,12 @@ void LanPlaybackDialog::startDiscovery() {
         updateControls();
         return;
     }
+    startHost(selected[0], selected[1]);
+}
+
+bool LanPlaybackDialog::startHost(const QString &address, const QString &subnet) {
+    if (shuttingDown_ || host_.state() != QProcess::NotRunning || address.isEmpty() || subnet.isEmpty())
+        return false;
     const auto runtime = QApplication::applicationDirPath() + "/runtime";
 #ifdef Q_OS_WIN
     const auto executable = runtime + "/tools/lumaplayer-mobile-host.exe";
@@ -337,17 +486,17 @@ void LanPlaybackDialog::startDiscovery() {
 #endif
     if (!QFileInfo(executable).isFile()) {
         status_->setText("모바일 송출 도우미가 없습니다. 모바일 공유가 포함된 빌드를 사용하세요.");
-        return;
+        return false;
     }
     const auto dataPath = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     if (dataPath.isEmpty()) {
         status_->setText("이 Windows 계정의 기기 연결 저장 위치를 확인할 수 없습니다.");
-        return;
+        return false;
     }
     const auto name = QSysInfo::machineHostName().simplified().left(63);
-    endpoint_ = selected[0] + ':' + QString::number(port);
+    endpoint_ = address + ':' + QString::number(port);
     startupConfiguration_ = messageLine(QJsonObject{
-        {"mode", "player"}, {"listen", endpoint_}, {"subnet", selected[1]},
+        {"mode", "player"}, {"listen", endpoint_}, {"subnet", subnet},
         {"name", name.isEmpty() ? QString("LumaPlayer") : name},
         {"store", QDir(dataPath).absoluteFilePath("lan-pairings.dpapi")}
     });
@@ -358,14 +507,89 @@ void LanPlaybackDialog::startDiscovery() {
     watchdog_.start(startupWaitMs);
     host_.start(executable, QStringList{});
     updateControls();
+    return true;
 }
 
 void LanPlaybackDialog::restartDiscovery() {
     if (mediaState_ != MediaState::Idle || forgetting_)
         return;
+#ifdef Q_OS_WIN
+    if (direct_)
+        return;
+#endif
     closeHost();
     startDiscovery();
 }
+
+#ifdef Q_OS_WIN
+void LanPlaybackDialog::toggleDirect() {
+    if (direct_) {
+        stopDirect({});
+        return;
+    }
+    if (shuttingDown_ || closingHost_ || forgetting_ || mediaState_ != MediaState::Idle ||
+        !WindowsDirectConnection::available())
+        return;
+    closeHost();
+    if (host_.state() != QProcess::NotRunning)
+        return;
+    direct_ = std::make_unique<WindowsDirectConnection>();
+    if (!direct_->start()) {
+        stopDirect("Windows에서 Wi-Fi Direct를 시작할 수 없습니다. 내부망 연결을 사용하세요.");
+        return;
+    }
+    directDetails_->setText("공유기 없는 연결을 시작하는 중…");
+    directDetails_->show();
+    directStartup_.start();
+    directPoll_.start();
+    updateControls();
+    pollDirect();
+}
+
+void LanPlaybackDialog::pollDirect() {
+    if (!direct_ || shuttingDown_)
+        return;
+    const auto result = direct_->poll();
+    if (result.phase == WindowsDirectConnection::Phase::Failed ||
+        (result.phase == WindowsDirectConnection::Phase::Starting && directStartup_.hasExpired(15000))) {
+        stopDirect("Wi-Fi Direct 연결을 사용할 수 없습니다. 내부망 연결로 돌아갑니다.");
+        return;
+    }
+    if (result.phase != WindowsDirectConnection::Phase::Started)
+        return;
+    const auto help = result.bluetooth ? "Android에서 ‘주변 PC 직접 연결’을 열고 이 Wi-Fi를 선택한 뒤 암호를 입력하세요."
+                                       : "Android에서 ‘주변 PC 직접 연결’을 열고 Wi-Fi 이름과 암호를 입력하세요.";
+    directDetails_->setText(QStringLiteral("Wi-Fi 이름  %1\n암호  %2\n%3")
+                                .arg(direct_->ssid(), direct_->passphrase(), QString::fromUtf8(help)));
+    if (directBinding_) {
+        if (result.binding != directBinding_ || host_.state() == QProcess::NotRunning)
+            stopDirect("공유기 없는 연결이 종료되었습니다. 내부망 연결로 돌아갑니다.");
+        return;
+    }
+    if (result.binding) {
+        directBinding_ = result.binding;
+        const QHostAddress address(directBinding_->address);
+        if (!startHost(address.toString(), lanPrivateSubnet(address, directBinding_->prefixLength)))
+            stopDirect("공유기 없는 송출을 시작할 수 없습니다. 내부망 연결로 돌아갑니다.");
+    } else {
+        status_->setText("Wi-Fi Direct의 사설 IPv4 주소를 기다리는 중입니다.");
+    }
+}
+
+void LanPlaybackDialog::stopDirect(const QString &message) {
+    directPoll_.stop();
+    auto publisher = std::move(direct_);
+    if (directBinding_)
+        retiredDirectBinding_ = directBinding_;
+    directBinding_.reset();
+    directDetails_->setText(message);
+    directDetails_->setVisible(!message.isEmpty());
+    closeHost();
+    publisher.reset();
+    startDiscovery();
+    updateControls();
+}
+#endif
 
 void LanPlaybackDialog::closeHost() {
     if (host_.state() == QProcess::NotRunning)
@@ -412,30 +636,40 @@ void LanPlaybackDialog::cancelDiscShare(const QString &message) {
 bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
     if (!canShare() && !(ready_ && mediaState_ == MediaState::Preparing))
         return false;
-    QString ffmpeg;
-    if (media.disc) {
-#ifdef Q_OS_WIN
-        ffmpeg = bundledDiscTool();
-#else
-        ffmpeg = QFileInfo(QStandardPaths::findExecutable("ffmpeg")).canonicalFilePath();
-#endif
-        if (ffmpeg.isEmpty()) {
-            status_->setText("Blu-ray 모바일 공유 도구가 없습니다.");
-            return false;
-        }
-    } else if (!lanLocalFileSupported(media.source)) {
+    if (!media.disc && !lanLocalFileSupported(media.source)) {
         status_->setText("휴대폰에서 볼 로컬 파일을 확인할 수 없습니다.");
         return false;
+    }
+#ifdef Q_OS_WIN
+    const auto ffmpeg = bundledFfmpeg();
+#else
+    const auto executable = media.disc ? QStandardPaths::findExecutable("ffmpeg") : QString{};
+    const auto ffmpeg = executable.isEmpty() ? QString{} : QFileInfo(executable).canonicalFilePath();
+#endif
+    if (media.disc && ffmpeg.isEmpty()) {
+        status_->setText("Blu-ray 모바일 공유 도구가 없습니다.");
+        return false;
+    }
+    auto chapterOffsets = media.chaptersMs;
+    std::sort(chapterOffsets.begin(), chapterOffsets.end());
+    const auto lastChapter = std::unique(chapterOffsets.begin(), chapterOffsets.end());
+    QJsonArray chapters;
+    for (auto chapter = chapterOffsets.cbegin(); chapter != lastChapter && chapters.size() < maxChapters; ++chapter) {
+        if (*chapter >= 0 && *chapter < media.durationMs)
+            chapters.append(*chapter);
     }
     QJsonArray subtitles;
     if (!media.subtitles.isEmpty())
         subtitles.append(QJsonObject{{"id", "player"}, {"label", "PC 자막"}, {"language", "und"}, {"vtt", media.subtitles}});
-    const QJsonObject configuration{
+    QJsonObject configuration{
         {"sourceKind", media.disc ? "bluray" : "file"}, {"source", media.source},
         {"playlist", media.playlist}, {"audioIndex", media.audioIndex},
         {"audioTrackId", media.audioTrackId}, {"audioMode", audioMode_->currentData().toString()},
-        {"ffmpeg", ffmpeg}, {"durationMs", media.durationMs}, {"title", media.title}, {"subtitles", subtitles}
+        {"ffmpeg", ffmpeg}, {"durationMs", media.durationMs}, {"title", media.title}, {"subtitles", subtitles},
+        {"videoRange", media.videoRange}
     };
+    if (!chapters.isEmpty())
+        configuration.insert("chaptersMs", chapters);
     if (!writeMessage(QJsonObject{{"command", "share"}, {"media", configuration}})) {
         protocolError();
         return false;
@@ -502,6 +736,7 @@ void LanPlaybackDialog::updateDevices(const QJsonArray &devices) {
     QSignalBlocker blocked(devices_);
     devices_->clear();
     hasActiveDevice_ = false;
+    bool awaitingOptions = false;
     static const QRegularExpression validId("^[A-Za-z0-9_-]{1,128}$");
     for (const auto &value : devices) {
         if (devices_->topLevelItemCount() >= 64)
@@ -511,6 +746,7 @@ void LanPlaybackDialog::updateDevices(const QJsonArray &devices) {
         const auto name = device.value("name").toString().simplified().left(128);
         const bool active = device.value("active").toBool();
         const bool remembered = device.value("remembered").toBool();
+        const auto options = device.value("options").toObject();
         if (!validId.match(id).hasMatch() || (!active && !remembered))
             continue;
         const QHostAddress address(device.value("address").toString());
@@ -520,13 +756,22 @@ void LanPlaybackDialog::updateDevices(const QJsonArray &devices) {
         row->setData(0, Qt::UserRole, id);
         row->setData(0, activeDeviceRole, active);
         row->setData(0, rememberedDeviceRole, remembered);
+        row->setData(0, deviceOptionsRole, options);
         devices_->addTopLevelItem(row);
         if (selected == id)
             devices_->setCurrentItem(row);
+        if (active && pendingOptionsDeviceId_ == id) {
+            awaitingOptions = options.value("revision").toInteger() == pendingOptionsRevision_;
+            if (!awaitingOptions)
+                status_->setText("선택한 기기의 재생 설정을 적용했습니다.");
+        }
         hasActiveDevice_ |= active;
     }
+    if (!awaitingOptions)
+        pendingOptionsDeviceId_.clear();
     if (!devices_->currentItem() && devices_->topLevelItemCount() > 0)
         devices_->setCurrentItem(devices_->topLevelItem(0));
+    syncDeviceOptions();
     updateControls();
 }
 
@@ -542,6 +787,62 @@ void LanPlaybackDialog::manageDevice(bool forget) {
     if (ready_ && !forgetting_ && !writeMessage(QJsonObject{
             {"command", forget ? "forgetDevice" : "disconnectDevice"}, {"id", id}}))
         status_->setText("기기 연결을 변경할 수 없습니다.");
+}
+
+void LanPlaybackDialog::syncDeviceOptions() {
+    const auto *device = devices_->currentItem();
+    const bool active = device && device->data(0, activeDeviceRole).toBool();
+    const auto id = active ? device->data(0, Qt::UserRole).toString() : QString{};
+    const auto options = active ? device->data(0, deviceOptionsRole).toJsonObject() : QJsonObject{};
+    if (optionsDeviceId_ == id && optionsSnapshot_ == options)
+        return;
+    optionsDeviceId_ = id;
+    optionsSnapshot_ = options;
+    loadDeviceOptions(options);
+    savedOptions_ = deviceOptionValues();
+}
+
+void LanPlaybackDialog::loadDeviceOptions(const QJsonObject &options) {
+    const auto select = [](QComboBox *choice, const QVariant &value) {
+        const QSignalBlocker blocked(choice);
+        choice->setCurrentIndex(std::max(0, choice->findData(value)));
+    };
+    select(deviceProfile_, options.value("profile").toString());
+    select(deviceHdr_, options.value("hdr").toString());
+    select(deviceSkip_, options.value("skipSeconds").toInt());
+    const auto fill = options.value("fill");
+    select(deviceFill_, fill.isBool() ? QVariant(fill.toBool()) : QVariant{});
+    const auto delay = options.value("subtitleDelayMs");
+    const QSignalBlocker blockEnabled(deviceSubtitleDelayEnabled_), blockDelay(deviceSubtitleDelay_);
+    deviceSubtitleDelayEnabled_->setChecked(delay.isDouble());
+    deviceSubtitleDelay_->setValue(delay.toInt());
+}
+
+QJsonObject LanPlaybackDialog::deviceOptionValues() const {
+    QJsonObject options;
+    if (deviceProfile_->currentIndex() > 0)
+        options.insert("profile", deviceProfile_->currentData().toString());
+    if (deviceHdr_->currentIndex() > 0)
+        options.insert("hdr", deviceHdr_->currentData().toString());
+    if (deviceSkip_->currentIndex() > 0)
+        options.insert("skipSeconds", deviceSkip_->currentData().toInt());
+    if (deviceFill_->currentIndex() > 0)
+        options.insert("fill", deviceFill_->currentData().toBool());
+    if (deviceSubtitleDelayEnabled_->isChecked())
+        options.insert("subtitleDelayMs", deviceSubtitleDelay_->value());
+    return options;
+}
+
+void LanPlaybackDialog::applyDeviceOptions() {
+    if (!applyOptions_->isEnabled() || optionsDeviceId_.isEmpty())
+        return;
+    if (!writeMessage(QJsonObject{{"command", "setDeviceOptions"}, {"id", optionsDeviceId_}, {"options", deviceOptionValues()}})) {
+        status_->setText("선택한 기기의 재생 설정을 보낼 수 없습니다.");
+        return;
+    }
+    pendingOptionsDeviceId_ = optionsDeviceId_;
+    pendingOptionsRevision_ = optionsSnapshot_.value("revision").toInteger();
+    updateControls();
 }
 
 bool LanPlaybackDialog::writeMessage(const QJsonObject &message) {
@@ -642,6 +943,11 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             status_->setText("자동 검색을 시작할 수 없습니다. 위 주소로 직접 연결하세요.");
         } else if (command == "disconnectDevice" || command == "forgetDevice") {
             status_->setText("선택한 기기의 연결을 변경할 수 없습니다.");
+            requestDevices();
+        } else if (command == "setDeviceOptions") {
+            pendingOptionsDeviceId_.clear();
+            status_->setText("선택한 기기의 재생 설정을 적용할 수 없습니다.");
+            updateControls();
             requestDevices();
         }
     }
@@ -769,16 +1075,29 @@ void LanPlaybackDialog::setSharing(bool sharing) {
 void LanPlaybackDialog::updateControls() {
     const bool idle = mediaState_ == MediaState::Idle;
     const bool starting = host_.state() == QProcess::Starting || (host_.state() == QProcess::Running && !ready_);
-    interfaces_->setEnabled(idle && !starting && !forgetting_);
-    retry_->setEnabled(idle && !starting && !forgetting_);
+    bool direct = false;
+#ifdef Q_OS_WIN
+    direct = bool(direct_);
+    directButton_->setEnabled(!shuttingDown_ && !closingHost_ && !forgetting_ && (direct || (idle && !starting)));
+    directButton_->setText(direct ? "공유기 없는 연결 종료" : "공유기 없이 휴대폰 연결");
+#endif
+    interfaces_->setEnabled(idle && !starting && !forgetting_ && !direct);
+    retry_->setEnabled(idle && !starting && !forgetting_ && !direct);
     audioMode_->setEnabled(idle && !forgetting_);
     start_->setEnabled(canShare());
     stop_->setEnabled(!idle && mediaState_ != MediaState::Stopping);
     forget_->setEnabled(ready_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     const auto *selected = devices_->currentItem();
     const bool canManage = ready_ && !forgetting_ && mediaState_ != MediaState::Stopping && selected;
-    disconnectDevice_->setEnabled(canManage && selected->data(0, activeDeviceRole).toBool());
+    const bool connected = canManage && selected->data(0, activeDeviceRole).toBool();
+    disconnectDevice_->setEnabled(connected);
     forgetDevice_->setEnabled(canManage && selected->data(0, rememberedDeviceRole).toBool());
+    const bool canEditOptions = connected && pendingOptionsDeviceId_.isEmpty();
+    deviceOptionsBox_->setEnabled(canEditOptions);
+    deviceSubtitleDelay_->setEnabled(deviceSubtitleDelayEnabled_->isChecked());
+    const auto options = deviceOptionValues();
+    resetOptions_->setEnabled(!options.isEmpty());
+    applyOptions_->setEnabled(options != savedOptions_);
     address_->setText(ready_ ? "직접 연결 주소  " + endpoint_ : QString{});
     address_->setVisible(ready_);
 }

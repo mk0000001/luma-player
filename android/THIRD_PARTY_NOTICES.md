@@ -7,7 +7,7 @@ LumaPlayer Android 앱의 소스와 빌드 스크립트는 GPL-3.0-or-later입�
 | 구성요소 | 버전과 라이선스 | 원본 |
 |---|---|---|
 | AndroidX Media3 | 1.11.1, Apache-2.0 | [고정 버전 소스](https://github.com/androidx/media/tree/1.11.1) |
-| AndroidX 라이브러리 | Annotation, Arch Core, Collection, Concurrent Futures, Core, CustomView, ExifInterface, Lifecycle, RecyclerView, VersionedParcelable, Apache-2.0 | [AndroidX 소스](https://android.googlesource.com/platform/frameworks/support/) |
+| AndroidX 라이브러리 | Annotation, Arch Core, Collection, Concurrent Futures, Core, CustomView, ExifInterface, Lifecycle, Media, ProfileInstaller, RecyclerView, Startup, Tracing, VersionedParcelable, Apache-2.0 | [AndroidX 소스](https://android.googlesource.com/platform/frameworks/support/) |
 | OkHttp / Okio | 4.12.0 / 3.6.0, Apache-2.0 | [OkHttp 소스](https://github.com/square/okhttp/tree/parent-4.12.0), [Okio 소스](https://github.com/square/okio/tree/parent-3.6.0) |
 | Guava | 33.3.1-android 및 failureaccess 1.0.2, Apache-2.0 | [고정 버전 소스](https://github.com/google/guava/tree/v33.3.1) |
 | Kotlin 표준 라이브러리 / JetBrains Annotations | 2.2.10 및 JDK 호환 모듈 1.9.10 / 13.0, Apache-2.0 | [Kotlin 소스](https://github.com/JetBrains/kotlin/tree/v2.2.10), [JetBrains Annotations 소스](https://github.com/JetBrains/intellij-community) |
@@ -23,7 +23,7 @@ The LumaPlayer Android source and build scripts are GPL-3.0-or-later. Bundled co
 | Component | Version and license | Upstream source |
 |---|---|---|
 | AndroidX Media3 | 1.11.1, Apache-2.0 | [Pinned source](https://github.com/androidx/media/tree/1.11.1) |
-| AndroidX libraries | Annotation, Arch Core, Collection, Concurrent Futures, Core, CustomView, ExifInterface, Lifecycle, RecyclerView, VersionedParcelable, Apache-2.0 | [AndroidX source](https://android.googlesource.com/platform/frameworks/support/) |
+| AndroidX libraries | Annotation, Arch Core, Collection, Concurrent Futures, Core, CustomView, ExifInterface, Lifecycle, Media, ProfileInstaller, RecyclerView, Startup, Tracing, VersionedParcelable, Apache-2.0 | [AndroidX source](https://android.googlesource.com/platform/frameworks/support/) |
 | OkHttp / Okio | 4.12.0 / 3.6.0, Apache-2.0 | [OkHttp source](https://github.com/square/okhttp/tree/parent-4.12.0), [Okio source](https://github.com/square/okio/tree/parent-3.6.0) |
 | Guava | 33.3.1-android and failureaccess 1.0.2, Apache-2.0 | [Pinned source](https://github.com/google/guava/tree/v33.3.1) |
 | Kotlin standard library / JetBrains Annotations | 2.2.10 with 1.9.10 JDK compatibility modules / 13.0, Apache-2.0 | [Kotlin source](https://github.com/JetBrains/kotlin/tree/v2.2.10), [JetBrains Annotations source](https://github.com/JetBrains/intellij-community) |

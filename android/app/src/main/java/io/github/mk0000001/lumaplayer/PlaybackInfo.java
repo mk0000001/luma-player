@@ -195,11 +195,18 @@ final class PlaybackInfo implements AnalyticsListener {
         String name = format.sampleMimeType;
         if (MimeTypes.VIDEO_DOLBY_VISION.equals(name)) {
             name = "Dolby Vision";
-        } else if (format.colorInfo != null) {
-            if (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_ST2084) {
-                name = context.getString(R.string.format_with_detail, name, "PQ");
-            } else if (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_HLG) {
-                name = context.getString(R.string.format_with_detail, name, "HLG");
+        } else {
+            if (MimeTypes.VIDEO_AV1.equals(name)) {
+                name = "AV1";
+            }
+            if (format.colorInfo != null) {
+                if (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_ST2084) {
+                    name = context.getString(R.string.format_with_detail, name, "PQ");
+                } else if (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_HLG) {
+                    name = context.getString(R.string.format_with_detail, name, "HLG");
+                } else if (format.colorInfo.colorTransfer == C.COLOR_TRANSFER_SDR) {
+                    name = context.getString(R.string.format_with_detail, name, "SDR");
+                }
             }
         }
         if (format.width > 0 && format.height > 0) {

@@ -1,6 +1,7 @@
 package io.github.mk0000001.lumaplayer;
 
 import android.annotation.SuppressLint;
+import android.net.Network;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import java.io.Closeable;
@@ -12,6 +13,10 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
@@ -19,6 +24,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import okhttp3.Call;
 import okhttp3.CookieJar;
+import okhttp3.EventListener;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -41,22 +47,41 @@ final class LanClient implements Closeable {
     private final AtomicBoolean closed = new AtomicBoolean();
 
     static LanClient forIdentity(LanEndpoint endpoint) throws GeneralSecurityException {
-        return new LanClient(endpoint, Access.IDENTITY, null, null);
+        return forIdentity(endpoint, null);
+    }
+
+    static LanClient forIdentity(LanEndpoint endpoint, Network network) throws GeneralSecurityException {
+        return new LanClient(endpoint, Access.IDENTITY, null, null, network);
     }
 
     static LanClient forPairing(LanEndpoint endpoint, String pin) throws GeneralSecurityException {
-        return new LanClient(endpoint, Access.PAIRING, pin, null);
+        return forPairing(endpoint, pin, null);
+    }
+
+    static LanClient forPairing(LanEndpoint endpoint, String pin, Network network) throws GeneralSecurityException {
+        return new LanClient(endpoint, Access.PAIRING, pin, null, network);
     }
 
     static LanClient forRemembered(LanEndpoint endpoint, String pin, String token) throws GeneralSecurityException {
-        return new LanClient(endpoint, Access.REMEMBERED, pin, token);
+        return forRemembered(endpoint, pin, token, null);
+    }
+
+    static LanClient forRemembered(LanEndpoint endpoint, String pin, String token, Network network)
+            throws GeneralSecurityException {
+        return new LanClient(endpoint, Access.REMEMBERED, pin, token, network);
     }
 
     static LanClient forPlayback(LanEndpoint endpoint, String pin, String token) throws GeneralSecurityException {
-        return new LanClient(endpoint, Access.PLAYBACK, pin, token);
+        return forPlayback(endpoint, pin, token, null);
     }
 
-    private LanClient(LanEndpoint endpoint, Access access, String pin, String token) throws GeneralSecurityException {
+    static LanClient forPlayback(LanEndpoint endpoint, String pin, String token, Network network)
+            throws GeneralSecurityException {
+        return new LanClient(endpoint, Access.PLAYBACK, pin, token, network);
+    }
+
+    private LanClient(LanEndpoint endpoint, Access access, String pin, String token, Network network)
+            throws GeneralSecurityException {
         if ((access != Access.IDENTITY && !LanPairing.isBase64(pin, LanPairing.PIN_BYTES))
                 || (access == Access.REMEMBERED && !LanPairing.isBase64(token, LanPairing.REMEMBER_TOKEN_BYTES))
                 || (access == Access.PLAYBACK && !LanPairing.isBase64(token, LanPairing.PLAYBACK_TOKEN_BYTES))) {
@@ -68,7 +93,7 @@ final class LanClient implements Closeable {
         tls.init(null, new TrustManager[]{trust}, null);
         String authorization = token == null ? null : "Bearer " + token;
         // OkHttp keeps its default HTTPS hostname verifier, including IP subject alternative names.
-        client = new OkHttpClient.Builder()
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .sslSocketFactory(tls.getSocketFactory(), trust)
                 .proxy(Proxy.NO_PROXY)
                 .followRedirects(false)
@@ -97,16 +122,64 @@ final class LanClient implements Closeable {
                         throw new IOException("LAN session redirects are disabled");
                     }
                     return response;
-                })
-                .build();
+                });
+        if (network != null) {
+            builder.socketFactory(network.getSocketFactory());
+        }
+        client = builder.build();
     }
 
     HttpUrl url(String path) {
         return endpoint.url(path);
     }
 
-    OkHttpDataSource.Factory mediaDataSourceFactory() {
-        return new OkHttpDataSource.Factory(client);
+    MediaRequests mediaRequests() {
+        return new MediaRequests(client);
+    }
+
+    static final class MediaRequests implements Call.Factory, Closeable {
+        private final OkHttpClient client;
+        private final Set<Call> open = new HashSet<>();
+        private boolean closed;
+
+        MediaRequests(OkHttpClient base) {
+            client = base.newBuilder().eventListener(new EventListener() {
+                @Override public void callEnd(Call call) { remove(call); }
+                @Override public void callFailed(Call call, IOException error) { remove(call); }
+            }).build();
+        }
+
+        private synchronized void remove(Call call) {
+            open.remove(call);
+        }
+
+        @Override
+        public synchronized Call newCall(Request request) {
+            Call call = client.newCall(request);
+            if (closed) {
+                call.cancel();
+            } else {
+                open.add(call);
+            }
+            return call;
+        }
+
+        OkHttpDataSource.Factory dataSourceFactory() {
+            return new OkHttpDataSource.Factory(this);
+        }
+
+        @Override
+        public void close() {
+            List<Call> pending;
+            synchronized (this) {
+                closed = true;
+                pending = new ArrayList<>(open);
+                open.clear();
+            }
+            // The OkHttp dispatcher has already removed synchronous calls that
+            // returned response headers. The body can still hold the optical reader.
+            pending.forEach(Call::cancel);
+        }
     }
 
     Identity fetchIdentity() throws IOException, JSONException {
@@ -128,8 +201,8 @@ final class LanClient implements Closeable {
         return fetchSession(12);
     }
 
-    void checkSession() throws IOException {
-        fetchSession(4);
+    LanSession checkSession() throws IOException {
+        return fetchSession(4);
     }
 
     private LanSession fetchSession(long timeoutSeconds) throws IOException {

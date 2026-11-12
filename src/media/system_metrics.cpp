@@ -1,23 +1,37 @@
 #include "system_metrics.h"
+#include "system_metrics_p.h"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QHash>
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstring>
+#include <cwchar>
+#include <utility>
 #include <vector>
 
 #ifdef Q_OS_WIN
+#include <winsock2.h>
 #include <windows.h>
+#include <ws2tcpip.h>
+#include <winternl.h>
+#include <cfgmgr32.h>
+#include <d3dkmthk.h>
 #include <dxgi.h>
+#include <iphlpapi.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <psapi.h>
 #include <tlhelp32.h>
 #include <wrl/client.h>
-#if __has_include(<dxcore.h>)
 #include <initguid.h>
+#include <winioctl.h>
+#if __has_include(<dxcore.h>)
 #include <dxcore.h>
 #define LUMA_HAS_DXCORE 1
 #endif
@@ -28,6 +42,34 @@
 #endif
 
 namespace luma {
+
+NetworkRates NetworkRateSampler::sample(QHash<quint64, NetworkCounters> counters, qint64 timestampNs) {
+    NetworkRates rates;
+    const double seconds = (timestampNs - timestampNs_) / 1e9;
+    // A long interval can span a hidden overlay or system sleep.
+    if (seconds > 0 && seconds <= 5 && !counters.isEmpty() && !previous_.isEmpty()) {
+        rates = {0.0, 0.0};
+        for (auto it = counters.cbegin(); it != counters.cend(); ++it) {
+            const auto previous = previous_.constFind(it.key());
+            if (previous == previous_.cend()) {
+                rates = {};
+                break;
+            }
+            if (it->received < previous->received)
+                rates.receivedBytesPerSecond.reset();
+            else if (rates.receivedBytesPerSecond)
+                *rates.receivedBytesPerSecond += double(it->received - previous->received) / seconds;
+            if (it->sent < previous->sent)
+                rates.sentBytesPerSecond.reset();
+            else if (rates.sentBytesPerSecond)
+                *rates.sentBytesPerSecond += double(it->sent - previous->sent) / seconds;
+        }
+    }
+    previous_ = std::move(counters);
+    timestampNs_ = timestampNs;
+    return rates;
+}
+
 namespace {
 
 #ifdef Q_OS_WIN
@@ -37,8 +79,34 @@ quint64 luidKey(LUID luid) {
     return (quint64(quint32(luid.HighPart)) << 32) | luid.LowPart;
 }
 
-QSet<quint64> graphicsAdapters() {
-    QSet<quint64> result;
+template <typename T>
+std::optional<T> adapterInformation(LUID luid, KMTQUERYADAPTERINFOTYPE type) {
+    D3DKMT_OPENADAPTERFROMLUID open{};
+    open.AdapterLuid = luid;
+    if (D3DKMTOpenAdapterFromLuid(&open) < 0)
+        return {};
+    T data{};
+    D3DKMT_QUERYADAPTERINFO query{open.hAdapter, type, &data, sizeof(data)};
+    const auto status = D3DKMTQueryAdapterInfo(&query);
+    const D3DKMT_CLOSEADAPTER close{open.hAdapter};
+    D3DKMTCloseAdapter(&close);
+    return status >= 0 ? std::optional<T>(data) : std::nullopt;
+}
+
+std::optional<double> adapterTemperature(LUID luid) {
+    const auto performance = adapterInformation<D3DKMT_ADAPTER_PERFDATA>(luid, KMTQAITYPE_ADAPTERPERFDATA);
+    if (performance && performance->Temperature > 0 && performance->Temperature <= 2000)
+        return performance->Temperature / 10.0;
+    return {};
+}
+
+struct GraphicsAdapter {
+    LUID luid;
+    GraphicsMetrics metrics;
+};
+
+QList<GraphicsAdapter> graphicsAdapters(QSet<quint64> &ids) {
+    QList<GraphicsAdapter> result;
     ComPtr<IDXGIFactory1> factory;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
         return result;
@@ -47,14 +115,27 @@ QSet<quint64> graphicsAdapters() {
         if (FAILED(factory->EnumAdapters1(i, &adapter)))
             break;
         DXGI_ADAPTER_DESC1 description{};
-        if (SUCCEEDED(adapter->GetDesc1(&description)) && !(description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
-            result.insert(luidKey(description.AdapterLuid));
+        if (FAILED(adapter->GetDesc1(&description)) || (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE))
+            continue;
+        ids.insert(luidKey(description.AdapterLuid));
+        const auto type = adapterInformation<D3DKMT_ADAPTERTYPE>(description.AdapterLuid, KMTQAITYPE_ADAPTERTYPE);
+        // Indirect displays can enumerate additional DXGI adapters for the same physical GPU.
+        if (type && (type->IndirectDisplayDevice || type->SoftwareDevice))
+            continue;
+        GraphicsMetrics metrics;
+        metrics.adapterLuid = luidKey(description.AdapterLuid);
+        metrics.name = QString::fromWCharArray(description.Description);
+        if (description.DedicatedVideoMemory)
+            metrics.dedicatedMemoryTotal = description.DedicatedVideoMemory;
+        if (type && (type->HybridIntegrated || type->HybridDiscrete))
+            metrics.integrated = type->HybridIntegrated != 0;
+        result.append({description.AdapterLuid, std::move(metrics)});
     }
     return result;
 }
 
-QSet<quint64> neuralAdapters() {
-    QSet<quint64> result;
+QList<LUID> neuralAdapters(QList<GraphicsAdapter> &graphics, QSet<quint64> &ids) {
+    QList<LUID> result;
 #ifdef LUMA_HAS_DXCORE
     const auto library = LoadLibraryExW(L"dxcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!library)
@@ -64,18 +145,31 @@ QSet<quint64> neuralAdapters() {
         const auto create = reinterpret_cast<CreateFactory>(GetProcAddress(library, "DXCoreCreateAdapterFactory"));
         ComPtr<IDXCoreAdapterFactory> factory;
         ComPtr<IDXCoreAdapterList> adapters;
-        if (create && SUCCEEDED(create(IID_PPV_ARGS(&factory))) &&
-            SUCCEEDED(factory->CreateAdapterList(1, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_NPU, IID_PPV_ARGS(&adapters)))) {
-            for (uint32_t i = 0; i < adapters->GetAdapterCount(); ++i) {
+        if (create && SUCCEEDED(create(IID_PPV_ARGS(&factory)))) {
+            for (auto &graphicsAdapter : graphics) {
                 ComPtr<IDXCoreAdapter> adapter;
-                LUID luid{};
-                if (SUCCEEDED(adapters->GetAdapter(i, IID_PPV_ARGS(&adapter))) &&
-                    SUCCEEDED(adapter->GetProperty(DXCoreAdapterProperty::InstanceLuid, &luid)))
-                    result.insert(luidKey(luid));
+                bool integrated = false;
+                if (SUCCEEDED(factory->GetAdapterByLuid(graphicsAdapter.luid, IID_PPV_ARGS(&adapter))) &&
+                    SUCCEEDED(adapter->GetProperty(DXCoreAdapterProperty::IsIntegrated, &integrated)))
+                    graphicsAdapter.metrics.integrated = integrated;
+            }
+            if (SUCCEEDED(factory->CreateAdapterList(1, &DXCORE_HARDWARE_TYPE_ATTRIBUTE_NPU, IID_PPV_ARGS(&adapters)))) {
+                for (uint32_t i = 0; i < adapters->GetAdapterCount(); ++i) {
+                    ComPtr<IDXCoreAdapter> adapter;
+                    LUID luid{};
+                    if (SUCCEEDED(adapters->GetAdapter(i, IID_PPV_ARGS(&adapter))) &&
+                        SUCCEEDED(adapter->GetProperty(DXCoreAdapterProperty::InstanceLuid, &luid))) {
+                        ids.insert(luidKey(luid));
+                        result.append(luid);
+                    }
+                }
             }
         }
     }
     FreeLibrary(library);
+#else
+    Q_UNUSED(graphics);
+    Q_UNUSED(ids);
 #endif
     return result;
 }
@@ -112,37 +206,44 @@ QSet<DWORD> playerProcesses(bool &includesChildren) {
     return result;
 }
 
-void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
-                        const QSet<quint64> &neural, const QSet<DWORD> &player, SystemMetrics &result) {
+template <typename Read>
+void forEachPdhValue(PDH_HCOUNTER counter, DWORD format, Read read) {
     DWORD bytes = 0, count = 0;
-    if (!counter || PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &bytes, &count, nullptr) != PDH_MORE_DATA ||
+    if (!counter || PdhGetFormattedCounterArrayW(counter, format, &bytes, &count, nullptr) != PDH_MORE_DATA ||
         bytes > 16 * 1024 * 1024)
         return;
     using Item = PDH_FMT_COUNTERVALUE_ITEM_W;
     std::vector<Item> buffer((bytes + sizeof(Item) - 1) / sizeof(Item));
-    if (PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &bytes, &count, buffer.data()) != ERROR_SUCCESS ||
+    if (PdhGetFormattedCounterArrayW(counter, format, &bytes, &count, buffer.data()) != ERROR_SUCCESS ||
         count > buffer.size())
         return;
 
+    for (DWORD i = 0; i < count; ++i) {
+        const auto &item = buffer[i];
+        const auto status = item.FmtValue.CStatus;
+        if (item.szName && (status == PDH_CSTATUS_VALID_DATA || status == PDH_CSTATUS_NEW_DATA))
+            read(QString::fromWCharArray(item.szName), item.FmtValue);
+    }
+}
+
+void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
+                        const QSet<quint64> &neural, const QSet<DWORD> &player, SystemMetrics &result) {
     static const QRegularExpression engineName(
         R"(^pid_(\d+)_(luid_0x([0-9a-f]+)_0x([0-9a-f]+)_phys_\d+_eng_\d+)_engtype_([^#]+))",
         QRegularExpression::CaseInsensitiveOption);
     struct Engine { quint64 adapter; bool decode; double usage, playerUsage; };
     QHash<QString, Engine> engines;
-    for (DWORD i = 0; i < count; ++i) {
-        const auto &item = buffer[i];
-        const auto status = item.FmtValue.CStatus;
-        const double value = item.FmtValue.doubleValue;
-        if (!item.szName || (status != PDH_CSTATUS_VALID_DATA && status != PDH_CSTATUS_NEW_DATA) ||
-            !std::isfinite(value) || value < 0)
-            continue;
-        const auto match = engineName.match(QString::fromWCharArray(item.szName));
+    forEachPdhValue(counter, PDH_FMT_DOUBLE, [&](const QString &name, const PDH_FMT_COUNTERVALUE &formatted) {
+        const double value = formatted.doubleValue;
+        if (!std::isfinite(value) || value < 0)
+            return;
+        const auto match = engineName.match(name);
         if (!match.hasMatch())
-            continue;
+            return;
         const auto adapter = (quint64(match.captured(3).toUInt(nullptr, 16)) << 32) |
                              match.captured(4).toUInt(nullptr, 16);
         if (!graphics.contains(adapter) && !neural.contains(adapter))
-            continue;
+            return;
         const auto id = match.captured(2);
         auto it = engines.find(id);
         if (it == engines.end())
@@ -150,7 +251,7 @@ void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
         it->usage += value;
         if (player.contains(match.captured(1).toULong()))
             it->playerUsage += value;
-    }
+    });
     // Sum processes on each physical engine, then take the busiest engine.
     for (const auto &engine : engines) {
         if (neural.contains(engine.adapter)) {
@@ -165,6 +266,97 @@ void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
             }
         }
     }
+}
+
+QHash<quint64, quint64> dedicatedMemoryUsage(PDH_HCOUNTER counter) {
+    QHash<quint64, quint64> result;
+    static const QRegularExpression adapterName(R"(^luid_0x([0-9a-f]+)_0x([0-9a-f]+)_phys_\d+$)",
+                                                QRegularExpression::CaseInsensitiveOption);
+    forEachPdhValue(counter, PDH_FMT_LARGE | PDH_FMT_NOCAP100, [&](const QString &name, const PDH_FMT_COUNTERVALUE &value) {
+        const auto match = adapterName.match(name);
+        if (match.hasMatch() && value.largeValue >= 0) {
+            const auto luid = (quint64(match.captured(1).toUInt(nullptr, 16)) << 32) | match.captured(2).toUInt(nullptr, 16);
+            result[luid] += quint64(value.largeValue);
+        }
+    });
+    return result;
+}
+
+QHash<quint64, NetworkCounters> networkCounters() {
+    QHash<quint64, NetworkCounters> result;
+    MIB_IF_TABLE2 *interfaces = nullptr;
+    if (GetIfTable2(&interfaces) != NO_ERROR)
+        return result;
+    const std::unique_ptr<MIB_IF_TABLE2, decltype(&FreeMibTable)> table(interfaces, FreeMibTable);
+    for (ULONG i = 0; i < table->NumEntries; ++i) {
+        const auto &row = table->Table[i];
+        const auto flags = row.InterfaceAndOperStatusFlags;
+        if (row.OperStatus == IfOperStatusUp && flags.HardwareInterface && !flags.FilterInterface &&
+            row.Type != IF_TYPE_SOFTWARE_LOOPBACK && row.Type != IF_TYPE_TUNNEL)
+            result.insert(row.InterfaceLuid.Value, {row.InOctets, row.OutOctets});
+    }
+    return result;
+}
+
+std::optional<DiskTemperature> storageTemperature(HANDLE device) {
+    DWORD returned = 0;
+    STORAGE_DEVICE_NUMBER disk{};
+    if (!DeviceIoControl(device, IOCTL_STORAGE_GET_DEVICE_NUMBER, nullptr, 0, &disk, sizeof(disk), &returned, nullptr) ||
+        returned < sizeof(disk) || disk.DeviceType != FILE_DEVICE_DISK || disk.DeviceNumber == DWORD(-1))
+        return {};
+
+    STORAGE_PROPERTY_QUERY query{};
+    query.PropertyId = StorageDeviceTemperatureProperty;
+    query.QueryType = PropertyStandardQuery;
+    std::array<char, 1024> data{};
+    constexpr auto headerSize = offsetof(STORAGE_TEMPERATURE_DATA_DESCRIPTOR, TemperatureInfo);
+    if (!DeviceIoControl(device, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof(query), data.data(), DWORD(data.size()),
+                         &returned, nullptr) || returned < headerSize || returned > data.size())
+        return {};
+    STORAGE_TEMPERATURE_DATA_DESCRIPTOR descriptor{};
+    std::memcpy(&descriptor, data.data(), headerSize);
+    if (descriptor.Size < headerSize || descriptor.Size > returned ||
+        descriptor.InfoCount > (descriptor.Size - headerSize) / sizeof(STORAGE_TEMPERATURE_INFO))
+        return {};
+
+    std::optional<DiskTemperature> hottest;
+    for (USHORT i = 0; i < descriptor.InfoCount; ++i) {
+        STORAGE_TEMPERATURE_INFO sensor{};
+        std::memcpy(&sensor, data.data() + headerSize + i * sizeof(sensor), sizeof(sensor));
+        if (USHORT(sensor.Temperature) == STORAGE_TEMPERATURE_VALUE_NOT_REPORTED)
+            continue;
+        const DiskTemperature reading{disk.DeviceNumber, sensor.Index, double(sensor.Temperature)};
+        if (sensor.Index == 0)
+            return reading;
+        if (!hottest || reading.temperatureCelsius > hottest->temperatureCelsius)
+            hottest = reading;
+    }
+    return hottest;
+}
+
+QList<DiskTemperature> sampleStorageTemperatures() {
+    QList<DiskTemperature> result;
+    auto diskInterface = GUID_DEVINTERFACE_DISK;
+    ULONG size = 0;
+    if (CM_Get_Device_Interface_List_SizeW(&size, &diskInterface, nullptr, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS ||
+        size < 2 || size > 64 * 1024)
+        return result;
+    std::vector<wchar_t> paths(size);
+    if (CM_Get_Device_Interface_ListW(&diskInterface, nullptr, paths.data(), size, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) != CR_SUCCESS)
+        return result;
+    for (const auto *path = paths.data(); *path; path += std::wcslen(path) + 1) {
+        const auto device = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (device == INVALID_HANDLE_VALUE)
+            continue;
+        const auto temperature = storageTemperature(device);
+        CloseHandle(device);
+        if (temperature)
+            result.append(*temperature);
+    }
+    std::sort(result.begin(), result.end(), [](const DiskTemperature &a, const DiskTemperature &b) {
+        return a.diskNumber < b.diskNumber;
+    });
+    return result;
 }
 
 quint64 ticks(FILETIME value) {
@@ -195,12 +387,21 @@ struct SystemMetricsReader::State {
     struct ProcessTime { quint64 created, used; };
     QHash<DWORD, ProcessTime> previous;
     PDH_HQUERY query = nullptr;
-    PDH_HCOUNTER engine = nullptr;
-    const QSet<quint64> graphics = graphicsAdapters(), neural = neuralAdapters();
+    PDH_HCOUNTER engine = nullptr, dedicatedMemory = nullptr;
+    QSet<quint64> graphicsIds, neuralIds;
+    QList<GraphicsAdapter> graphics = graphicsAdapters(graphicsIds);
+    const QList<LUID> neural = neuralAdapters(graphics, neuralIds);
+    QElapsedTimer clock;
+    NetworkRateSampler network;
+    qint64 storageReadMs = -1;
+    QList<DiskTemperature> storage;
 
     State() {
-        if (PdhOpenQueryW(nullptr, 0, &query) == ERROR_SUCCESS)
+        clock.start();
+        if (PdhOpenQueryW(nullptr, 0, &query) == ERROR_SUCCESS) {
             PdhAddEnglishCounterW(query, LR"(\GPU Engine(*)\Utilization Percentage)", 0, &engine);
+            PdhAddEnglishCounterW(query, LR"(\GPU Adapter Memory(*)\Dedicated Usage)", 0, &dedicatedMemory);
+        }
     }
     ~State() {
         if (query)
@@ -224,6 +425,11 @@ SystemMetricsReader::~SystemMetricsReader() = default;
 SystemMetrics SystemMetricsReader::sample() {
     SystemMetrics result;
 #ifdef Q_OS_WIN
+    auto counters = networkCounters();
+    const auto network = state_->network.sample(std::move(counters), state_->clock.nsecsElapsed());
+    result.networkRxBytesPerSecond = network.receivedBytesPerSecond;
+    result.networkTxBytesPerSecond = network.sentBytesPerSecond;
+
     const auto previousTotal = state_->total;
     FILETIME idle{}, kernel{}, user{};
     if (GetSystemTimes(&idle, &kernel, &user))
@@ -258,8 +464,30 @@ SystemMetrics SystemMetricsReader::sample() {
         result.playerCpuPercent = std::min(100.0, 100.0 * double(used) / double(state_->total - previousTotal));
     state_->previous = std::move(current);
     result.npuDetected = !state_->neural.isEmpty();
-    if (state_->engine && PdhCollectQueryData(state_->query) == ERROR_SUCCESS)
-        sampleAccelerators(state_->engine, state_->graphics, state_->neural, players, result);
+    QHash<quint64, quint64> dedicated;
+    if (state_->query && PdhCollectQueryData(state_->query) == ERROR_SUCCESS) {
+        sampleAccelerators(state_->engine, state_->graphicsIds, state_->neuralIds, players, result);
+        dedicated = dedicatedMemoryUsage(state_->dedicatedMemory);
+    }
+    for (const auto &adapter : std::as_const(state_->graphics)) {
+        auto metrics = adapter.metrics;
+        metrics.temperatureCelsius = adapterTemperature(adapter.luid);
+        const auto usage = dedicated.constFind(metrics.adapterLuid);
+        if (metrics.dedicatedMemoryTotal && usage != dedicated.cend())
+            metrics.dedicatedMemoryUsed = *usage;
+        result.graphicsAdapters.append(std::move(metrics));
+    }
+    for (const auto luid : state_->neural) {
+        const auto temperature = adapterTemperature(luid);
+        if (temperature && (!result.npuTemperatureCelsius || *temperature > *result.npuTemperatureCelsius))
+            result.npuTemperatureCelsius = temperature;
+    }
+    const auto elapsed = state_->clock.elapsed();
+    if (state_->storageReadMs < 0 || elapsed - state_->storageReadMs >= 5000) {
+        state_->storage = sampleStorageTemperatures();
+        state_->storageReadMs = elapsed;
+    }
+    result.storageTemperatures = state_->storage;
 #elif defined(Q_OS_LINUX)
     QFile cpu("/proc/stat");
     if (cpu.open(QIODevice::ReadOnly)) {

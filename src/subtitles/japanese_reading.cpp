@@ -94,7 +94,7 @@ JapaneseReading::JapaneseReading(const QString &runtime):d(std::make_unique<Impl
     d->destroy=reinterpret_cast<Impl::Destroy>(d->library.resolve("mecab_destroy"));
     d->parse=reinterpret_cast<Impl::Parse>(d->library.resolve("mecab_sparse_tostr"));
     if(!create || !d->destroy || !d->parse){d->error="일본어 독음 엔진을 찾을 수 없습니다.";return;}
-    QList<QByteArray> args={"luma","-F","%m\t%f[8]\n","-U","%m\t%m\n","-E",""};
+    QList<QByteArray> args={"luma","-F","%m\t%f[8]\t%f[0]\t%f[1]\n","-U","%m\t%m\t\t\n","-E",""};
     const auto dictionary=QDir(root).filePath("reading/ipadic");
     if(QFileInfo::exists(dictionary+"/sys.dic")){args.append({"-r",QDir(root).filePath("reading/mecabrc").toUtf8(),"-d",dictionary.toUtf8()});}
     else if(!runtime.isEmpty()) {d->error="일본어 독음 사전을 찾을 수 없습니다.";return;}
@@ -109,14 +109,25 @@ QString JapaneseReading::reading(const QString &text)const{
     QString clean=text;clean.remove(QRegularExpression("<[^>]*>"));
     if(!std::any_of(clean.cbegin(),clean.cend(),[](QChar c){return kana(c) || (c.unicode()>=0x4e00 && c.unicode()<=0x9fff);}))return {};
     QMutexLocker lock(&d->mutex);const auto utf8=clean.toUtf8();const auto *output=d->parse(d->tagger,utf8.constData());if(!output)return {};
-    QString result;bool converted=false;
+    QString result,phrase;bool converted=false;
+    const auto flush=[&]{
+        if(phrase.isEmpty())return;
+        const auto hangul=kanaToHangul(phrase);converted|=hangul!=phrase;
+        if(!result.isEmpty() && !phrase.front().isPunct())result+=' ';
+        result+=hangul;phrase.clear();
+    };
     for(const auto &line:QString::fromUtf8(output).split('\n')){
-        const auto fields=line.split('\t');if(fields.size()<2)continue;
+        const auto fields=line.split('\t');if(fields.size()!=4 || fields[0].isEmpty())continue;
         const auto phonetic=fields[1].isEmpty() || fields[1]=="*"?fields[0]:fields[1];
-        const auto hangul=kanaToHangul(phonetic);if(hangul!=phonetic)converted=true;
-        if(!result.isEmpty() && !fields[0].isEmpty() && !fields[0][0].isPunct())result+=' ';
-        result+=hangul;
+        const bool dependent=fields[2]=="助詞" || fields[2]=="助動詞" ||
+            (fields[2]=="動詞" && fields[3]=="非自立");
+        // MeCab segments particles and auxiliary verbs separately. The reading
+        // is for a spoken phrase, so keep those attached to the preceding word.
+        const bool punctuation=fields[0].front().isPunct();
+        if(!punctuation && (!dependent || (!phrase.isEmpty() && phrase.back().isPunct())))flush();
+        phrase+=phonetic;
     }
+    flush();
     return converted?result:QString{};
 }
 QString JapaneseReading::annotate(const QString &text)const{const auto pronunciation=reading(text);return pronunciation.isEmpty()?text:text+'\n'+pronunciation;}

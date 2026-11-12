@@ -161,6 +161,15 @@ private slots:
         QVERIFY(rows[0].contains("npuPercent") && rows[0].contains("discInputMiBps"));
         QVERIFY(rows[0].contains("playerCpuPercent") && rows[0].contains("playerGpuPercent") &&
                 rows[0].contains("playerNpuPercent") && rows[0].contains("playerRamPercent"));
+        QVERIFY(rows[0].contains("networkRxBytesPerSecond") && rows[0].contains("networkTxBytesPerSecond"));
+        const auto latest=overlay->summary().value("latest").toObject();
+        QVERIFY(latest.value("graphicsAdapters").isArray() && latest.value("storageTemperatures").isArray());
+        const auto graphics=latest.value("graphicsAdapters").toArray();
+        for(const auto &adapter:graphics){
+            const auto prefix="gpu_"+adapter.toObject().value("luid").toString().toUtf8();
+            QVERIFY(rows[0].contains(prefix+"_dedicatedMemoryTotalMiB"));
+            QVERIFY(rows[0].contains(prefix+"_temperatureCelsius"));
+        }
         copy->click();
         const auto snapshot=QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object();
         QVERIFY(snapshot.contains("performance"));

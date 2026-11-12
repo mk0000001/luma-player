@@ -18,13 +18,18 @@ const (
 )
 
 type sessionMetadata struct {
-	Version    int                `json:"version"`
-	Title      string             `json:"title"`
-	MIMEType   string             `json:"mimeType"`
-	SourceKind string             `json:"sourceKind"`
-	DurationMS int64              `json:"durationMs"`
-	Seekable   bool               `json:"seekable"`
-	Subtitles  []subtitleMetadata `json:"subtitles"`
+	Version     int                `json:"version"`
+	Title       string             `json:"title"`
+	MIMEType    string             `json:"mimeType"`
+	SourceKind  string             `json:"sourceKind"`
+	DurationMS  int64              `json:"durationMs"`
+	Seekable    bool               `json:"seekable"`
+	Restartable bool               `json:"restartable"`
+	Profiles    []string           `json:"profiles"`
+	ChaptersMS  []int64            `json:"chaptersMs"`
+	VideoRange  string             `json:"videoRange"`
+	Options     *deviceOptions     `json:"options,omitempty"`
+	Subtitles   []subtitleMetadata `json:"subtitles"`
 }
 
 type subtitleMetadata struct {
@@ -35,21 +40,24 @@ type subtitleMetadata struct {
 }
 
 type mediaSession struct {
-	config    validatedConfig
-	token     string
-	meta      sessionMetadata
-	subtitles map[string]string
-	file      *os.File
-	fileInfo  os.FileInfo
-	media     mediaGate
+	config             validatedConfig
+	token              string
+	meta               sessionMetadata
+	subtitles          map[string]string
+	subtitleTransforms chan struct{}
+	file               *os.File
+	fileInfo           os.FileInfo
+	media              mediaGate
 }
 
 func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
 	session := &mediaSession{
 		config: cfg, token: token, subtitles: make(map[string]string, len(cfg.Subtitles)),
+		subtitleTransforms: make(chan struct{}, 4),
 		meta: sessionMetadata{
 			Version: protocolVersion, Title: cfg.Title, MIMEType: cfg.mimeType,
 			SourceKind: cfg.SourceKind, DurationMS: cfg.DurationMS, Seekable: cfg.SourceKind == "file",
+			Profiles: []string{originalProfile}, ChaptersMS: append([]int64{}, cfg.ChaptersMS...), VideoRange: cfg.VideoRange,
 			Subtitles: make([]subtitleMetadata, 0, len(cfg.Subtitles)),
 		},
 	}
@@ -139,10 +147,10 @@ func (s *mediaSession) serveHTTP(original http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	s.servePlayback(w, r)
+	s.servePlayback(w, r, nil)
 }
 
-func (s *mediaSession) servePlayback(w *responseWriter, r *http.Request) {
+func (s *mediaSession) servePlayback(w *responseWriter, r *http.Request, options *deviceOptions) {
 	switch r.URL.Path {
 	case "/v1/session":
 		if r.Method != http.MethodGet {
@@ -150,7 +158,9 @@ func (s *mediaSession) servePlayback(w *responseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(s.meta)
+		metadata := s.meta
+		metadata.Options = options
+		_ = json.NewEncoder(w).Encode(metadata)
 	case "/v1/media":
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			methodNotAllowed(w, "GET, HEAD")
@@ -177,10 +187,17 @@ func methodNotAllowed(w http.ResponseWriter, allow string) {
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
-func (s *mediaSession) serveMedia(w *responseWriter, r *http.Request) {
+func (s *mediaSession) acquireMedia(w *responseWriter, r *http.Request) bool {
 	if !s.media.acquire(r.Context()) {
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "media stream is busy", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+func (s *mediaSession) serveMedia(w *responseWriter, r *http.Request) {
+	if !s.acquireMedia(w, r) {
 		return
 	}
 	defer s.media.release()

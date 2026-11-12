@@ -2,6 +2,7 @@ package io.github.mk0000001.lumaplayer;
 
 import android.graphics.Typeface;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
@@ -24,9 +25,9 @@ import java.net.SocketException;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -48,6 +49,7 @@ final class ConnectionScreen {
     private final TextView discoveryStatus;
     private final LinearLayout pcList;
     private final Button refresh;
+    private final Button nearbyButton;
     private final TextView pairName;
     private final TextView pairAddress;
     private final TextView pairStatus;
@@ -57,9 +59,13 @@ final class ConnectionScreen {
     private final Button confirmCode;
 
     private boolean foreground;
+    private boolean playing;
     private LanDiscovery scan;
+    private NearbyConnection nearby;
     private List<LanDiscovery.Pc> discovered = Collections.emptyList();
     private LanDiscovery.Pc selected;
+    private Network selectedNetwork;
+    private boolean selectedNearby;
     private PairingConnection attempt;
     private PairingConnection.Pending awaitingConfirmation;
     private ScheduledFuture<?> request;
@@ -75,6 +81,7 @@ final class ConnectionScreen {
         discoveryStatus = activity.findViewById(R.id.discovery_status);
         pcList = activity.findViewById(R.id.pc_list);
         refresh = activity.findViewById(R.id.refresh_button);
+        nearbyButton = activity.findViewById(R.id.nearby_pc_button);
         pairName = activity.findViewById(R.id.pair_pc_name);
         pairAddress = activity.findViewById(R.id.pair_pc_address);
         pairStatus = activity.findViewById(R.id.pair_status);
@@ -85,6 +92,7 @@ final class ConnectionScreen {
 
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
+        nearbyButton.setOnClickListener(view -> showNearby());
         activity.findViewById(R.id.connect_button).setOnClickListener(view -> selectAddress());
         activity.findViewById(R.id.pair_cancel_button).setOnClickListener(view -> showHome(0, false));
         startPairing.setOnClickListener(view -> startApproval());
@@ -100,7 +108,9 @@ final class ConnectionScreen {
 
     void start() {
         foreground = true;
-        if (home.getVisibility() == View.VISIBLE) {
+        if (nearby != null) {
+            nearby.setForeground(true);
+        } else if (home.getVisibility() == View.VISIBLE) {
             discover();
         }
     }
@@ -108,12 +118,33 @@ final class ConnectionScreen {
     void stop() {
         foreground = false;
         stopDiscovery();
-        cancelAttempt();
-        clearCode();
+        if (nearby != null) {
+            nearby.setForeground(false);
+        }
+        if (!awaitingNearbySystemUi()) {
+            cancelAttempt();
+            if (!playing) {
+                closeNearby();
+            }
+            clearCode();
+        }
     }
 
     void close() {
+        cancelAttempt();
+        stopDiscovery();
+        closeNearby();
         discoveryExecutor.shutdownNow();
+    }
+
+    boolean awaitingNearbySystemUi() {
+        return nearby != null && nearby.awaitingSystemUi();
+    }
+
+    void onRequestPermissionsResult(int requestCode) {
+        if (nearby != null) {
+            nearby.onRequestPermissionsResult(requestCode);
+        }
     }
 
     boolean handleBack() {
@@ -126,7 +157,11 @@ final class ConnectionScreen {
 
     void showHome(int message, boolean error) {
         cancelAttempt();
+        closeNearby();
+        playing = false;
         selected = null;
+        selectedNetwork = null;
+        selectedNearby = false;
         clearCode();
         pairScreen.setVisibility(View.GONE);
         home.setVisibility(View.VISIBLE);
@@ -143,6 +178,12 @@ final class ConnectionScreen {
     }
 
     void hideForPlayback() {
+        playing = true;
+        if (attempt != null) {
+            attempt.detachClientForPlayback();
+            attempt = null;
+        }
+        request = null;
         home.setVisibility(View.GONE);
         pairScreen.setVisibility(View.GONE);
         clearCode();
@@ -151,6 +192,7 @@ final class ConnectionScreen {
 
     private void discover() {
         stopDiscovery();
+        nearbyButton.setVisibility(View.GONE);
         discovered = Collections.emptyList();
         renderList();
         ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
@@ -182,8 +224,55 @@ final class ConnectionScreen {
                 renderList();
                 setStatus(discoveryStatus, R.string.discovery_empty, false);
                 discoveryStatus.setVisibility(found.isEmpty() ? View.VISIBLE : View.GONE);
+                nearbyButton.setVisibility(found.isEmpty() && NearbyConnection.supported(activity)
+                        ? View.VISIBLE : View.GONE);
             });
         });
+    }
+
+    private void showNearby() {
+        if (!foreground || nearby != null || scan != null || !discovered.isEmpty()
+                || !NearbyConnection.supported(activity)) {
+            return;
+        }
+        ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
+        if (connectivity == null) {
+            return;
+        }
+        nearby = new NearbyConnection(activity, connectivity, discoveryExecutor, new NearbyConnection.Listener() {
+            @Override
+            public void selected(NearbyConnection connection, LanDiscovery.Pc pc, Network network) {
+                if (nearby == connection && foreground) {
+                    select(pc, network, true);
+                }
+            }
+
+            @Override
+            public void cancelled(NearbyConnection connection) {
+                if (nearby == connection) {
+                    closeNearby();
+                }
+            }
+
+            @Override
+            public void lost(NearbyConnection connection) {
+                if (nearby == connection) {
+                    if (playing) {
+                        activity.onNearbyNetworkLost();
+                    } else {
+                        showHome(R.string.nearby_wifi_lost, true);
+                    }
+                }
+            }
+        });
+        nearby.show();
+    }
+
+    private void closeNearby() {
+        if (nearby != null) {
+            nearby.close();
+            nearby = null;
+        }
     }
 
     private void stopDiscovery() {
@@ -198,15 +287,16 @@ final class ConnectionScreen {
         pcList.removeAllViews();
         List<RememberedPcStore.Entry> saved = remembered.entries();
         saved.sort(Comparator.comparing(entry -> entry.name));
-        Set<String> shown = new HashSet<>();
-        for (RememberedPcStore.Entry entry : saved) {
-            addPc(new LanDiscovery.Pc(entry.endpoint, entry.name), true);
-            shown.add(entry.endpoint.address());
-        }
+        Map<String, LanDiscovery.Pc> unremembered = new LinkedHashMap<>();
         for (LanDiscovery.Pc pc : discovered) {
-            if (shown.add(pc.endpoint.address())) {
-                addPc(pc, false);
-            }
+            unremembered.put(pc.endpoint.address(), pc);
+        }
+        for (RememberedPcStore.Entry entry : saved) {
+            LanDiscovery.Pc response = unremembered.remove(entry.endpoint.address());
+            addPc(new LanDiscovery.Pc(entry.endpoint, entry.name, response == null ? null : response.network), true);
+        }
+        for (LanDiscovery.Pc pc : unremembered.values()) {
+            addPc(pc, false);
         }
     }
 
@@ -284,21 +374,46 @@ final class ConnectionScreen {
     }
 
     private void select(LanDiscovery.Pc pc) {
+        ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
+        Network route = null;
+        if (connectivity != null) {
+            try {
+                if (pc.network == null) {
+                    route = LanDiscovery.routeFor(connectivity, pc.endpoint);
+                } else if (LanDiscovery.eligibleNetwork(connectivity, pc.network)) {
+                    route = pc.network;
+                }
+            } catch (SecurityException ignored) {
+                // The app cannot select a route when Android denies access to the network.
+            }
+        }
+        if (route == null) {
+            setStatus(homeStatus, R.string.connection_error, true);
+            homeStatus.setVisibility(View.VISIBLE);
+            return;
+        }
+        select(pc, route, false);
+    }
+
+    private void select(LanDiscovery.Pc pc, Network route, boolean direct) {
         stopDiscovery();
         InputMethodManager keyboard = activity.getSystemService(InputMethodManager.class);
         if (keyboard != null) {
             keyboard.hideSoftInputFromWindow(address.getWindowToken(), 0);
         }
         selected = pc;
+        selectedNetwork = route;
+        selectedNearby = direct;
         home.setVisibility(View.GONE);
         pairScreen.setVisibility(View.VISIBLE);
         pairScreen.scrollTo(0, 0);
         pairName.setText(pc.name);
         pairAddress.setText(pc.endpoint.address());
         options.check(R.id.pair_remember_always);
-        RememberedPcStore.Entry record = remembered.find(pc.endpoint);
+        // A direct network's private addresses can repeat across different PCs.
+        RememberedPcStore.Entry record = direct ? null : remembered.find(pc.endpoint);
         if (record == null) {
-            showOptions(R.string.pair_choose, false);
+            showOptions(direct ? R.string.nearby_pair : R.string.pair_choose, false);
         } else {
             pairName.setText(record.name);
             beginLogin(record);
@@ -312,13 +427,13 @@ final class ConnectionScreen {
         startPairing.setVisibility(View.GONE);
         setStatus(pairStatus, message, false);
         activity.protectPairingForm(true);
-        attempt = new PairingConnection(selected.endpoint);
+        attempt = new PairingConnection(selected.endpoint, selectedNetwork);
         return attempt;
     }
 
     private void showOptions(int message, boolean error) {
         clearCode();
-        options.setVisibility(View.VISIBLE);
+        options.setVisibility(selectedNearby ? View.GONE : View.VISIBLE);
         startPairing.setVisibility(View.VISIBLE);
         setStatus(pairStatus, message, error);
         activity.protectPairingForm(false);
@@ -328,9 +443,9 @@ final class ConnectionScreen {
         if (selected == null || attempt != null) {
             return;
         }
-        boolean save = options.getCheckedRadioButtonId() == R.id.pair_remember_device;
+        boolean save = !selectedNearby && options.getCheckedRadioButtonId() == R.id.pair_remember_device;
         LanEndpoint endpoint = selected.endpoint;
-        if (!save) {
+        if (!save && !selectedNearby) {
             remembered.forget(endpoint);
         }
         PairingConnection current = begin(R.string.connecting);

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingTop="12dp">
+
+        <TextView
+            android:id="@+id/nearby_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:textColor="@color/luma_muted" />
+
+        <LinearLayout
+            android:id="@+id/nearby_choices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <LinearLayout
+            android:id="@+id/nearby_credentials"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginVertical="8dp"
+                android:text="@string/nearby_help"
+                android:textColor="@color/luma_muted" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:labelFor="@+id/nearby_ssid"
+                android:text="@string/nearby_ssid" />
+
+            <EditText
+                android:id="@id/nearby_ssid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionNext|flagNoPersonalizedLearning"
+                android:importantForAutofill="no"
+                android:inputType="textVisiblePassword|textNoSuggestions"
+                android:maxLength="32"
+                android:maxLines="1"
+                android:saveEnabled="false" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:labelFor="@+id/nearby_password"
+                android:text="@string/nearby_password" />
+
+            <EditText
+                android:id="@id/nearby_password"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:imeOptions="actionGo|flagNoPersonalizedLearning"
+                android:importantForAutofill="no"
+                android:inputType="textPassword|textNoSuggestions"
+                android:maxLength="63"
+                android:maxLines="1"
+                android:saveEnabled="false" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

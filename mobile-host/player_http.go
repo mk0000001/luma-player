@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -113,20 +114,15 @@ func (p *player) servePairing(w *responseWriter, r *http.Request, peer netip.Add
 
 func (p *player) servePlayerMedia(w *responseWriter, r *http.Request, peer netip.Addr) {
 	path := r.URL.Path
-	switch path {
-	case "/v1/session", "/v1/media":
-	default:
-		id, prefix := strings.CutPrefix(path, "/v1/subtitle/")
-		id, suffix := strings.CutSuffix(id, ".vtt")
-		if !prefix || !suffix || !subtitleIDPattern.MatchString(id) {
-			http.NotFound(w, r)
-			return
-		}
+	route, valid := parsePlaybackRoute(path)
+	if !valid {
+		http.NotFound(w, r)
+		return
 	}
 	if rejectRequestBody(w, r) {
 		return
 	}
-	trackRequest := path == "/v1/media"
+	trackRequest := route.media
 	media, device := p.authorize(peer, requestBearer(r), trackRequest)
 	if device == nil {
 		unauthorized(w)
@@ -136,10 +132,10 @@ func (p *player) servePlayerMedia(w *responseWriter, r *http.Request, peer netip
 		defer device.requests.Done()
 	}
 	allowedMethods := "GET"
-	if path == "/v1/media" {
+	if route.media {
 		allowedMethods = "GET, HEAD"
 	}
-	if r.Method != http.MethodGet && !(path == "/v1/media" && r.Method == http.MethodHead) {
+	if r.Method != http.MethodGet && !(route.media && r.Method == http.MethodHead) {
 		methodNotAllowed(w, allowedMethods)
 		return
 	}
@@ -150,7 +146,50 @@ func (p *player) servePlayerMedia(w *responseWriter, r *http.Request, peer netip
 	if path == "/v1/session" {
 		w.Header().Set("ETag", "\""+media.revision+"\"")
 	}
-	media.serve(w, r, device)
+	media.serve(w, r, device, route)
+}
+
+type playbackRoute struct {
+	media           bool
+	profile         string
+	position        int64
+	shiftedSubtitle string
+}
+
+func parsePlaybackRoute(path string) (playbackRoute, bool) {
+	switch path {
+	case "/v1/session":
+		return playbackRoute{}, true
+	case "/v1/media":
+		return playbackRoute{media: true}, true
+	}
+	if request, exists := strings.CutPrefix(path, variantPrefix); exists {
+		profile, start, ok := strings.Cut(request, "/")
+		if !ok {
+			return playbackRoute{}, false
+		}
+		switch profile {
+		case originalProfile, "1080p", "720p", "480p":
+		default:
+			return playbackRoute{}, false
+		}
+		position, valid := canonicalPosition(start, false)
+		return playbackRoute{media: true, profile: profile, position: position}, valid
+	}
+	if request, exists := strings.CutPrefix(path, "/v1/subtitle-at/"); exists {
+		origin, filename, found := strings.Cut(request, "/")
+		id, suffix := strings.CutSuffix(filename, ".vtt")
+		position, valid := canonicalPosition(origin, true)
+		return playbackRoute{position: position, shiftedSubtitle: filename}, found && suffix && valid && subtitleIDPattern.MatchString(id)
+	}
+	id, prefix := strings.CutPrefix(path, "/v1/subtitle/")
+	id, suffix := strings.CutSuffix(id, ".vtt")
+	return playbackRoute{}, prefix && suffix && subtitleIDPattern.MatchString(id)
+}
+
+func canonicalPosition(value string, signed bool) (int64, bool) {
+	position, err := strconv.ParseInt(value, 10, 64)
+	return position, err == nil && (signed || position >= 0) && strconv.FormatInt(position, 10) == value
 }
 
 func readPairJSON(w *responseWriter, r *http.Request, target any) bool {

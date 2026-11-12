@@ -8,15 +8,16 @@ import (
 	"io"
 	"math/bits"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"time"
 )
 
 const (
-	ffmpegStartupTimeout = 30 * time.Second
-	maxMatroskaHeader    = 1024 * 1024
+	ffmpegStartupTimeout    = 30 * time.Second
+	ffmpegOutputIdleTimeout = 25 * time.Second
+	maxMatroskaHeader       = 1024 * 1024
 )
 
 type remuxOutcome int
@@ -28,51 +29,34 @@ const (
 )
 
 func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
-	outcome := streamMatroska(ctx, w, s.config.FFmpeg, discArguments(s.config, false))
-	if outcome == remuxNeedsPCM && s.config.AudioMode == "original" && ctx.Err() == nil {
-		outcome = streamMatroska(ctx, w, s.config.FFmpeg, discArguments(s.config, true))
+	s.serveProgressive(w, ctx, originalProfile, 0)
+}
+
+func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, profile string, start int64) {
+	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, false))
+	if outcome == remuxNeedsPCM && profile == originalProfile && ctx.Err() == nil {
+		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, true))
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
-		http.Error(w, "could not start the selected Blu-ray stream", http.StatusServiceUnavailable)
+		http.Error(w, "could not start the selected media stream", http.StatusServiceUnavailable)
 	}
 }
 
-func discArguments(cfg validatedConfig, convertPCM bool) []string {
-	playlist, _ := strconv.Atoi(cfg.Playlist)
-	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
-	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
-		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
-	} else if cfg.AudioIndex == -1 {
-		audioMap += "?"
-	}
-	args := []string{
-		"-hide_banner", "-nostdin", "-loglevel", "error",
-		"-protocol_whitelist", "bluray", "-playlist", strconv.Itoa(playlist),
-		"-i", "bluray:" + filepath.ToSlash(cfg.Source),
-		"-map", "0:v:0", "-map", audioMap,
-		"-c:v", "copy",
-	}
-	switch {
-	case cfg.AudioMode == "compatible":
-		args = append(args, "-c:a", "aac", "-ac", "2", "-b:a", "192k")
-	case convertPCM:
-		args = append(args, "-c:a", "pcm_s24le")
-	default:
-		args = append(args, "-c:a", "copy")
-	}
-	return append(args,
-		"-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
-		"-f", "matroska", "-live", "1", "-flush_packets", "1", "pipe:1",
-	)
-}
-
-func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, args []string) remuxOutcome {
+func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string) remuxOutcome {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	timer := time.AfterFunc(ffmpegStartupTimeout, cancel)
 	defer timer.Stop()
 
 	command := exec.CommandContext(ctx, ffmpeg, args...)
+	if input != nil {
+		// Inherit the already-authorized file handle. The fd protocol supports
+		// seeking a regular file without opening a mutable pathname again.
+		if _, err := input.Seek(0, io.SeekStart); err != nil {
+			return remuxFailed
+		}
+		command.Stdin = input
+	}
 	command.Dir = filepath.Dir(ffmpeg)
 	command.WaitDelay = 2 * time.Second
 	hideProcess(command)
@@ -107,15 +91,30 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, ar
 		err = w.controller.Flush()
 	}
 	if err == nil {
-		_, err = io.Copy(w, stdout)
+		_, err = io.Copy(w, &ffmpegOutputReader{source: stdout, cancel: cancel})
 	}
 	if err != nil {
 		cancel()
 	}
+	exitTimer := time.AfterFunc(3*time.Second, cancel)
+	defer exitTimer.Stop()
 	if waitErr := command.Wait(); waitErr != nil && err == nil && parent.Err() == nil {
 		panic(http.ErrAbortHandler)
 	}
 	return remuxStreamed
+}
+
+// Bound a blocked optical read or encoder stall even after the first cluster.
+// A client that reads slowly is governed separately by the HTTP write deadline.
+type ffmpegOutputReader struct {
+	source io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *ffmpegOutputReader) Read(p []byte) (int, error) {
+	timer := time.AfterFunc(ffmpegOutputIdleTimeout, r.cancel)
+	defer timer.Stop()
+	return r.source.Read(p)
 }
 
 type ffmpegDiagnostics struct {

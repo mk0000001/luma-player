@@ -20,6 +20,11 @@ final class LanEndpoint {
     private static final String SUBTITLE_PREFIX = "/v1/subtitle/";
     private static final String SUBTITLE_ID = "[A-Za-z0-9_-]{1,64}";
     private static final Pattern SUBTITLE_PATH = Pattern.compile(SUBTITLE_PREFIX + SUBTITLE_ID + "\\.vtt");
+    private static final String OFFSET = "(?:0|[1-9][0-9]{0,8})";
+    private static final Pattern VARIANT_PATH = Pattern.compile(
+            "/v1/media/variant/(?:original|1080p|720p|480p)/" + OFFSET);
+    private static final Pattern SUBTITLE_AT_PATH = Pattern.compile(
+            "/v1/subtitle-at/(?:" + OFFSET + "|-[1-9][0-9]{0,3})/" + SUBTITLE_ID + "\\.vtt");
     private static final Pattern VALID_SUBTITLE_ID = Pattern.compile(SUBTITLE_ID);
 
     private final String host;
@@ -80,6 +85,22 @@ final class LanEndpoint {
         return SUBTITLE_PREFIX + id + ".vtt";
     }
 
+    static String mediaVariantPath(String profile, long startMs) {
+        String path = "/v1/media/variant/" + profile + "/" + startMs;
+        if (!VARIANT_PATH.matcher(path).matches()) {
+            throw new IllegalArgumentException("Invalid media variant");
+        }
+        return path;
+    }
+
+    static String subtitleAtPath(String id, long originMs) {
+        String path = "/v1/subtitle-at/" + originMs + "/" + id + ".vtt";
+        if (!SUBTITLE_AT_PATH.matcher(path).matches() || originMs < -5000) {
+            throw new IllegalArgumentException("Invalid subtitle origin");
+        }
+        return path;
+    }
+
     HttpUrl url(String path) {
         if (!permitsPath(path)) {
             throw new IllegalArgumentException("Unsupported session path");
@@ -100,6 +121,7 @@ final class LanEndpoint {
     }
 
     static boolean isMediaPath(String path) {
-        return SESSION_PATH.equals(path) || MEDIA_PATH.equals(path) || SUBTITLE_PATH.matcher(path).matches();
+        return SESSION_PATH.equals(path) || MEDIA_PATH.equals(path) || SUBTITLE_PATH.matcher(path).matches()
+                || VARIANT_PATH.matcher(path).matches() || SUBTITLE_AT_PATH.matcher(path).matches();
     }
 }

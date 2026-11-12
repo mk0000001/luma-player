@@ -71,8 +71,18 @@ FIXTURE_API int libvlc_audio_set_track(libvlc_media_player_t *,int){return 0;}
 FIXTURE_API libvlc_track_description_t *libvlc_video_get_spu_description(libvlc_media_player_t *){return nullptr;}
 FIXTURE_API int libvlc_video_set_spu(libvlc_media_player_t *,int){return 0;}
 FIXTURE_API void libvlc_track_description_list_release(libvlc_track_description_t *){}
-FIXTURE_API int libvlc_media_player_get_chapter_count(libvlc_media_player_t *){return 0;}
+FIXTURE_API int libvlc_media_player_get_chapter_count(libvlc_media_player_t *p){return preparedFixture(p) && !p->media->menus && p->title>=0?3:0;}
 FIXTURE_API void libvlc_media_player_set_chapter(libvlc_media_player_t *,int){}
+FIXTURE_API int libvlc_media_player_get_full_chapter_descriptions(libvlc_media_player_t *p,int title,libvlc_chapter_description_t ***chapters){
+    *chapters=nullptr;
+    if(title!=p->title || libvlc_media_player_get_chapter_count(p)==0)return 0;
+    *chapters=new libvlc_chapter_description_t*[3];
+    (*chapters)[0]=new libvlc_chapter_description_t{0,0,nullptr};
+    (*chapters)[1]=new libvlc_chapter_description_t{1100+500*title,0,nullptr};
+    (*chapters)[2]=new libvlc_chapter_description_t{2750+500*title,0,nullptr};
+    return 3;
+}
+FIXTURE_API void libvlc_chapter_descriptions_release(libvlc_chapter_description_t **chapters,unsigned count){for(unsigned i=0;i<count;++i)delete chapters[i];delete[] chapters;}
 FIXTURE_API int libvlc_media_player_get_title(libvlc_media_player_t *p){if(p->pendingTitle>=0 && --p->ackReads<=0){p->title=p->pendingTitle;p->pendingTitle=-1;}return p->title;}
 FIXTURE_API int libvlc_media_player_get_chapter(libvlc_media_player_t *){return -1;}
 FIXTURE_API int libvlc_media_player_get_full_title_descriptions(libvlc_media_player_t *p,libvlc_title_description_t ***titles){
@@ -126,6 +136,19 @@ private slots:
     void preparedDiscDelayedSelectionKeepsManualPause(){
         PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());QVERIFY(engine.openPreparedDisc("bluray:///prepared/delayed",0,6296832));engine.setPaused(true);
         QTRY_VERIFY_WITH_TIMEOUT(engine.state().timelineReady,4000);QCOMPARE(engine.state().currentTitle,0);QVERIFY(!engine.state().playing);QCOMPARE(premature_(),0);engine.setPaused(false);QTRY_VERIFY(engine.state().playing);
+    }
+    void chapterOffsetsFollowSelectedNativeTitle(){
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());
+        QVERIFY(engine.openPreparedDisc("bluray:///prepared/chapters",0,6296832));
+        const QVector<qint64> firstTitle{0,1100,2750};
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().chapterOffsetsMs,firstTitle,3000);
+        QCOMPARE(engine.state().sourceVideoRange,QString("unknown"));
+        engine.setTitle(1);
+        const QVector<qint64> secondTitle{0,1600,3250};
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().chapterOffsetsMs,secondTitle,3000);
+        QCOMPARE(engine.state().currentTitle,1);
+        engine.stop();
+        QVERIFY(engine.state().chapterOffsetsMs.isEmpty());
     }
     void preparedDiscRejectsUnknownOrAmbiguousTitles_data(){QTest::addColumn<QString>("source");QTest::newRow("missing")<<QString("missing");QTest::newRow("ambiguous")<<QString("ambiguous");}
     void preparedDiscRejectsUnknownOrAmbiguousTitles(){

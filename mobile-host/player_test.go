@@ -177,11 +177,16 @@ func (host playerTestHost) control(t *testing.T, command any) {
 
 func (host playerTestHost) pair(t *testing.T, remember bool, decision string) pairPollResponse {
 	t.Helper()
+	return host.pairDevice(t, testPlayerDeviceID, remember, decision)
+}
+
+func (host playerTestHost) pairDevice(t *testing.T, deviceID string, remember bool, decision string) pairPollResponse {
+	t.Helper()
 	clientNonce := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x6c}, 32))
-	digest := sha256.Sum256([]byte("luma-pair-commit-v1\n" + host.pin + "\n" + testPlayerDeviceID + "\n" + clientNonce))
+	digest := sha256.Sum256([]byte("luma-pair-commit-v1\n" + host.pin + "\n" + deviceID + "\n" + clientNonce))
 	var started pairStartResponse
 	host.request(t, http.MethodPost, "/v1/pair/start", "", map[string]any{
-		"deviceId": testPlayerDeviceID, "device": "테스트 휴대폰", "remember": remember,
+		"deviceId": deviceID, "device": "테스트 휴대폰", "remember": remember,
 		"commitment": base64.RawURLEncoding.EncodeToString(digest[:]),
 	}, http.StatusOK, &started)
 	if len(started.ID) != 22 || len(started.ServerNonce) != 43 {
@@ -199,7 +204,7 @@ func (host playerTestHost) pair(t *testing.T, remember bool, decision string) pa
 	}
 	host.request(t, http.MethodPost, "/v1/pair/reveal", "", map[string]string{"id": started.ID, "clientNonce": clientNonce}, http.StatusOK, nil)
 	prompt := host.event(t, "pairRequest")
-	sum := sha256.Sum256([]byte("luma-pair-code-v1\n" + host.pin + "\n" + testPlayerDeviceID + "\n" + clientNonce + "\n" + started.ServerNonce))
+	sum := sha256.Sum256([]byte("luma-pair-code-v1\n" + host.pin + "\n" + deviceID + "\n" + clientNonce + "\n" + started.ServerNonce))
 	wantCode := fmt.Sprintf("%06d", binary.BigEndian.Uint32(sum[:4])%1_000_000)
 	if prompt.ID != started.ID || prompt.Code != wantCode || prompt.Device != "테스트 휴대폰" || prompt.Remember == nil || *prompt.Remember != remember {
 		t.Fatalf("invalid approval prompt: %+v", prompt)
@@ -210,7 +215,7 @@ func (host playerTestHost) pair(t *testing.T, remember bool, decision string) pa
 	}
 	host.control(t, map[string]string{"command": "decide", "id": started.ID, "decision": decision})
 	if decision != "deny" {
-		if status := host.event(t, "deviceConnected"); status.DeviceID != testPlayerDeviceID {
+		if status := host.event(t, "deviceConnected"); status.DeviceID != deviceID {
 			t.Fatal("incorrect approved device")
 		}
 	}

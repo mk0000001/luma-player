@@ -1,20 +1,28 @@
 #include "performance_overlay.h"
 #include "native_playback_move.h"
+#include "video_surface.h"
 
 #include <QApplication>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QIODevice>
+#include <QJsonArray>
+#include <QMap>
 #include <QPainter>
 #include <QPainterPath>
 #include <QTextStream>
 #include <algorithm>
+#include <initializer_list>
 
 namespace luma {
 namespace {
 
 constexpr double mebibyte = 1024.0 * 1024.0;
 constexpr double gibibyte = 1024.0 * mebibyte;
+constexpr double bytesToMegabits = 8.0 / 1000000.0;
+constexpr int metricsTop = 26;
+constexpr int hardwareRowHeight = 16;
+constexpr int footerRowHeight = 17;
 
 QString valueText(std::optional<double> value, const QString &unit, int precision = 0) {
     return value ? QString::number(*value, 'f', precision) + unit : QStringLiteral("—");
@@ -22,6 +30,42 @@ QString valueText(std::optional<double> value, const QString &unit, int precisio
 
 QJsonValue jsonValue(std::optional<double> value) {
     return value ? QJsonValue(*value) : QJsonValue(QJsonValue::Null);
+}
+
+QJsonValue memoryMiB(std::optional<quint64> bytes) {
+    return jsonValue(bytes ? std::optional<double>(double(*bytes) / mebibyte) : std::nullopt);
+}
+
+QString networkRateText(std::optional<double> megabits, bool tight = false) {
+    if (megabits && *megabits < 1)
+        return valueText(*megabits * 1000, tight ? " kb/s" : " Kbps", tight ? 0 : 1);
+    return valueText(megabits, tight ? " Mb/s" : " Mbps", tight ? 1 : 2);
+}
+
+QString videoMemoryText(const GraphicsMetrics &adapter) {
+    if (!adapter.dedicatedMemoryTotal)
+        return QStringLiteral("—");
+    const auto total = double(*adapter.dedicatedMemoryTotal);
+    const bool useGiB = total >= gibibyte;
+    const auto unitSize = useGiB ? gibibyte : mebibyte;
+    const int precision = useGiB ? 1 : 0;
+    const auto used = adapter.dedicatedMemoryUsed ? std::optional<double>(double(*adapter.dedicatedMemoryUsed) / unitSize) : std::nullopt;
+    return valueText(used, "", precision) + '/' + valueText(total / unitSize, useGiB ? " GiB" : " MiB", precision);
+}
+
+bool showProcessorTemperatures(const SystemMetrics &system, bool compact) {
+    return !compact || system.npuTemperatureCelsius.has_value();
+}
+
+int hardwareRows(const SystemMetrics &system, bool compact) {
+#ifdef Q_OS_WIN
+    return int(std::max<qsizetype>(1, system.graphicsAdapters.size())) +
+           int(std::max<qsizetype>(1, system.storageTemperatures.size())) + int(showProcessorTemperatures(system, compact));
+#else
+    Q_UNUSED(system);
+    Q_UNUSED(compact);
+    return 0;
+#endif
 }
 
 std::optional<double> readRate(quint32 before, quint32 after, double seconds) {
@@ -47,6 +91,8 @@ PerformanceOverlay::PerformanceOverlay(QWidget *anchor, std::function<Performanc
     setFocusPolicy(Qt::NoFocus);
     anchor->installEventFilter(this);
     anchor->window()->installEventFilter(this);
+    if (auto *surface = qobject_cast<VideoSurface *>(anchor))
+        connect(surface, &VideoSurface::videoStackingChanged, this, &PerformanceOverlay::syncGeometry);
     timer_.setInterval(1000);
     connect(&timer_, &QTimer::timeout, this, &PerformanceOverlay::requestSample);
 }
@@ -148,6 +194,10 @@ void PerformanceOverlay::appendSample(SystemMetrics system) {
     values[Cpu] = system.cpuPercent;
     values[Gpu] = system.gpuPercent;
     values[Npu] = system.npuPercent;
+    if (system.networkRxBytesPerSecond)
+        values[NetworkRx] = *system.networkRxBytesPerSecond * bytesToMegabits;
+    if (system.networkTxBytesPerSecond)
+        values[NetworkTx] = *system.networkTxBytesPerSecond * bytesToMegabits;
     sample.playerValues[Cpu] = system.playerCpuPercent;
     sample.playerValues[Gpu] = system.playerGpuPercent;
     sample.playerValues[Npu] = system.playerNpuPercent;
@@ -180,6 +230,8 @@ void PerformanceOverlay::appendSample(SystemMetrics system) {
     if (history_.size() == historyLimit)
         history_.removeFirst();
     history_.append(std::move(sample));
+    if (anchor_ && height() != contentLayout(anchor_->height()).height)
+        syncGeometry();
     update();
 }
 
@@ -192,6 +244,7 @@ bool PerformanceOverlay::eventFilter(QObject *, QEvent *event) {
     case QEvent::Resize:
     case QEvent::Show:
     case QEvent::Hide:
+    case QEvent::WinIdChange:
     case QEvent::WindowStateChange:
         QTimer::singleShot(0, this, [this] { syncGeometry(); });
         break;
@@ -207,10 +260,8 @@ void PerformanceOverlay::syncGeometry() {
         hide();
         return;
     }
-    const bool compact = anchor_->height() < 400;
-    const bool chart = view_ != View::Text;
     const int width = std::min(418, anchor_->width() - 24);
-    const int height = compact ? (chart ? 150 : 125) : (chart ? 264 : 194);
+    const int height = contentLayout(anchor_->height()).height;
     const auto point = anchor_->mapToGlobal(QPoint(leftAligned_ ? 12 : anchor_->width() - width - 12, 10));
     const QRect target(point, QSize(width, height));
     if (geometry() != target)
@@ -219,9 +270,32 @@ void PerformanceOverlay::syncGeometry() {
         show();
         raise();
     }
+    keepPlaybackOverlayBelowDialogs(this, anchor_->window());
+    if (auto *surface = qobject_cast<VideoSurface *>(anchor_.data()))
+        keepPlaybackOverlayAboveVideo(this, surface->videoWindow());
+}
+
+PerformanceOverlay::ContentLayout PerformanceOverlay::contentLayout(int anchorHeight) const {
+    const bool compact = anchorHeight < 400;
+    const bool chart = view_ != View::Text && anchorHeight >= 215;
+    const int rowHeight = compact ? (chart ? 29 : 17) : (chart ? 46 : 33);
+    if (history_.isEmpty())
+        return {compact, chart, rowHeight, 0, 58};
+    const auto &sample = history_.constLast();
+    const int footerRows = compact ? 1 : (sample.input.playback ? 3 : 2);
+    const int baseHeight = metricsTop + (visibleMetricCount + 1) / 2 * rowHeight + footerRows * footerRowHeight + 6;
+    const int availableRows = std::max(0, (anchorHeight - 20 - baseHeight) / hardwareRowHeight);
+    const int rows = std::min({hardwareRows(sample.system, compact), availableRows, 7});
+    return {compact, chart, rowHeight, rows, baseHeight + rows * hardwareRowHeight};
 }
 
 double PerformanceOverlay::graphMaximum(Metric metric) const {
+    if (metric == NetworkRx || metric == NetworkTx) {
+        double maximum = 0.01;
+        for (const auto &sample : history_)
+            maximum = std::max({maximum, sample.values[NetworkRx].value_or(0), sample.values[NetworkTx].value_or(0)});
+        return maximum;
+    }
     double maximum = metric <= Ram ? 100 : metric == Fps ? 30 : 1;
     if (metric > Ram) {
         for (const auto &sample : history_)
@@ -279,7 +353,8 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
         painter.setPen(color);
         painter.drawText(area, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(font).elidedText(text, Qt::ElideRight, area.width()));
     };
-    line({12, 6, width() - 24, 20}, view_ == View::Text ? "재생 성능  ·  전체 / 플레이어" :
+    const auto layout = contentLayout(anchor_ ? anchor_->height() : height() + 20);
+    line({12, 5, width() - 24, 20}, !layout.chart ? "재생 성능  ·  전체 / 플레이어" :
          "재생 성능  ·  전체 실선 / 플레이어 점선", QColor("#dce6f5"), 12, true);
     if (history_.isEmpty()) {
         line({12, 32, width() - 24, 20}, "성능 지표를 수집하는 중…", QColor("#9cacc3"), 12);
@@ -290,19 +365,21 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
     const auto &state = sample.input.playback;
     const auto &values = sample.values;
     const auto color = QColor("#9cacc3");
-    const bool compact = height() <= 150;
-    const bool chart = view_ != View::Text;
-    const bool numbers = view_ != View::Graph;
-    const int rowHeight = compact ? (chart ? 35 : 27) : (chart ? 59 : 38);
+    const bool numbers = view_ != View::Graph || !layout.chart;
+    const bool narrow = width() < 330;
+    const bool tight = width() < 230;
     const int cellWidth = (width() - 30) / 2;
     const std::array<QString, MetricCount> titles{
         "CPU", "GPU", "NPU", "RAM",
         sample.input.disc ? "FPS · 표시" : "FPS · 처리",
-        sample.inputMiBps ? "Blu-ray I/O · 입력" : "Blu-ray I/O · 디먹싱"
+        sample.inputMiBps ? "Blu-ray I/O · 입력" : "Blu-ray I/O · 디먹싱",
+        tight ? "↓" : narrow ? "수신" : "네트워크 수신",
+        tight ? "↑" : narrow ? "송신" : "네트워크 송신"
     };
     const std::array<QString, MetricCount> shown{
         valueText(values[Cpu], "%"), valueText(values[Gpu], "%"), valueText(values[Npu], "%"),
-        valueText(values[Ram], "%"), valueText(values[Fps], "", 1), valueText(values[DiscRate], " MiB/s", 1)
+        valueText(values[Ram], "%"), valueText(values[Fps], "", 1), valueText(values[DiscRate], " MiB/s", 1),
+        networkRateText(values[NetworkRx], tight), networkRateText(values[NetworkTx], tight)
     };
     const std::array<QString, MetricCount> details{
         sample.system.includesChildProcesses ? "플레이어와 하위 작업 포함" : "플레이어 본체",
@@ -311,30 +388,78 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
         (sample.system.memoryUsed ? QString::number(double(*sample.system.memoryUsed) / gibibyte, 'f', 1) + " GiB" : "—") +
             (sample.system.playerResident ? QString(" / %1 MiB").arg(double(*sample.system.playerResident) / mebibyte, 0, 'f', 0) : " / —"),
         state && state->sourceFps > 0 ? QString("원본 %1 fps").arg(state->sourceFps, 0, 'f', 2) : "원본 —",
-        sample.input.disc ? "libVLC 재생 경로" : "Blu-ray 재생 시 표시"
+        sample.input.disc ? "libVLC 재생 경로" : "Blu-ray 재생 시 표시",
+        "활성 물리 연결 합계", {}
     };
     const std::array<QColor, MetricCount> accents{
         QColor("#73cfff"), QColor("#67e0b1"), QColor("#bdabff"),
-        QColor("#edca81"), QColor("#f49ab5"), QColor("#a9c6ff")
+        QColor("#edca81"), QColor("#f49ab5"), QColor("#a9c6ff"), QColor("#87d9eb"), QColor("#e3afef")
     };
-    for (int i = 0; i < MetricCount; ++i) {
+    for (int i = 0; i < visibleMetricCount; ++i) {
+        const auto metric = static_cast<Metric>(i);
         const int x = 12 + (i % 2) * (cellWidth + 6);
-        const int y = 27 + (i / 2) * rowHeight;
-        QString label = titles[i] + (numbers ? "  " + shown[i] : values[i] ? "" : "  —");
+        const int y = metricsTop + (i / 2) * layout.metricHeight;
+        const bool showValue = numbers || i >= NetworkRx;
+        const auto spacing = i >= NetworkRx && narrow ? " " : "  ";
+        QString label = titles[i] + (showValue ? spacing + shown[i] : values[i] ? "" : "  —");
         if (numbers && i <= Ram)
             label += " / " + valueText(sample.playerValues[i], "%", 1);
-        line({x, y, cellWidth, 17}, label, accents[i], 11, true);
-        if (!compact) {
+        line({x, y, cellWidth, 16}, label, accents[i], i >= NetworkRx && tight ? 10 : 11, true);
+        if (!layout.compact) {
             const auto scale = i <= Ram ? QString("%") : i == Fps ? QString(" fps") : QString(" MiB/s");
-            const auto description = numbers || !values[i] ? details[i] :
-                QString("0–%1%2").arg(graphMaximum(static_cast<Metric>(i)), 0, 'f', i == DiscRate ? 1 : 0).arg(scale);
-            line({x, y + 17, cellWidth, 15}, description, color, 10);
+            const auto description = numbers || !values[i] ? details[i] : QString("0–") +
+                (i >= NetworkRx ? networkRateText(graphMaximum(metric)) : valueText(graphMaximum(metric), scale, i == DiscRate ? 1 : 0));
+            line({x, y + 15, cellWidth, 14}, description, color, 10);
         }
-        if (chart)
-            paintGraph(painter, QRectF(x, y + (compact ? 18 : 34), cellWidth - 3, compact ? 13 : 20),
-                       static_cast<Metric>(i), accents[i]);
+        if (layout.chart)
+            paintGraph(painter, QRectF(x, y + (layout.compact ? 16 : 30), cellWidth - 3, layout.compact ? 10 : 12),
+                       metric, accents[i]);
     }
-    const int footer = 27 + 3 * rowHeight;
+    const int devicesTop = metricsTop + (visibleMetricCount + 1) / 2 * layout.metricHeight;
+    if (layout.hardwareRows) {
+        const auto &system = sample.system;
+        const int totalRows = hardwareRows(system, layout.compact);
+        const bool overflow = totalRows > layout.hardwareRows && layout.hardwareRows > 1;
+        const int limit = layout.hardwareRows - (overflow ? 1 : 0);
+        const int deviceFontSize = tight ? 9 : 10;
+        int row = 0;
+        auto deviceFont = painter.font();
+        deviceFont.setPixelSize(deviceFontSize);
+        deviceFont.setBold(false);
+        const QFontMetrics deviceFontMetrics(deviceFont);
+        const auto deviceLine = [&](const QString &name, const QString &reading) {
+            if (row >= limit)
+                return;
+            const int y = devicesTop + row++ * hardwareRowHeight;
+            const int available = width() - 24;
+            const int readingWidth = std::min(available, deviceFontMetrics.horizontalAdvance(reading) + 1);
+            line({12, y, std::max(0, available - readingWidth - 6), hardwareRowHeight}, name, color, deviceFontSize);
+            line({width() - 12 - readingWidth, y, readingWidth, hardwareRowHeight}, reading, QColor("#dce6f5"), deviceFontSize);
+        };
+        if (system.graphicsAdapters.isEmpty())
+            deviceLine("GPU 온도 · VRAM", "—");
+        for (const auto &adapter : system.graphicsAdapters) {
+            const auto memoryLabel = adapter.integrated == true ? (tight ? "예약" : "예약 메모리") :
+                                                                   (tight ? "VRAM" : "전용 VRAM");
+            const auto temperature = valueText(adapter.temperatureCelsius, "°C", tight ? 0 : 1);
+            deviceLine(tight ? QString("GPU") : adapter.name, QString(tight ? "%1 %2 %3" : "%1  ·  %2 %3")
+                                                             .arg(temperature, memoryLabel, videoMemoryText(adapter)));
+        }
+        if (system.storageTemperatures.isEmpty())
+            deviceLine("저장장치 온도", "—");
+        for (const auto &disk : system.storageTemperatures) {
+            const auto name = disk.sensorIndex ? QString("디스크 %1 · 센서 %2").arg(disk.diskNumber).arg(disk.sensorIndex) :
+                                                  QString("디스크 %1").arg(disk.diskNumber);
+            deviceLine(name, valueText(disk.temperatureCelsius, "°C"));
+        }
+        if (row < limit && showProcessorTemperatures(system, layout.compact))
+            line({12, devicesTop + row * hardwareRowHeight, width() - 24, hardwareRowHeight},
+                 QString("CPU 온도 —  ·  NPU 온도 %1").arg(valueText(system.npuTemperatureCelsius, "°C", 1)), color, 10);
+        if (overflow)
+            line({12, devicesTop + limit * hardwareRowHeight, width() - 24, hardwareRowHeight},
+                 QString("장치 정보 %1줄 더 있음 · CSV").arg(totalRows - limit), color, 10);
+    }
+    const int footer = devicesTop + layout.hardwareRows * hardwareRowHeight;
     const auto status = sample.input.captionWaiting ? QString("자막 대기") :
         state && (state->buffering || state->fileCacheHolding) ? QString("재생 버퍼링") :
         state && state->failed ? QString("재생 오류") : state && state->playing ? QString("재생 중") : QString("대기");
@@ -342,9 +467,9 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
     line({12, footer, width() - 24, 16},
          QString("%1  ·  드롭 %2  ·  자막 버퍼 %3초").arg(status, dropped).arg(sample.input.captionAheadMs / 1000.0, 0, 'f', 1),
          color, 10);
-    if (!compact) {
+    if (!layout.compact) {
         const auto decode = state && !state->hardwareDecoder.isEmpty() ? state->hardwareDecoder : QString("—");
-        line({12, footer + 17, width() - 24, 16},
+        line({12, footer + footerRowHeight, width() - 24, 16},
              QString("디코더 %1  ·  인식 %2  ·  번역 %3").arg(decode,
                  sample.input.recognitionBackend.isEmpty() ? "—" : sample.input.recognitionBackend,
                  sample.input.translationBackend.isEmpty() ? "—" : sample.input.translationBackend), color, 10);
@@ -354,20 +479,40 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
                 QString("A/V 편차 %1  ·  캐시 %2  ·  주사율 %3").arg(
                     valueText(state->avSyncMs, " ms", 1), valueText(state->cacheSeconds, "초", 1),
                     valueText(state->displayFps > 0 ? std::optional<double>(state->displayFps) : std::nullopt, " Hz", 1));
-            line({12, footer + 34, width() - 24, 16}, extra, color, 10);
+            line({12, footer + 2 * footerRowHeight, width() - 24, 16}, extra, color, 10);
         }
     }
 }
 
 QJsonObject PerformanceOverlay::sampleJson(const Sample &sample) {
     const auto &v = sample.values;
+    QJsonArray graphics;
+    for (const auto &adapter : sample.system.graphicsAdapters) {
+        graphics.append(QJsonObject{
+            {"luid", QString::number(adapter.adapterLuid, 16)}, {"name", adapter.name},
+            {"integrated", adapter.integrated ? QJsonValue(*adapter.integrated) : QJsonValue(QJsonValue::Null)},
+            {"temperatureCelsius", jsonValue(adapter.temperatureCelsius)},
+            {"dedicatedMemoryUsedMiB", memoryMiB(adapter.dedicatedMemoryUsed)},
+            {"dedicatedMemoryTotalMiB", memoryMiB(adapter.dedicatedMemoryTotal)}
+        });
+    }
+    QJsonArray storage;
+    for (const auto &disk : sample.system.storageTemperatures) {
+        storage.append(QJsonObject{
+            {"diskNumber", qint64(disk.diskNumber)}, {"sensorIndex", disk.sensorIndex},
+            {"temperatureCelsius", disk.temperatureCelsius}
+        });
+    }
     QJsonObject result{
         {"elapsedMs", sample.elapsedMs}, {"cpuPercent", jsonValue(v[Cpu])}, {"gpuPercent", jsonValue(v[Gpu])},
         {"gpuDecodePercent", jsonValue(sample.system.gpuDecodePercent)}, {"npuPercent", jsonValue(v[Npu])},
         {"npuDetected", sample.system.npuDetected}, {"ramPercent", jsonValue(v[Ram])},
-        {"ramUsedMiB", jsonValue(sample.system.memoryUsed ? std::optional<double>(double(*sample.system.memoryUsed) / mebibyte) : std::nullopt)},
-        {"ramTotalMiB", jsonValue(sample.system.memoryTotal ? std::optional<double>(double(*sample.system.memoryTotal) / mebibyte) : std::nullopt)},
-        {"playerResidentMiB", jsonValue(sample.system.playerResident ? std::optional<double>(double(*sample.system.playerResident) / mebibyte) : std::nullopt)},
+        {"ramUsedMiB", memoryMiB(sample.system.memoryUsed)}, {"ramTotalMiB", memoryMiB(sample.system.memoryTotal)},
+        {"playerResidentMiB", memoryMiB(sample.system.playerResident)},
+        {"networkRxBytesPerSecond", jsonValue(sample.system.networkRxBytesPerSecond)},
+        {"networkTxBytesPerSecond", jsonValue(sample.system.networkTxBytesPerSecond)},
+        {"cpuTemperatureCelsius", QJsonValue(QJsonValue::Null)}, {"npuTemperatureCelsius", jsonValue(sample.system.npuTemperatureCelsius)},
+        {"graphicsAdapters", graphics}, {"storageTemperatures", storage},
         {"discInputMiBps", jsonValue(sample.inputMiBps)}, {"discDemuxMiBps", jsonValue(sample.demuxMiBps)},
         {"presentedFps", jsonValue(sample.presentedFps)}, {"captionAheadMs", sample.input.captionAheadMs},
         {"captionWaiting", sample.input.captionWaiting}, {"videoRecoveries", sample.input.recoveries},
@@ -411,19 +556,50 @@ QJsonObject PerformanceOverlay::summary() const {
 }
 
 QByteArray PerformanceOverlay::csv() const {
-    static const QStringList columns{
+    static const QStringList standardColumns{
         "elapsedMs", "cpuPercent", "playerCpuPercent", "gpuPercent", "playerGpuPercent",
         "gpuDecodePercent", "playerGpuDecodePercent", "npuPercent", "playerNpuPercent",
         "playerRamPercent", "playerIncludesChildProcesses",
         "ramPercent", "ramUsedMiB", "ramTotalMiB", "playerResidentMiB", "discInputMiBps", "discDemuxMiBps",
         "sourceFps", "filteredFps", "presentedFps", "displayHz", "droppedFrames", "lostAudioBuffers",
-        "avSyncMs", "fileCacheSeconds", "captionAheadMs", "captionWaiting", "buffering", "videoRecoveries"
+        "avSyncMs", "fileCacheSeconds", "captionAheadMs", "captionWaiting", "buffering", "videoRecoveries",
+        "networkRxBytesPerSecond", "networkTxBytesPerSecond", "cpuTemperatureCelsius", "npuTemperatureCelsius"
     };
+    QMap<QString, QString> deviceColumns;
+    QList<QJsonObject> records;
+    records.reserve(history_.size());
+    for (const auto &sample : history_) {
+        auto record = sampleJson(sample);
+        const auto addDeviceColumns = [&](const QString &prefix, const QString &label, const QJsonObject &device,
+                                          std::initializer_list<const char *> metrics) {
+            for (const auto *metric : metrics) {
+                const auto key = prefix + metric;
+                deviceColumns.insert(key, key + label);
+                record.insert(key, device.value(metric));
+            }
+        };
+        const auto graphics = record.take("graphicsAdapters").toArray();
+        for (const auto &entry : graphics) {
+            const auto adapter = entry.toObject();
+            auto name = adapter.value("name").toString().simplified();
+            name.replace(',', ' ').replace('"', ' ');
+            addDeviceColumns("gpu_" + adapter.value("luid").toString() + '_', " [" + name + ']', adapter,
+                             {"temperatureCelsius", "dedicatedMemoryUsedMiB", "dedicatedMemoryTotalMiB", "integrated"});
+        }
+        const auto storage = record.take("storageTemperatures").toArray();
+        for (const auto &entry : storage) {
+            const auto disk = entry.toObject();
+            addDeviceColumns("disk_" + QString::number(disk.value("diskNumber").toInteger()) + '_', {}, disk,
+                             {"temperatureCelsius", "sensorIndex"});
+        }
+        records.append(std::move(record));
+    }
+    const auto columns = standardColumns + deviceColumns.keys();
+    const auto headers = standardColumns + deviceColumns.values();
     QByteArray output;
     QTextStream stream(&output, QIODevice::WriteOnly);
-    stream << columns.join(',') << '\n';
-    for (const auto &sample : history_) {
-        const auto record = sampleJson(sample);
+    stream << headers.join(',') << '\n';
+    for (const auto &record : records) {
         QStringList row;
         for (const auto &column : columns) {
             const auto value = record.value(column);

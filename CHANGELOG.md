@@ -2,6 +2,15 @@
 
 ## 한국어
 
+### 0.2.0-beta.3
+
+- Android의 하단 탐색바, 챕터 목록, 연속 탭 탐색과 전체화면 제스처를 추가했습니다. PC에서도 연결 기기의 화질, 화면 비율과 자막 싱크를 조절할 수 있습니다.
+- Android의 기본 화질을 원본 HDR 우선으로 설정하고 최대 1080p SDR 균형과 최대 480p SDR 데이터 절약 프리셋을 추가했습니다. 호환 디코더가 있는 기기에서 AV1 원본을 재생합니다.
+- Android에 홈 화면으로 나갈 때 자동 PiP와 백그라운드 재생을 추가했습니다. 넓은 가로 창에는 영상과 챕터를 나란히 배치합니다.
+- Windows와 Android에 공유기 없이 연결하는 Wi‑Fi Direct 경로를 추가했습니다. 임시 Wi‑Fi 암호를 입력하고 양쪽에서 6자리 코드를 확인합니다.
+- Windows 성능 오버레이를 영상 위에 유지하고, 지원하는 장치의 온도와 GPU별 VRAM, 네트워크 송수신 속도를 추가했습니다.
+- 일본어 한글 독음에서 조사와 보조 표현을 앞말에 붙여 읽기 쉽게 표시합니다.
+
 ### 0.2.0-beta.2
 
 - Windows의 **내부망 재생**에서 연결된 기기와 기억한 기기를 확인하고 개별 해제할 수 있습니다. 다른 Windows PC에서도 같은 확인 코드로 연결해 재생합니다.
@@ -128,6 +137,15 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.0-beta.3
+
+- Added an Android bottom seek bar, portrait chapters, repeated-tap seeking, and fullscreen gestures. The host PC can adjust streaming quality, screen fit, and subtitle timing for a connected receiver.
+- Android defaults to original quality with source HDR. Added Balanced up to 1080p SDR and Data Saver up to 480p SDR. Compatible devices can play the original AV1 stream.
+- Added automatic PiP on Home and background playback on Android. Wide landscape windows place the chapter list beside the video.
+- Added router-free Wi‑Fi Direct playback between Windows and Android. Enter the temporary Wi‑Fi password and compare the six-digit code on both devices.
+- Kept the Windows performance overlay above the video and added available device temperatures, per-GPU VRAM, and network throughput.
+- Korean readings of Japanese captions now keep particles and auxiliary forms with the preceding word.
 
 ### 0.2.0-beta.2
 

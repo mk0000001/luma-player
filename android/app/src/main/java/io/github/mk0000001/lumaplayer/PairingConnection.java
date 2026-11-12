@@ -1,10 +1,12 @@
 package io.github.mk0000001.lumaplayer;
 
+import android.net.Network;
 import android.os.SystemClock;
 import androidx.media3.common.util.UnstableApi;
 import java.io.Closeable;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.Objects;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -12,17 +14,19 @@ import org.json.JSONObject;
 final class PairingConnection implements Closeable {
     private static final long APPROVAL_MS = 90_000;
     private final LanEndpoint endpoint;
+    private final Network network;
     private LanClient client;
     private boolean closed;
 
-    PairingConnection(LanEndpoint endpoint) {
+    PairingConnection(LanEndpoint endpoint, Network network) {
         this.endpoint = endpoint;
+        this.network = Objects.requireNonNull(network, "LAN network");
     }
 
     Pending requestApproval(String device, boolean remember) throws IOException, JSONException, GeneralSecurityException {
-        LanClient identityClient = replaceClient(LanClient.forIdentity(endpoint));
+        LanClient identityClient = replaceClient(LanClient.forIdentity(endpoint, network));
         LanClient.Identity identity = identityClient.fetchIdentity();
-        LanClient paired = replaceClient(LanClient.forPairing(endpoint, identity.pin));
+        LanClient paired = replaceClient(LanClient.forPairing(endpoint, identity.pin, network));
         String deviceId = LanPairing.encode(LanPairing.randomBytes(LanPairing.ID_BYTES));
         String clientNonce = LanPairing.encode(LanPairing.randomBytes(LanPairing.NONCE_BYTES));
         String commitment = LanPairing.commitment(identity.pin, deviceId, clientNonce);
@@ -64,14 +68,14 @@ final class PairingConnection implements Closeable {
 
     LanClient login(RememberedPcStore.Entry remembered, String token)
             throws IOException, JSONException, GeneralSecurityException {
-        LanClient login = replaceClient(LanClient.forRemembered(endpoint, remembered.pin, token));
+        LanClient login = replaceClient(LanClient.forRemembered(endpoint, remembered.pin, token, network));
         JSONObject response = login.postPairing(LanEndpoint.PAIR_LOGIN_PATH,
                 new JSONObject().put("deviceId", remembered.deviceId));
         return playback(remembered.pin, readBase64(response, "token", LanPairing.PLAYBACK_TOKEN_BYTES));
     }
 
     LanClient playback(String pin, String token) throws GeneralSecurityException, IOException {
-        return replaceClient(LanClient.forPlayback(endpoint, pin, token));
+        return replaceClient(LanClient.forPlayback(endpoint, pin, token, network));
     }
 
     private synchronized LanClient replaceClient(LanClient next) throws IOException {
@@ -100,6 +104,11 @@ final class PairingConnection implements Closeable {
             client.close();
             client = null;
         }
+    }
+
+    synchronized void detachClientForPlayback() {
+        closed = true;
+        client = null;
     }
 
     private static String readBase64(JSONObject object, String field, int size) throws IOException {

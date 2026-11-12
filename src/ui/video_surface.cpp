@@ -6,10 +6,43 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QTimer>
+#ifdef Q_OS_WIN
+#include <functional>
+#include <utility>
+#include <windows.h>
+#endif
 
 namespace luma {
-namespace {constexpr auto videoFlags=Qt::Tool|Qt::FramelessWindowHint;}
-VideoSurface::VideoSurface(QWidget *parent):QWidget(parent),video_(new QWidget(nullptr,videoFlags)){
+namespace {
+constexpr auto videoFlags=Qt::Tool|Qt::FramelessWindowHint;
+#ifdef Q_OS_WIN
+class NativeVideoWindow final : public QWidget {
+public:
+    explicit NativeVideoWindow(std::function<void()> stackingChanged)
+        : QWidget(nullptr, videoFlags), stackingChanged_(std::move(stackingChanged)) {}
+protected:
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override {
+        if (eventType == "windows_generic_MSG") {
+            const auto &event = *static_cast<const MSG *>(message);
+            if (event.message == WM_WINDOWPOSCHANGED && event.lParam) {
+                const auto &position = *reinterpret_cast<const WINDOWPOS *>(event.lParam);
+                if (!(position.flags & SWP_NOZORDER))
+                    stackingChanged_();
+            }
+        }
+        return QWidget::nativeEvent(eventType, message, result);
+    }
+private:
+    std::function<void()> stackingChanged_;
+};
+#endif
+}
+VideoSurface::VideoSurface(QWidget *parent):QWidget(parent){
+#ifdef Q_OS_WIN
+    video_=new NativeVideoWindow([this]{queueStackingSync();});
+#else
+    video_=new QWidget(nullptr,videoFlags);
+#endif
     setObjectName("videoSurface");setAttribute(Qt::WA_OpaquePaintEvent);setFocusPolicy(Qt::StrongFocus);setMouseTracking(true);
     video_->setObjectName("nativeVideoWindow");video_->setAttribute(Qt::WA_NativeWindow);video_->setAttribute(Qt::WA_ShowWithoutActivating);
     video_->setFocusPolicy(Qt::StrongFocus);video_->setMouseTracking(true);video_->setAutoFillBackground(true);video_->setAcceptDrops(true);
@@ -24,6 +57,11 @@ void VideoSurface::setVideoActive(bool active){active_=active;syncWindow();}
 void VideoSurface::queueSync(){
     if(syncPending_)return;syncPending_=true;QTimer::singleShot(0,this,[this]{syncPending_=false;syncWindow();});
 }
+void VideoSurface::queueStackingSync(){
+    if(stackingPending_)return;
+    stackingPending_=true;
+    QTimer::singleShot(0,this,[this]{stackingPending_=false;emit videoStackingChanged();});
+}
 void VideoSurface::syncWindow(){
     if(!video_)return;
     QWidget *owner=window();if(owner==this && !parentWidget())owner=nullptr;
@@ -36,6 +74,8 @@ void VideoSurface::syncWindow(){
 }
 bool VideoSurface::eventFilter(QObject *object,QEvent *event){
     if(object==video_ && host_){
+        if(event->type()==QEvent::WindowActivate || event->type()==QEvent::ZOrderChange || event->type()==QEvent::Show)
+            queueStackingSync();
         if(event->type()==QEvent::Close){event->ignore();host_->close();return true;}
         if(event->type()==QEvent::DragEnter || event->type()==QEvent::Drop){
             auto *drop=static_cast<QDropEvent*>(event);
@@ -54,6 +94,7 @@ bool VideoSurface::eventFilter(QObject *object,QEvent *event){
         switch(event->type()){
         case QEvent::Move:if(!playbackWindowsMoving(host_))syncWindow();break;
         case QEvent::Resize:case QEvent::Show:case QEvent::Hide:case QEvent::ParentChange:case QEvent::WindowStateChange:queueSync();break;
+        case QEvent::WinIdChange:case QEvent::WindowActivate:queueStackingSync();break;
         default:break;
         }
     }

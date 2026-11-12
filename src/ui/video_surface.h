@@ -13,13 +13,15 @@ public:
     void setVideoActive(bool active);
 signals:
     void urlsDropped(QList<QUrl> urls);
+    void videoStackingChanged();
 protected:
     bool eventFilter(QObject *object,QEvent *event)override;
     void paintEvent(QPaintEvent *event)override;
 private:
     QPointer<QWidget> video_,host_;
-    bool active_=false,syncPending_=false;
+    bool active_=false,syncPending_=false,stackingPending_=false;
     void syncWindow();
     void queueSync();
+    void queueStackingSync();
 };
 }

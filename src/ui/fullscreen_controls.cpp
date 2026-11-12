@@ -40,6 +40,7 @@ void FullscreenControls::syncGeometry(){
         const bool moved=transport_->geometry()!=target,shown=!transport_->isVisible();
         if(moved)transport_->setGeometry(target);
         if(shown)transport_->show();if(shown || raisePending_)transport_->raise();
+        keepPlaybackOverlayBelowDialogs(transport_, window_);
     }else transport_->hide();
     raisePending_=false;
     notifyVisibility();

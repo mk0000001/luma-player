@@ -2,6 +2,7 @@ package io.github.mk0000001.lumaplayer;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -22,15 +23,29 @@ final class LanSession {
     final long durationMs;
     final boolean seekable;
     final List<Subtitle> subtitles;
+    final boolean restartable;
+    final boolean supportsCaptionOffset;
+    final List<String> profiles;
+    final List<Long> chaptersMs;
+    final String videoRange;
+    final RemotePlaybackOptions options;
 
     private LanSession(String title, String mimeType, String sourceKind, long durationMs,
-                       boolean seekable, List<Subtitle> subtitles) {
+                       boolean seekable, List<Subtitle> subtitles, boolean restartable, boolean supportsCaptionOffset,
+                       List<String> profiles, List<Long> chaptersMs, String videoRange,
+                       RemotePlaybackOptions options) {
         this.title = title;
         this.mimeType = mimeType;
         this.sourceKind = sourceKind;
         this.durationMs = durationMs;
         this.seekable = seekable;
         this.subtitles = Collections.unmodifiableList(subtitles);
+        this.restartable = restartable;
+        this.supportsCaptionOffset = supportsCaptionOffset;
+        this.profiles = Collections.unmodifiableList(profiles);
+        this.chaptersMs = Collections.unmodifiableList(chaptersMs);
+        this.videoRange = videoRange;
+        this.options = options;
     }
 
     boolean isBluRay() {
@@ -57,11 +72,77 @@ final class LanSession {
             if (durationMs < -1 || !supportsSource(sourceKind, mimeType, seekable)) {
                 throw new JSONException("Unsupported session source");
             }
+            boolean restartable = session.has("restartable") && booleanField(session, "restartable");
+            if (restartable && (durationMs <= 0 || durationMs >= 999_990_000)) {
+                throw new JSONException("Invalid restartable timeline");
+            }
+            String videoRange = session.has("videoRange") ? string(session, "videoRange", 8) : "unknown";
+            if (!Arrays.asList("sdr", "pq", "hlg", "unknown").contains(videoRange)) {
+                throw new JSONException("Invalid video range");
+            }
             return new LanSession(title, mimeType, sourceKind, durationMs, seekable,
-                    parseSubtitles(session.getJSONArray("subtitles")));
+                    parseSubtitles(session.getJSONArray("subtitles")), restartable, session.has("profiles"),
+                    parseProfiles(session), parseChapters(session, durationMs), videoRange,
+                    session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null);
         } catch (JSONException | IllegalArgumentException e) {
             throw new IOException("Invalid LAN session metadata", e);
         }
+    }
+
+    private static boolean booleanField(JSONObject object, String name) throws JSONException {
+        Object value = object.get(name);
+        if (!(value instanceof Boolean)) {
+            throw new JSONException("Invalid boolean field: " + name);
+        }
+        return (Boolean) value;
+    }
+
+    private static List<String> parseProfiles(JSONObject session) throws JSONException {
+        if (!session.has("profiles")) {
+            return Collections.singletonList("original");
+        }
+        JSONArray values = session.getJSONArray("profiles");
+        if (values.length() == 0 || values.length() > 4) {
+            throw new JSONException("Invalid stream profiles");
+        }
+        List<String> result = new ArrayList<>();
+        for (int i = 0; i < values.length(); i++) {
+            Object value = values.get(i);
+            if (!(value instanceof String) || !RemotePlaybackOptions.isProfile((String) value)
+                    || result.contains(value)) {
+                throw new JSONException("Invalid stream profile");
+            }
+            result.add((String) value);
+        }
+        if (!result.contains("original")) {
+            throw new JSONException("Missing original stream profile");
+        }
+        return result;
+    }
+
+    private static List<Long> parseChapters(JSONObject session, long durationMs) throws JSONException {
+        if (!session.has("chaptersMs")) {
+            return Collections.emptyList();
+        }
+        JSONArray values = session.getJSONArray("chaptersMs");
+        if (values.length() > 512) {
+            throw new JSONException("Too many chapters");
+        }
+        List<Long> result = new ArrayList<>();
+        long previous = -1;
+        for (int i = 0; i < values.length(); i++) {
+            Object value = values.get(i);
+            if (!(value instanceof Integer) && !(value instanceof Long)) {
+                throw new JSONException("Invalid chapter timestamp");
+            }
+            long time = ((Number) value).longValue();
+            if (time <= previous || time >= durationMs) {
+                throw new JSONException("Chapter outside the timeline");
+            }
+            result.add(time);
+            previous = time;
+        }
+        return result;
     }
 
     private static boolean supportsSource(String sourceKind, String mimeType, boolean seekable) {

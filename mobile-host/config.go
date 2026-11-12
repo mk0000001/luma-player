@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -43,6 +44,8 @@ type config struct {
 	AudioMode    string           `json:"audioMode"`
 	FFmpeg       string           `json:"ffmpeg"`
 	DurationMS   int64            `json:"durationMs"`
+	ChaptersMS   []int64          `json:"chaptersMs,omitempty"`
+	VideoRange   string           `json:"videoRange,omitempty"`
 	Title        string           `json:"title"`
 	Subtitles    []subtitleConfig `json:"subtitles"`
 }
@@ -111,6 +114,21 @@ func (cfg config) validate() (validatedConfig, error) {
 	if cfg.DurationMS < 0 || len(cfg.Title) > 1024 {
 		return validatedConfig{}, errInvalidConfig
 	}
+	if len(cfg.ChaptersMS) > 512 || !slices.IsSorted(cfg.ChaptersMS) {
+		return validatedConfig{}, errInvalidConfig
+	}
+	for _, position := range cfg.ChaptersMS {
+		if position < 0 || position >= cfg.DurationMS {
+			return validatedConfig{}, errInvalidConfig
+		}
+	}
+	cfg.ChaptersMS = slices.Compact(slices.Clone(cfg.ChaptersMS))
+	if cfg.VideoRange == "" {
+		cfg.VideoRange = "unknown"
+	}
+	if !slices.Contains([]string{"sdr", "pq", "hlg", "unknown"}, cfg.VideoRange) {
+		return validatedConfig{}, errInvalidConfig
+	}
 	if !validSubtitles(cfg.Subtitles) {
 		return validatedConfig{}, errInvalidSubtitle
 	}
@@ -123,6 +141,13 @@ func (cfg config) validate() (validatedConfig, error) {
 			return validatedConfig{}, errInvalidSource
 		}
 		cfg.Source, err = validateLocalPath(cfg.Source, false)
+		if cfg.FFmpeg != "" {
+			if !validAudioSelection(cfg) {
+				return validatedConfig{}, errInvalidConfig
+			}
+			// Original file sharing can continue without the optional encoder.
+			cfg.FFmpeg, _ = validateFFmpeg(cfg.FFmpeg)
+		}
 	case "bluray":
 		mimeType = matroskaMIME
 		cfg, err = validateDisc(cfg)
@@ -169,8 +194,7 @@ func assignedSubnet(ip netip.Addr, subnet netip.Prefix) bool {
 }
 
 func validateDisc(cfg config) (config, error) {
-	if !playlistPattern.MatchString(cfg.Playlist) || cfg.AudioIndex < -1 || cfg.AudioIndex > 8191 ||
-		(cfg.AudioTrackID != nil && (*cfg.AudioTrackID < -1 || *cfg.AudioTrackID > 8191)) ||
+	if !playlistPattern.MatchString(cfg.Playlist) || !validAudioSelection(cfg) ||
 		(cfg.AudioMode != "original" && cfg.AudioMode != "compatible") {
 		return config{}, errInvalidConfig
 	}
@@ -196,11 +220,24 @@ func validateDisc(cfg config) (config, error) {
 		return config{}, err
 	}
 
-	cfg.FFmpeg, err = validateLocalPath(cfg.FFmpeg, false)
-	if err != nil || (runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(cfg.FFmpeg), ".exe")) {
+	cfg.FFmpeg, err = validateFFmpeg(cfg.FFmpeg)
+	if err != nil {
 		return config{}, errInvalidSource
 	}
 	return cfg, nil
+}
+
+func validAudioSelection(cfg config) bool {
+	return cfg.AudioIndex >= -1 && cfg.AudioIndex <= 8191 &&
+		(cfg.AudioTrackID == nil || (*cfg.AudioTrackID >= -1 && *cfg.AudioTrackID <= 8191))
+}
+
+func validateFFmpeg(path string) (string, error) {
+	resolved, err := validateLocalPath(path, false)
+	if err != nil || (runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(resolved), ".exe")) {
+		return "", errInvalidSource
+	}
+	return resolved, nil
 }
 
 func validateDiscTree(tree string) error {

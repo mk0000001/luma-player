@@ -151,6 +151,8 @@ bool MainWindow::sendLanMedia() {
     media.title = media.disc ? (discInfo_.label.isEmpty() ? QString("Blu-ray") : discInfo_.label) : QFileInfo(source_).fileName();
     media.source = media.disc ? discInfo_.root : QFileInfo(source_).canonicalFilePath();
     media.durationMs = std::max<qint64>(0, state.durationMs);
+    media.chaptersMs = state.chapterOffsetsMs;
+    media.videoRange = state.sourceVideoRange;
     if (media.disc) {
         media.playlist = matchDiscPlaylist(discInfo_, state.durationMs);
         int ordinal = 0;

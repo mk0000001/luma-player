@@ -41,7 +41,16 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    enum Metric { Cpu, Gpu, Npu, Ram, Fps, DiscRate, MetricCount };
+    enum Metric { Cpu, Gpu, Npu, Ram, Fps, DiscRate, NetworkRx, NetworkTx, MetricCount };
+#ifdef Q_OS_WIN
+    static constexpr int visibleMetricCount = MetricCount;
+#else
+    static constexpr int visibleMetricCount = DiscRate + 1;
+#endif
+    struct ContentLayout {
+        bool compact, chart;
+        int metricHeight, hardwareRows, height;
+    };
     struct Sample {
         qint64 elapsedMs = 0;
         std::array<std::optional<double>, MetricCount> values;
@@ -55,6 +64,7 @@ private:
     void requestSample();
     void appendSample(SystemMetrics system);
     std::optional<double> presentedRate(const Sample &sample) const;
+    ContentLayout contentLayout(int anchorHeight) const;
     void syncGeometry();
     double graphMaximum(Metric metric) const;
     void paintGraph(QPainter &painter, const QRectF &area, Metric metric, const QColor &color) const;

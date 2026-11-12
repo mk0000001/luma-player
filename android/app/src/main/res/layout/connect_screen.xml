@@ -96,6 +96,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
+
+            <Button
+                android:id="@+id/nearby_pc_button"
+                style="@style/LumaTextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/nearby_action"
+                android:visibility="gone" />
         </LinearLayout>
 
         <LinearLayout

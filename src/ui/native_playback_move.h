@@ -10,4 +10,6 @@ namespace luma {
 bool movePlaybackWindows(QWidget *host, const QByteArray &eventType, void *message,
                          qintptr *result, std::initializer_list<QWidget *> layers);
 bool playbackWindowsMoving(const QWidget *host);
+void keepPlaybackOverlayAboveVideo(QWidget *overlay, QWidget *video);
+void keepPlaybackOverlayBelowDialogs(QWidget *overlay, QWidget *host);
 }

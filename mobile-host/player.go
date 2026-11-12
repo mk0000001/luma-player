@@ -40,10 +40,11 @@ type playerStatus struct {
 }
 
 type playerCommand struct {
-	Command  string  `json:"command"`
-	Media    *config `json:"media"`
-	ID       string  `json:"id"`
-	Decision string  `json:"decision"`
+	Command  string         `json:"command"`
+	Media    *config        `json:"media"`
+	ID       string         `json:"id"`
+	Decision string         `json:"decision"`
+	Options  *deviceOptions `json:"options"`
 }
 
 type statusWriter struct {
@@ -64,13 +65,14 @@ type player struct {
 	announce func(playerStatus)
 	persist  func(map[string]rememberedDevice) error
 
-	mu         sync.Mutex
-	attempts   map[string]*pairAttempt
-	remembered map[string]rememberedDevice
-	active     map[string]*activeDevice
-	media      *sharedMedia
-	startRate  peerRate
-	loginRate  peerRate
+	mu              sync.Mutex
+	attempts        map[string]*pairAttempt
+	remembered      map[string]rememberedDevice
+	active          map[string]*activeDevice
+	media           *sharedMedia
+	startRate       peerRate
+	loginRate       peerRate
+	optionsRevision int64
 }
 
 func newPlayer(name, pin string, remembered map[string]rememberedDevice,
@@ -201,8 +203,10 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		}
 	case "forget":
 		err = p.revokeAndStop("forget")
-	case "listDevices", "disconnectDevice", "forgetDevice":
-		if command.Command != "listDevices" {
+	case "listDevices", "disconnectDevice", "forgetDevice", "setDeviceOptions":
+		if command.Command == "setDeviceOptions" {
+			err = p.setDeviceOptions(command.ID, command.Options)
+		} else if command.Command != "listDevices" {
 			err = p.disconnectDevice(command.ID, command.Command == "forgetDevice")
 		}
 		if err == nil {
@@ -243,6 +247,7 @@ func (p *player) shareMedia(binding config, media *config) error {
 	if err != nil {
 		return errors.New("could not open the selected media")
 	}
+	session.configureVariants()
 	ctx, cancel := context.WithCancel(context.Background())
 	p.mu.Lock()
 	p.media = &sharedMedia{session: session, revision: revision, ctx: ctx, cancel: cancel}
@@ -311,7 +316,7 @@ func (p *player) authorize(peer netip.Addr, token string, trackRequest bool) (*s
 	return p.media, authorized
 }
 
-func (shared *sharedMedia) serve(w *responseWriter, r *http.Request, device *activeDevice) {
+func (shared *sharedMedia) serve(w *responseWriter, r *http.Request, device *activeDevice, route playbackRoute) {
 	ctx, cancel := context.WithCancel(r.Context())
 	stopShare := context.AfterFunc(shared.ctx, cancel)
 	stopDevice := context.AfterFunc(device.ctx, cancel)
@@ -333,5 +338,13 @@ func (shared *sharedMedia) serve(w *responseWriter, r *http.Request, device *act
 	}
 	w.ctx = ctx
 	w.onWrite = device.noteWrite
-	shared.session.servePlayback(w, r.WithContext(ctx))
+	r = r.WithContext(ctx)
+	switch {
+	case route.profile != "":
+		shared.session.serveVariant(w, r, route.profile, route.position)
+	case route.shiftedSubtitle != "":
+		shared.session.serveShiftedSubtitle(w, r, route.shiftedSubtitle, route.position)
+	default:
+		shared.session.servePlayback(w, r, device.options.Load())
+	}
 }

@@ -1,7 +1,10 @@
 #include "native_playback_move.h"
 
 #include <QByteArray>
+#include <QApplication>
+#include <QDialog>
 #include <QScopedValueRollback>
+#include <QSet>
 #include <QVarLengthArray>
 #include <QWidget>
 
@@ -16,6 +19,64 @@ thread_local const QWidget *movingHost = nullptr;
 
 bool playbackWindowsMoving(const QWidget *host) {
     return host && host == movingHost;
+}
+
+void keepPlaybackOverlayBelowDialogs(QWidget *overlay, QWidget *host) {
+#ifdef Q_OS_WIN
+    if (!overlay || !host || !overlay->isVisible() || !overlay->internalWinId() ||
+        QGuiApplication::platformName() != QStringLiteral("windows"))
+        return;
+
+    QSet<HWND> dialogs;
+    for (auto *window : QApplication::topLevelWidgets()) {
+        if (!window->isVisible() || !window->internalWinId() ||
+            (!qobject_cast<QDialog *>(window) && window->windowType() != Qt::Popup))
+            continue;
+        for (auto *parent = window->parentWidget(); parent; parent = parent->parentWidget()) {
+            if (parent == host) {
+                dialogs.insert(reinterpret_cast<HWND>(window->internalWinId()));
+                break;
+            }
+        }
+    }
+    const auto layer = reinterpret_cast<HWND>(overlay->internalWinId());
+    HWND lowestDialog = nullptr;
+    for (auto below = GetWindow(layer, GW_HWNDNEXT); below; below = GetWindow(below, GW_HWNDNEXT)) {
+        if (dialogs.contains(below))
+            lowestDialog = below;
+    }
+    if (lowestDialog) {
+        SetWindowPos(layer, lowestDialog, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING);
+    }
+#else
+    Q_UNUSED(overlay);
+    Q_UNUSED(host);
+#endif
+}
+
+void keepPlaybackOverlayAboveVideo(QWidget *overlay, QWidget *video) {
+#ifdef Q_OS_WIN
+    if (!overlay || !video || !overlay->isVisible() || !video->isVisible() ||
+        !overlay->internalWinId() || !video->internalWinId())
+        return;
+    const auto layer = reinterpret_cast<HWND>(overlay->internalWinId());
+    const auto nativeVideo = reinterpret_cast<HWND>(video->internalWinId());
+    const auto owner = GetWindow(nativeVideo, GW_OWNER);
+    if (!owner || GetWindow(layer, GW_OWNER) != owner)
+        return;
+    for (auto previous = GetWindow(layer, GW_HWNDPREV); previous; previous = GetWindow(previous, GW_HWNDPREV)) {
+        if (previous == nativeVideo) {
+            // Move the video behind its overlay without raising the player over other apps.
+            SetWindowPos(nativeVideo, layer, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING);
+            return;
+        }
+    }
+#else
+    Q_UNUSED(overlay);
+    Q_UNUSED(video);
+#endif
 }
 
 bool movePlaybackWindows(QWidget *host, const QByteArray &eventType, void *message,

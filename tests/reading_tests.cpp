@@ -31,6 +31,12 @@ private slots:
         QCOMPARE(reader.annotate("안녕하세요"),QString("안녕하세요"));
         QVERIFY(!reader.annotate("未登録𠮷野").isEmpty());
     }
+    void dictionaryKeepsDependentWordsTogether(){
+        const auto runtime=qEnvironmentVariable("LUMA_READING_RUNTIME");if(runtime.isEmpty())QSKIP("Set LUMA_READING_RUNTIME for the actual dictionary integration test");
+        JapaneseReading reader(runtime);QVERIFY2(reader.available(),qPrintable(reader.error()));
+        QCOMPARE(reader.reading("私は音楽が好きです。"),QString("와타시와 옹가쿠가 스키데스。"));
+        QCOMPARE(reader.reading("ゆっくり歩いていた。"),QString("육쿠리 아루이테이타。"));
+    }
     void missingDictionaryKeepsOriginal(){JapaneseReading reader("/nonexistent/luma-runtime");QVERIFY(!reader.available());QVERIFY(!reader.error().isEmpty());QCOMPARE(reader.annotate("音楽"),QString("音楽"));}
 };
 QTEST_GUILESS_MAIN(ReadingTests)

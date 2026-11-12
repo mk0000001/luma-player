@@ -22,6 +22,7 @@
 #include <atomic>
 #include <optional>
 #include <iterator>
+#include <limits>
 #include <utility>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -38,6 +39,14 @@ bool validSourceText(const QString &source) {
 bool driveRoot(const QString &source) {
     static const QRegularExpression root("^[A-Za-z]:[/\\\\]?$");
     return root.match(source).hasMatch();
+}
+
+QString videoRangeFromTransfer(const QString &transfer) {
+    if (transfer == "pq" || transfer == "hlg")
+        return transfer;
+    static const QSet<QString> sdrTransfers{"bt.1886", "srgb", "gamma1.8", "gamma2.0",
+        "gamma2.2", "gamma2.4", "gamma2.6", "gamma2.8"};
+    return sdrTransfers.contains(transfer) ? QStringLiteral("sdr") : QStringLiteral("unknown");
 }
 
 bool lanBridgeUrl(const QUrl &url) {
@@ -243,6 +252,8 @@ struct PlaybackEngine::Impl {
     QElapsedTimer discFrameProgress;
     int lastDiscFrame=-1,audioAtLastDiscFrame=0;
     int metadataTitle=-2,metadataAudio=-2;
+    int chapterOffsetsTitle=-2,chapterOffsetsCount=-1;
+    bool physicalBluRay=false;
     QSet<int> navigationTitles;
     QHash<int,qint64> titleDurations;
     bool titleMetadataReady=false;
@@ -272,6 +283,7 @@ struct PlaybackEngine::Impl {
     VF(libvlc_audio_set_volume); VF(libvlc_audio_get_track_description); VF(libvlc_audio_set_track);
     VF(libvlc_video_get_spu_description); VF(libvlc_video_set_spu); VF(libvlc_track_description_list_release);
     VF(libvlc_media_player_get_chapter_count); VF(libvlc_media_player_set_chapter);
+    VF(libvlc_media_player_get_full_chapter_descriptions); VF(libvlc_chapter_descriptions_release);
     VF(libvlc_media_player_get_title); VF(libvlc_media_player_get_chapter);
     VF(libvlc_media_player_get_full_title_descriptions); VF(libvlc_title_descriptions_release);
     VF(libvlc_media_player_set_title); VF(libvlc_media_player_navigate);
@@ -486,6 +498,10 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #endif
 #undef LOAD
         if(!ok)return;
+#define LOAD_OPTIONAL(n) d->n=reinterpret_cast<decltype(d->n)>(d->lib.resolve(#n))
+        LOAD_OPTIONAL(libvlc_media_player_get_full_chapter_descriptions);
+        LOAD_OPTIONAL(libvlc_chapter_descriptions_release);
+#undef LOAD_OPTIONAL
         const auto decoder=qEnvironmentVariable("LUMA_DISC_DECODER");
 #ifdef Q_OS_WIN
         if(decoder=="software")d->discHardwareOption=":avcodec-hw=none";
@@ -556,6 +572,8 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
     if(!input){d->error="지원하지 않는 미디어 주소입니다.";return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->error.clear();d->discError.clear();d->managedSubtitle=false;d->managedMpvSubtitle=-1;
     d->lanSource=lanSource!=nullptr;
+    d->metadataTitle=d->metadataAudio=d->chapterOffsetsTitle=-2;
+    d->chapterOffsetsCount=-1;
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
     d->activeVideo=d->nextVideo;
@@ -585,6 +603,8 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         auto url=QUrl::fromLocalFile(path);
         url.setScheme("bluray");
 #ifdef Q_OS_WIN
+        const auto nativeRoot = QDir::toNativeSeparators(path);
+        d->physicalBluRay = driveRoot(path) && GetDriveTypeW(reinterpret_cast<LPCWSTR>(nativeRoot.utf16())) == DRIVE_CDROM;
         d->libvlc_media_player_set_hwnd(d->player,reinterpret_cast<void *>(surface));
 #elif defined(Q_OS_LINUX)
         d->libvlc_media_player_set_xwindow(d->player,static_cast<uint32_t>(surface));
@@ -643,6 +663,8 @@ void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
     d->videoOutputActive=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();
     d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->state.lanSubtitleCueActive=false;d->fileLoaded=false;
+    d->state.sourceVideoRange="unknown";
+    d->state.chapterOffsetsMs.clear();
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.
         // Keep its owner thread pumping while libVLC's blocking stop joins output threads.
@@ -768,15 +790,45 @@ void PlaybackEngine::poll(){
         }
         for(int i=0;titles && i<count && i<10000;++i)if(titles[i])d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
         if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
+        if (!d->state.timelineReady || chapters <= 0) {
+            d->state.chapterOffsetsMs.clear();
+            d->chapterOffsetsCount = -1;
+        } else if (d->libvlc_media_player_get_full_chapter_descriptions && d->libvlc_chapter_descriptions_release &&
+                   (d->chapterOffsetsTitle != d->state.currentTitle || d->chapterOffsetsCount != chapters)) {
+            d->state.chapterOffsetsMs.clear();
+            libvlc_chapter_description_t **descriptions = nullptr;
+            const int descriptionCount = d->libvlc_media_player_get_full_chapter_descriptions(d->player, d->state.currentTitle, &descriptions);
+            if (descriptionCount > 0 && descriptions) {
+                for (int i = 0; i < std::min(descriptionCount, 10000); ++i) {
+                    if (descriptions[i] && descriptions[i]->i_time_offset >= 0)
+                        d->state.chapterOffsetsMs.append(descriptions[i]->i_time_offset);
+                }
+                d->libvlc_chapter_descriptions_release(descriptions, unsigned(descriptionCount));
+                d->chapterOffsetsTitle = d->state.currentTitle;
+                d->chapterOffsetsCount = chapters;
+            }
+        }
+        if (d->metadataTitle != d->state.currentTitle)
+            d->state.sourceVideoRange = "unknown";
         if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){
             libvlc_media_track_t **tracks=nullptr;const auto n=d->libvlc_media_tracks_get(d->media,&tracks);
             d->state.sourceFps=0;
-            for(unsigned i=0;i<n;++i){
+            bool sawVideoTrack = false;
+            bool standardHdAvc = d->physicalBluRay;
+            for(unsigned i=0;tracks && i<n;++i){
                 const auto *track=tracks[i];
+                if (!track)
+                    continue;
                 const auto code=track->i_codec;
                 const char fourcc[5]={char(code&255),char((code>>8)&255),char((code>>16)&255),char((code>>24)&255),0};
                 if(track->i_type==libvlc_track_video){
                     d->state.videoCodec=QString::fromLatin1(fourcc);
+                    sawVideoTrack = true;
+                    // Conventional HD AVC Blu-ray uses SDR. LibVLC 3 provides no transfer field.
+                    const bool avc = d->state.videoCodec == "h264" || d->state.videoCodec == "avc1";
+                    const int profile = track->i_profile;
+                    standardHdAvc &= avc && track->video && track->video->i_width == 1920 &&
+                        track->video->i_height == 1080 && (profile <= 0 || profile == 66 || profile == 77 || profile == 100);
                     if(track->video && track->video->i_frame_rate_den)
                         d->state.sourceFps=double(track->video->i_frame_rate_num)/track->video->i_frame_rate_den;
                 }
@@ -785,7 +837,9 @@ void PlaybackEngine::poll(){
                     if(track->audio){d->state.audioSampleRate=int(track->audio->i_rate);d->state.audioChannels=int(track->audio->i_channels);}
                 }
             }
-            if(n)d->libvlc_media_tracks_release(tracks,n);
+            if (sawVideoTrack)
+                d->state.sourceVideoRange = standardHdAvc ? "sdr" : "unknown";
+            if(n && tracks)d->libvlc_media_tracks_release(tracks,n);
             d->metadataTitle=d->state.currentTitle;d->metadataAudio=d->state.currentAudio;
         }
         if(d->discSoftware)d->state.hardwareDecoder="CPU · Blu-ray 호환 디코딩";
@@ -867,9 +921,50 @@ void PlaybackEngine::poll(){
         d->state.currentAudio=int(d->number("aid"));const auto sid=d->prop("sid");d->state.currentSubtitle=sid=="no"?-1:sid.toInt();
         d->state.lanSubtitleCueActive=d->lanSource && d->state.currentSubtitle>=0 && !d->prop("sub-text").isEmpty();
         const int trackCount=std::clamp(int(d->number("track-list/count")),0,1000);d->state.audioTracks.clear();d->state.subtitleTracks={{-1,"자막 끄기"}};
-        for(int i=0;i<trackCount;++i){const auto prefix=QByteArray("track-list/")+QByteArray::number(i)+"/";const auto type=d->prop((prefix+"type").constData());const int id=int(d->number((prefix+"id").constData()));const auto label=d->prop((prefix+"title").constData())+" "+d->prop((prefix+"lang").constData());if(type=="audio")d->state.audioTracks.append({id,QString("%1 %2").arg(id).arg(label)});if(type=="sub")d->state.subtitleTracks.append({id,QString("%1 %2").arg(id).arg(label)});}
+        int sourceVideoTracks = 0;
+        bool sourceVideoSelected = false;
+        for (int i = 0; i < trackCount; ++i) {
+            const auto prefix = QByteArray("track-list/") + QByteArray::number(i) + '/';
+            const auto type = d->prop((prefix + "type").constData());
+            if (type == "video" && d->prop((prefix + "albumart").constData()) != "yes" &&
+                d->prop((prefix + "external").constData()) != "yes") {
+                ++sourceVideoTracks;
+                sourceVideoSelected |= d->prop((prefix + "selected").constData()) == "yes";
+            }
+            if (type != "audio" && type != "sub")
+                continue;
+            const int id = int(d->number((prefix + "id").constData()));
+            const auto title = d->prop((prefix + "title").constData());
+            const auto language = d->prop((prefix + "lang").constData());
+            auto &tracks = type == "audio" ? d->state.audioTracks : d->state.subtitleTracks;
+            tracks.append({id, QString("%1 %2 %3").arg(id).arg(title, language)});
+        }
+        // The encoder maps the first ordinary video stream. The selected decoder's
+        // transfer is safe to send only when it corresponds to the sole source video.
+        d->state.sourceVideoRange = "unknown";
+        if (d->fileLoaded && sourceVideoTracks == 1 && sourceVideoSelected) {
+            d->state.sourceVideoRange = videoRangeFromTransfer(d->prop("video-dec-params/gamma"));
+            // The decoder often reports auto for SDR. Accept its resolved SDR
+            // transfer, but never infer a source HDR format from display settings.
+            if (d->state.sourceVideoRange == "unknown" &&
+                videoRangeFromTransfer(d->prop("video-params/gamma")) == "sdr")
+                d->state.sourceVideoRange = "sdr";
+        }
         const int chapters=std::clamp(int(d->number("chapter-list/count")),0,10000);d->state.chapters.clear();
-        for(int i=0;i<chapters;++i)d->state.chapters.append({i,d->prop((QByteArray("chapter-list/")+QByteArray::number(i)+"/title").constData())});
+        const bool readOffsets = d->state.timelineReady && d->chapterOffsetsCount != chapters;
+        if (readOffsets) {
+            d->state.chapterOffsetsMs.clear();
+            d->chapterOffsetsCount = chapters;
+        }
+        for (int i = 0; i < chapters; ++i) {
+            const auto prefix = QByteArray("chapter-list/") + QByteArray::number(i) + '/';
+            d->state.chapters.append({i, d->prop((prefix + "title").constData())});
+            if (readOffsets) {
+                const auto seconds = d->metric((prefix + "time").constData());
+                if (seconds && *seconds >= 0 && *seconds < double(std::numeric_limits<qint64>::max()) / 1000)
+                    d->state.chapterOffsetsMs.append(std::llround(*seconds * 1000));
+            }
+        }
     }
     if(d->state.failed){d->state.playing=false;d->state.timelineReady=false;}
     const auto codec=d->state.audioCodec.toLower();d->state.losslessAudio=codec=="flac" || codec=="alac" || codec=="truehd" || codec.startsWith("pcm") || codec=="bpcm" || codec=="mlp" || codec=="s16l" || codec=="s24l";

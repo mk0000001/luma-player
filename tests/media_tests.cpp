@@ -3,11 +3,46 @@
 #include <QUrl>
 #include <QDir>
 #include "media/playback.h"
+#include "media/system_metrics_p.h"
 #include <vlc/vlc.h>
 using namespace luma;
 class MediaTests : public QObject {
     Q_OBJECT
 private slots:
+    void networkRatesUseMatchedByteDeltasAndElapsedTime() {
+        NetworkRateSampler sampler;
+        const auto first = sampler.sample({{10, {10000, 5000}}, {20, {90000, 1000}}}, 0);
+        QVERIFY(!first.receivedBytesPerSecond);
+        QVERIFY(!first.sentBytesPerSecond);
+        const auto next = sampler.sample({{10, {14000, 8000}}, {20, {92000, 2000}}}, 2000000000);
+        QCOMPARE(next.receivedBytesPerSecond.value_or(-1), 3000.0);
+        QCOMPARE(next.sentBytesPerSecond.value_or(-1), 2000.0);
+        const auto idle = sampler.sample({{10, {14000, 8000}}, {20, {92000, 2000}}}, 3000000000);
+        QCOMPARE(idle.receivedBytesPerSecond.value_or(-1), 0.0);
+        QCOMPARE(idle.sentBytesPerSecond.value_or(-1), 0.0);
+    }
+    void networkRatesRecoverAfterNewInterfacesAndCounterResets() {
+        NetworkRateSampler sampler;
+        sampler.sample({{10, {10000, 10000}}}, 0);
+        const auto added = sampler.sample({{10, {11000, 11000}}, {20, {90000, 90000}}}, 1000000000);
+        QVERIFY(!added.receivedBytesPerSecond);
+        QVERIFY(!added.sentBytesPerSecond);
+        const auto reset = sampler.sample({{10, {12000, 12000}}, {20, {1000, 91000}}}, 2000000000);
+        QVERIFY(!reset.receivedBytesPerSecond);
+        QCOMPARE(reset.sentBytesPerSecond.value_or(-1), 2000.0);
+        const auto recovered = sampler.sample({{10, {13000, 13000}}, {20, {2000, 92000}}}, 3000000000);
+        QCOMPARE(recovered.receivedBytesPerSecond.value_or(-1), 2000.0);
+        QCOMPARE(recovered.sentBytesPerSecond.value_or(-1), 2000.0);
+        const auto disconnected = sampler.sample({}, 4000000000);
+        QVERIFY(!disconnected.receivedBytesPerSecond);
+        QVERIFY(!disconnected.sentBytesPerSecond);
+        const auto reconnected = sampler.sample({{10, {70000, 70000}}}, 5000000000);
+        QVERIFY(!reconnected.receivedBytesPerSecond);
+        QVERIFY(!reconnected.sentBytesPerSecond);
+        const auto resumed = sampler.sample({{10, {80000, 80000}}}, 11000000000);
+        QVERIFY(!resumed.receivedBytesPerSecond);
+        QVERIFY(!resumed.sentBytesPerSecond);
+    }
     void timelineStartsUnavailable(){
         const PlaybackState state;QVERIFY(!state.timelineReady);
     }
