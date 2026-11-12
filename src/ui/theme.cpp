@@ -64,6 +64,10 @@ void installPlayerTheme(){
       QComboBox QAbstractItemView{background:%2;color:%4;selection-background-color:#2189ff;selection-color:white;padding:6px;}
       QListWidget{background:transparent;border:0;outline:0;} QListWidget::item{padding:9px;border-radius:8px;}
       QListWidget::item:selected{background:%3;color:%8;}
+      QTreeWidget#lanDevices{background:%2;border:1px solid %6;border-radius:12px;outline:0;}
+      QTreeWidget#lanDevices::item{padding:8px 6px;}
+      QTreeWidget#lanDevices::item:selected{background:%3;color:%8;}
+      QTreeWidget#lanDevices QHeaderView::section{background:%2;color:%5;border:0;border-bottom:1px solid %6;padding:7px 6px;font-weight:600;}
       QPlainTextEdit{background:%1;color:%5;border:1px solid %6;border-radius:10px;padding:6px;font-size:10px;}
       QTabWidget::pane{border:0;background:%2;} QTabBar::tab{background:%2;padding:13px 14px;color:%5;font-weight:600;border-bottom:2px solid transparent;}
       QTabBar::tab:selected{color:%4;border-bottom:2px solid #2189ff;} QTabBar::tab:hover{color:%8;}

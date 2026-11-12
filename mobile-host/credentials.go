@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 )
@@ -20,8 +21,9 @@ const (
 var errCredentialStore = errors.New("could not access the remembered devices")
 
 type rememberedDevice struct {
-	Name string `json:"name"`
-	Hash string `json:"hash"`
+	Name    string `json:"name"`
+	Hash    string `json:"hash"`
+	Address string `json:"address,omitempty"`
 }
 
 type storedCredentials struct {
@@ -38,24 +40,10 @@ type credentialFile struct {
 }
 
 func openCredentialFile(path string) (*credentialFile, error) {
-	if !filepath.IsAbs(path) || !localVolume(path) {
-		return nil, errCredentialStore
-	}
-	path = filepath.Clean(path)
-	parent := filepath.Dir(path)
-	if parent == path || os.MkdirAll(parent, 0700) != nil {
-		return nil, errCredentialStore
-	}
-	parent, err := filepath.EvalSymlinks(parent)
-	if err != nil || !localVolume(parent) {
-		return nil, errCredentialStore
-	}
-	path = filepath.Join(parent, filepath.Base(path))
-	unlock, err := lockCredentialFile(path + ".lock")
+	path, unlock, err := acquireCredentialPath(path)
 	if err != nil {
-		return nil, errCredentialStore
+		return nil, err
 	}
-
 	store := &credentialFile{path: path, unlock: unlock}
 	if err := store.load(); err != nil {
 		store.unlock()
@@ -64,8 +52,49 @@ func openCredentialFile(path string) (*credentialFile, error) {
 	return store, nil
 }
 
+func acquireCredentialPath(path string) (string, func(), error) {
+	if !filepath.IsAbs(path) || !localVolume(path) {
+		return "", nil, errCredentialStore
+	}
+	path = filepath.Clean(path)
+	parent := filepath.Dir(path)
+	if parent == path || os.MkdirAll(parent, 0700) != nil {
+		return "", nil, errCredentialStore
+	}
+	parent, err := filepath.EvalSymlinks(parent)
+	if err != nil || !localVolume(parent) {
+		return "", nil, errCredentialStore
+	}
+	path = filepath.Join(parent, filepath.Base(path))
+	unlock, err := lockCredentialFile(path + ".lock")
+	if err != nil {
+		return "", nil, errCredentialStore
+	}
+	return path, unlock, nil
+}
+
+func readProtectedFile(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, os.ErrNotExist
+	}
+	if err != nil || !info.Mode().IsRegular() || reparsePoint(info) || info.Size() > maxCredentialBytes {
+		return nil, errCredentialStore
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errCredentialStore
+	}
+	defer file.Close()
+	ciphertext, err := io.ReadAll(io.LimitReader(file, maxCredentialBytes+1))
+	if err != nil || len(ciphertext) == 0 || len(ciphertext) > maxCredentialBytes {
+		return nil, errCredentialStore
+	}
+	return unprotectCredentials(ciphertext)
+}
+
 func (store *credentialFile) load() error {
-	info, err := os.Lstat(store.path)
+	plaintext, err := readProtectedFile(store.path)
 	if errors.Is(err, os.ErrNotExist) {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
@@ -75,19 +104,6 @@ func (store *credentialFile) load() error {
 		store.devices = make(map[string]rememberedDevice)
 		return store.save(store.devices)
 	}
-	if err != nil || !info.Mode().IsRegular() || reparsePoint(info) || info.Size() > maxCredentialBytes {
-		return errCredentialStore
-	}
-	file, err := os.Open(store.path)
-	if err != nil {
-		return errCredentialStore
-	}
-	defer file.Close()
-	ciphertext, err := io.ReadAll(io.LimitReader(file, maxCredentialBytes+1))
-	if err != nil || len(ciphertext) == 0 || len(ciphertext) > maxCredentialBytes {
-		return errCredentialStore
-	}
-	plaintext, err := unprotectCredentials(ciphertext)
 	if err != nil {
 		return errCredentialStore
 	}
@@ -105,6 +121,12 @@ func (store *credentialFile) load() error {
 	for id, device := range saved.Devices {
 		if !validPairValue(id, 16) || !validDeviceName(device.Name) || !validPairValue(device.Hash, 32) {
 			return errCredentialStore
+		}
+		if device.Address != "" {
+			ip, err := netip.ParseAddr(device.Address)
+			if err != nil || !ip.Is4() || !ip.IsPrivate() {
+				return errCredentialStore
+			}
 		}
 	}
 	store.key = key
@@ -126,11 +148,15 @@ func (store *credentialFile) save(devices map[string]rememberedDevice) error {
 		return errCredentialStore
 	}
 	defer clear(data)
+	return writeProtectedFile(store.path, data)
+}
+
+func writeProtectedFile(path string, data []byte) error {
 	encrypted, err := protectCredentials(data)
 	if err != nil || len(encrypted) == 0 || len(encrypted) > maxCredentialBytes {
 		return errCredentialStore
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(store.path), ".luma-pairing-*")
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".luma-pairing-*")
 	if err != nil {
 		return errCredentialStore
 	}
@@ -138,7 +164,7 @@ func (store *credentialFile) save(devices map[string]rememberedDevice) error {
 	_, writeErr := temporary.Write(encrypted)
 	syncErr := temporary.Sync()
 	closeErr := temporary.Close()
-	if writeErr != nil || syncErr != nil || closeErr != nil || replaceCredentialFile(temporary.Name(), store.path) != nil {
+	if writeErr != nil || syncErr != nil || closeErr != nil || replaceCredentialFile(temporary.Name(), path) != nil {
 		return errCredentialStore
 	}
 	return nil

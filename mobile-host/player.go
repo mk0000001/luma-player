@@ -19,22 +19,24 @@ import (
 )
 
 type playerServices struct {
-	listen    func(validatedConfig) (net.Listener, error)
-	discovery func(netip.AddrPort, netip.Prefix, string) (io.Closer, error)
+	listen       func(validatedConfig) (net.Listener, error)
+	discovery    func(netip.AddrPort, netip.Prefix, string) (io.Closer, error)
+	receiverDial func(context.Context, string, string) (net.Conn, error)
 }
 
 type playerStatus struct {
-	Status   string `json:"status"`
-	Command  string `json:"command,omitempty"`
-	Address  string `json:"address,omitempty"`
-	Version  int    `json:"version,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Code     string `json:"code,omitempty"`
-	Device   string `json:"device,omitempty"`
-	DeviceID string `json:"deviceId,omitempty"`
-	Remember *bool  `json:"remember,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Message  string `json:"message,omitempty"`
+	Status   string        `json:"status"`
+	Command  string        `json:"command,omitempty"`
+	Address  string        `json:"address,omitempty"`
+	Version  int           `json:"version,omitempty"`
+	ID       string        `json:"id,omitempty"`
+	Code     string        `json:"code,omitempty"`
+	Device   string        `json:"device,omitempty"`
+	DeviceID string        `json:"deviceId,omitempty"`
+	Remember *bool         `json:"remember,omitempty"`
+	Title    string        `json:"title,omitempty"`
+	Message  string        `json:"message,omitempty"`
+	Devices  *[]deviceInfo `json:"devices,omitempty"`
 }
 
 type playerCommand struct {
@@ -65,7 +67,7 @@ type player struct {
 	mu         sync.Mutex
 	attempts   map[string]*pairAttempt
 	remembered map[string]rememberedDevice
-	active     map[string]activeDevice
+	active     map[string]*activeDevice
 	media      *sharedMedia
 	startRate  peerRate
 	loginRate  peerRate
@@ -75,7 +77,7 @@ func newPlayer(name, pin string, remembered map[string]rememberedDevice,
 	persist func(map[string]rememberedDevice) error, announce func(playerStatus)) *player {
 	return &player{
 		name: name, pin: pin, now: time.Now, announce: announce, persist: persist, remembered: remembered,
-		attempts: make(map[string]*pairAttempt), active: make(map[string]activeDevice),
+		attempts: make(map[string]*pairAttempt), active: make(map[string]*activeDevice),
 		startRate: peerRate{window: 30 * time.Second, peerLimit: 4, total: 32},
 		loginRate: peerRate{window: 15 * time.Second, peerLimit: 8, total: 64},
 	}
@@ -199,6 +201,14 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		}
 	case "forget":
 		err = p.revokeAndStop("forget")
+	case "listDevices", "disconnectDevice", "forgetDevice":
+		if command.Command != "listDevices" {
+			err = p.disconnectDevice(command.ID, command.Command == "forgetDevice")
+		}
+		if err == nil {
+			devices := p.deviceList()
+			p.announce(playerStatus{Status: "devices", Devices: &devices})
+		}
 	default:
 		p.announce(playerStatus{Status: "error", Message: "invalid player command"})
 	}
@@ -208,9 +218,10 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 }
 
 type sharedMedia struct {
-	session *mediaSession
-	ctx     context.Context
-	cancel  context.CancelFunc
+	session  *mediaSession
+	revision string
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 func (p *player) shareMedia(binding config, media *config) error {
@@ -224,13 +235,17 @@ func (p *player) shareMedia(binding config, media *config) error {
 	if err != nil {
 		return err
 	}
+	revision, err := pairRandom(16)
+	if err != nil {
+		return errors.New("could not open the selected media")
+	}
 	session, err := newSession(cfg, "")
 	if err != nil {
 		return errors.New("could not open the selected media")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.mu.Lock()
-	p.media = &sharedMedia{session: session, ctx: ctx, cancel: cancel}
+	p.media = &sharedMedia{session: session, revision: revision, ctx: ctx, cancel: cancel}
 	p.mu.Unlock()
 	return nil
 }
@@ -256,6 +271,9 @@ func (p *player) revokeAndStop(command string) error {
 		}
 		p.remembered = empty
 	}
+	for _, device := range p.active {
+		device.cancel()
+	}
 	clear(p.active)
 	clear(p.attempts)
 	if p.media != nil {
@@ -267,39 +285,53 @@ func (p *player) revokeAndStop(command string) error {
 	return nil
 }
 
-func (p *player) authorize(peer netip.Addr, token string) (*sharedMedia, bool) {
+func (p *player) authorize(peer netip.Addr, token string, trackRequest bool) (*sharedMedia, *activeDevice) {
 	if !validPairValue(token, 16) {
-		return nil, false
+		return nil, nil
 	}
 	hash := sha256.Sum256([]byte(token))
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	authorized := 0
+	now := p.now()
+	p.expireDevices(now)
+	var authorized *activeDevice
 	for _, device := range p.active {
-		if device.peer == peer {
-			authorized |= subtle.ConstantTimeCompare(device.hash[:], hash[:])
+		if device.peer == peer && subtle.ConstantTimeCompare(device.hash[:], hash[:]) == 1 {
+			authorized = device
 		}
 	}
-	if authorized != 1 {
-		return nil, false
+	if authorized == nil {
+		return nil, nil
 	}
-	return p.media, true
+	authorized.used = true
+	authorized.seen.Store(now.UnixNano())
+	if trackRequest {
+		authorized.requests.Add(1)
+	}
+	return p.media, authorized
 }
 
-func (shared *sharedMedia) serve(w *responseWriter, r *http.Request) {
+func (shared *sharedMedia) serve(w *responseWriter, r *http.Request, device *activeDevice) {
 	ctx, cancel := context.WithCancel(r.Context())
+	stopShare := context.AfterFunc(shared.ctx, cancel)
+	stopDevice := context.AfterFunc(device.ctx, cancel)
 	stopped := make(chan struct{})
-	interrupt := context.AfterFunc(shared.ctx, func() {
-		cancel()
+	interrupt := context.AfterFunc(ctx, func() {
 		_ = w.controller.SetWriteDeadline(time.Now())
 		close(stopped)
 	})
 	defer func() {
+		stopShare()
+		stopDevice()
 		if !interrupt() {
 			<-stopped
 		}
 		cancel()
 	}()
+	if shared.ctx.Err() != nil || device.ctx.Err() != nil {
+		cancel()
+	}
 	w.ctx = ctx
+	w.onWrite = device.noteWrite
 	shared.session.servePlayback(w, r.WithContext(ctx))
 }

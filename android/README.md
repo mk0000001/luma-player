@@ -18,9 +18,9 @@ Windows PowerShell에서 저장소 루트의 다음 명령으로 단위 테스�
 .\android\build.ps1 -SignLocalBeta
 ```
 
-기본 도구 경로는 `.deps/android-toolchain`입니다. 여유 공간이 있는 드라이브를 쓰려면 `-ToolchainRoot D:/LumaPlayer-Development/mobile-toolchain`을 전달하세요. 빌드 스크립트는 Temurin 17.0.21+9, Gradle 8.13, Android SDK 36 rev. 2, Build Tools 36.0.0, Platform Tools 37.0.3을 공식 배포 파일의 SHA-256으로 확인합니다. AGP 8.13.2와 앱 의존성은 Gradle에서 고정합니다. Noto Sans CJK KR 글꼴은 저장소의 `dependencies.lock.json`에 있는 SHA-256을 확인해 앱에 포함합니다. [AGP 호환성](https://developer.android.com/build/releases/agp-8-13-0-release-notes), [의존성 고지](THIRD_PARTY_NOTICES.md)
+기본 도구 경로는 `.deps/android-toolchain`입니다. 여유 공간이 있는 드라이브를 쓰려면 `-ToolchainRoot D:/LumaBuild/android-toolchain`처럼 경로를 전달하세요. 빌드 스크립트는 Temurin 17.0.21+9, Gradle 8.13, Android SDK 36 rev. 2, Build Tools 36.0.0, Platform Tools 37.0.3을 공식 배포 파일의 SHA-256으로 확인합니다. AGP 8.13.2와 앱 의존성은 Gradle에서 고정합니다. Noto Sans CJK KR 글꼴은 저장소의 `dependencies.lock.json`에 있는 SHA-256을 확인해 앱에 포함합니다. [AGP 호환성](https://developer.android.com/build/releases/agp-8-13-0-release-notes), [의존성 고지](THIRD_PARTY_NOTICES.md)
 
-APK 경로는 도구 경로 아래 `build/app/outputs/apk/release/LumaPlayer-Android-0.2.0-beta.1.apk`입니다. 로컬 베타 서명 키는 현재 Windows 사용자 프로필의 `LumaPlayer/AndroidSigning` 폴더에 보관되며 암호는 Windows DPAPI로 보호됩니다.
+APK 경로는 도구 경로 아래 `build/app/outputs/apk/release/LumaPlayer-Android-<버전>.apk`입니다. 로컬 베타 서명 키는 현재 Windows 사용자 프로필의 `LumaPlayer/AndroidSigning` 폴더에 보관되며 암호는 Windows DPAPI로 보호됩니다.
 
 ## English
 
@@ -40,6 +40,6 @@ From the repository root in Windows PowerShell, run unit tests and release lint 
 .\android\build.ps1 -SignLocalBeta
 ```
 
-The default toolchain directory is `.deps/android-toolchain`. Pass `-ToolchainRoot D:/LumaPlayer-Development/mobile-toolchain` to use a drive with more space. The script verifies the official SHA-256-pinned archives for Temurin 17.0.21+9, Gradle 8.13, Android SDK 36 rev. 2, Build Tools 36.0.0, and Platform Tools 37.0.3. Gradle pins AGP 8.13.2 and the app dependencies. The app bundles the Noto Sans CJK KR font after checking its SHA-256 in the repository's `dependencies.lock.json`. [AGP compatibility](https://developer.android.com/build/releases/agp-8-13-0-release-notes), [dependency notices](THIRD_PARTY_NOTICES.md)
+The default toolchain directory is `.deps/android-toolchain`. To use a drive with more space, pass a path such as `-ToolchainRoot D:/LumaBuild/android-toolchain`. The script verifies the official SHA-256-pinned archives for Temurin 17.0.21+9, Gradle 8.13, Android SDK 36 rev. 2, Build Tools 36.0.0, and Platform Tools 37.0.3. Gradle pins AGP 8.13.2 and the app dependencies. The app bundles the Noto Sans CJK KR font after checking its SHA-256 in the repository's `dependencies.lock.json`. [AGP compatibility](https://developer.android.com/build/releases/agp-8-13-0-release-notes), [dependency notices](THIRD_PARTY_NOTICES.md)
 
-The APK is at `build/app/outputs/apk/release/LumaPlayer-Android-0.2.0-beta.1.apk` under the toolchain directory. The local beta signing key is held in the current Windows user's `LumaPlayer/AndroidSigning` profile folder, with its password protected by Windows DPAPI.
+The APK is at `build/app/outputs/apk/release/LumaPlayer-Android-<version>.apk` under the toolchain directory. The local beta signing key is held in the current Windows user's `LumaPlayer/AndroidSigning` profile folder, with its password protected by Windows DPAPI.

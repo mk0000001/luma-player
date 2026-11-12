@@ -2,7 +2,8 @@ param(
  [Parameter(Mandatory=$true)][string]$Payload,
  [Parameter(Mandatory=$true)][string]$Output,
  [Parameter(Mandatory=$true)][string]$Compiler,
- [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ManifestSha256='c425ae3470822ee86fce802eae7b6475aa3d64ef212e8e6fdad022b09d94aaca'
+ [ValidatePattern('^[a-fA-F0-9]{64}$')][string]$ManifestSha256='c425ae3470822ee86fce802eae7b6475aa3d64ef212e8e6fdad022b09d94aaca',
+ [switch]$SignUpdateManifest
 )
 $ErrorActionPreference='Stop'
 . "$PSScriptRoot/installer-support.ps1"
@@ -41,4 +42,7 @@ if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
 $exe=Get-Item ($outRoot+"/LumaPlayer-$version-setup.1-windows-x64-cuda.exe")
 $hash=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 [IO.File]::WriteAllText($exe.FullName+'.sha256',"$hash  $($exe.Name)`n",[Text.UTF8Encoding]::new($false))
+if($SignUpdateManifest){
+ & (Join-Path $PSScriptRoot 'sign-update-manifest.ps1') -Version $version -InstallerPath $exe.FullName -OutputDirectory $outRoot | Out-Null
+}
 [ordered]@{playerVersion=$manifest.version;installerVersion='1';bytes=$exe.Length;sha256=$hash;models=@($a.accurateModel.file,$t.qualityModel.file)} | ConvertTo-Json

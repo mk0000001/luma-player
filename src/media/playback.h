@@ -1,11 +1,19 @@
 #pragma once
 #include <QObject>
+#include <QPair>
+#include <QUrl>
 #include <QVector>
 #include <QtGui/qwindowdefs.h>
 #include <memory>
 #include <optional>
 namespace luma {
 struct MediaItem { int id; QString label; };
+struct LanMediaSource {
+    QUrl url;
+    QString mimeType;
+    QVector<QPair<QUrl,QString>> subtitles;
+};
+bool validLanMediaSource(const LanMediaSource &source);
 struct VideoOverrides {
     enum class Hardware { Auto, Software, D3D11, DXVA2, VAAPI };
     enum class Codec { Auto, H264, HEVC, VP9, AV1, Dav1d };
@@ -26,6 +34,7 @@ struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     bool playing=false, failed=false, navigationTitle=false, buffering=false;
     bool timelineReady=false,discMenus=true;
+    bool lanSubtitleCueActive=false;
     int currentTitle=-1,currentChapter=-1;
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
@@ -60,6 +69,7 @@ public:
     QString lastError() const;
     QString name() const;
     bool open(const QString &source, WId surface);
+    bool openLanMedia(const LanMediaSource &source, WId surface);
     bool openPreparedDisc(const QString &source,WId surface,qint64 durationMs);
     void useSoftwareDiscDecoderOnNextOpen();
     void stop();
@@ -87,7 +97,7 @@ signals:
     void errorOccurred(QString message);
     void videoOutputLost(QString message);
 private:
-    bool openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs);
+    bool openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs,const LanMediaSource *lanSource=nullptr);
     struct Impl;
     std::unique_ptr<Impl> d;
     void poll();

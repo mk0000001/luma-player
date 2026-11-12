@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -22,6 +23,7 @@
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QSysInfo>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #ifdef Q_OS_WIN
 #include <string>
@@ -34,8 +36,10 @@ constexpr int port = 48762;
 constexpr int startupWaitMs = 10000;
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
-constexpr qsizetype maxReplyBytes = 8192;
+constexpr qsizetype maxReplyBytes = 64 * 1024;
 constexpr qsizetype maxCaptionBytes = 1024 * 1024;
+constexpr int activeDeviceRole = Qt::UserRole + 1;
+constexpr int rememberedDeviceRole = Qt::UserRole + 2;
 
 QByteArray messageLine(const QJsonObject &message) {
     return QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -89,6 +93,27 @@ QString lanPrivateSubnet(const QHostAddress &address, int prefixLength) {
     return QHostAddress(ip & mask).toString() + '/' + QString::number(prefixLength);
 }
 
+QList<LanPrivateInterface> lanPrivateInterfaces() {
+    QList<LanPrivateInterface> interfaces;
+    QSet<QHostAddress> listed;
+    for (const auto &network : QNetworkInterface::allInterfaces()) {
+        if (!network.flags().testFlag(QNetworkInterface::IsUp) || network.flags().testFlag(QNetworkInterface::IsLoopBack))
+            continue;
+        for (const auto &entry : network.addressEntries()) {
+            const auto address = entry.ip();
+            if (lanPrivateSubnet(address, entry.prefixLength()).isEmpty() || listed.contains(address))
+                continue;
+            listed.insert(address);
+            const LanPrivateInterface adapter{network.humanReadableName(), address, entry.prefixLength()};
+            if (network.type() == QNetworkInterface::Wifi)
+                interfaces.prepend(adapter);
+            else
+                interfaces.append(adapter);
+        }
+    }
+    return interfaces;
+}
+
 QString lanCaptionTrack(const QVector<SubtitleCue> &cues) {
     QString result = QStringLiteral("WEBVTT\n\n");
     qsizetype bytes = result.size();
@@ -124,12 +149,12 @@ bool lanLocalFileSupported(const QString &source) {
 
 LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     setObjectName("lanPlaybackDialog");
-    setWindowTitle("휴대폰에서 보기");
-    setMinimumWidth(510);
+    setWindowTitle("내부망 재생");
+    setMinimumWidth(570);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(22, 20, 22, 20);
     layout->setSpacing(12);
-    layout->addWidget(plainLabel("같은 네트워크에서 Android 앱을 열고 PC를 선택하세요.", this));
+    layout->addWidget(plainLabel("같은 네트워크의 Android 앱이나 다른 PC에서 이 PC를 선택하세요.", this));
 
     interfaces_ = new ChoiceBox(this);
     interfaces_->setObjectName("lanPrivateInterface");
@@ -139,9 +164,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     address_ = plainLabel({}, this);
     address_->setObjectName("lanPlaybackAddress");
     layout->addWidget(address_);
-    device_ = plainLabel({}, this);
-    layout->addWidget(device_);
-    status_ = plainLabel("휴대폰 연결을 시작할 수 있습니다.", this);
+    status_ = plainLabel("기기 연결을 시작할 수 있습니다.", this);
     status_->setObjectName("lanPlaybackStatus");
     layout->addWidget(status_);
 
@@ -160,12 +183,35 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     shareButtons->addWidget(start_);
     shareButtons->addWidget(stop_);
     shareButtons->addStretch();
+    auto *receive = new QPushButton("PC에서 받기", this);
+    receive->setObjectName("lanReceive");
+    shareButtons->addWidget(receive);
     layout->addLayout(shareButtons);
+
+    devices_ = new QTreeWidget(this);
+    devices_->setObjectName("lanDevices");
+    devices_->setAccessibleName("연결 및 기억한 기기");
+    devices_->setHeaderLabels({"기기", "주소", "상태"});
+    devices_->setRootIsDecorated(false);
+    devices_->setUniformRowHeights(true);
+    devices_->setMinimumHeight(120);
+    devices_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    devices_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    layout->addWidget(devices_);
+    auto *deviceButtons = new QHBoxLayout;
+    disconnectDevice_ = new QPushButton("선택 기기 연결 끊기", this);
+    disconnectDevice_->setObjectName("lanDisconnectDevice");
+    forgetDevice_ = new QPushButton("선택 기기 기억 삭제", this);
+    forgetDevice_->setObjectName("lanForgetDevice");
+    deviceButtons->addWidget(disconnectDevice_);
+    deviceButtons->addWidget(forgetDevice_);
+    deviceButtons->addStretch();
+    layout->addLayout(deviceButtons);
 
     auto *connectionButtons = new QHBoxLayout;
     retry_ = new QPushButton("주소 적용 / 다시 시작", this);
     retry_->setObjectName("lanRetry");
-    forget_ = new QPushButton("연결 기록 지우기", this);
+    forget_ = new QPushButton("모든 연결 기록 지우기", this);
     forget_->setObjectName("lanForget");
     auto *close = new QPushButton("닫기", this);
     connectionButtons->addWidget(retry_);
@@ -176,8 +222,18 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
 
     watchdog_.setSingleShot(true);
     host_.setStandardErrorFile(QProcess::nullDevice());
-    connect(start_, &QPushButton::clicked, this, &LanPlaybackDialog::shareRequested);
-    connect(stop_, &QPushButton::clicked, this, &LanPlaybackDialog::stopSharing);
+    connect(start_, &QPushButton::clicked, this, [this] {
+        autoShare_ = true;
+        emit shareRequested();
+    });
+    connect(stop_, &QPushButton::clicked, this, [this] {
+        autoShare_ = false;
+        stopSharing();
+    });
+    connect(receive, &QPushButton::clicked, this, &LanPlaybackDialog::receiveRequested);
+    connect(disconnectDevice_, &QPushButton::clicked, this, [this] { manageDevice(false); });
+    connect(forgetDevice_, &QPushButton::clicked, this, [this] { manageDevice(true); });
+    connect(devices_, &QTreeWidget::currentItemChanged, this, &LanPlaybackDialog::updateControls);
     connect(retry_, &QPushButton::clicked, this, &LanPlaybackDialog::restartDiscovery);
     connect(forget_, &QPushButton::clicked, this, &LanPlaybackDialog::forgetDevices);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
@@ -210,7 +266,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
                 : "휴대폰 연결이 종료되었습니다.");
         ready_ = false;
         forgetting_ = false;
-        deviceName_.clear();
+        updateDevices({});
         startupConfiguration_.clear();
         reply_.clear();
         dismissPairRequest();
@@ -239,29 +295,19 @@ LanPlaybackDialog::~LanPlaybackDialog() {
     closeHost();
 }
 
+void LanPlaybackDialog::showEvent(QShowEvent *event) {
+    QDialog::showEvent(event);
+    requestDevices();
+}
+
 void LanPlaybackDialog::refreshInterfaces() {
     const auto preferred = interfaces_->currentData().toStringList().value(0);
     QSignalBlocker blocked(interfaces_);
     interfaces_->clear();
-    QSet<QString> listed;
-    for (const auto &network : QNetworkInterface::allInterfaces()) {
-        if (!network.flags().testFlag(QNetworkInterface::IsUp) || network.flags().testFlag(QNetworkInterface::IsLoopBack))
-            continue;
-        for (const auto &entry : network.addressEntries()) {
-            const auto subnet = lanPrivateSubnet(entry.ip(), entry.prefixLength());
-            if (subnet.isEmpty())
-                continue;
-            const auto address = entry.ip().toString();
-            if (listed.contains(address))
-                continue;
-            listed.insert(address);
-            const auto text = network.humanReadableName() + " · " + address;
-            const QStringList values{address, subnet};
-            if (network.type() == QNetworkInterface::Wifi)
-                interfaces_->insertItem(0, text, values);
-            else
-                interfaces_->addItem(text, values);
-        }
+    for (const auto &adapter : lanPrivateInterfaces()) {
+        const auto address = adapter.address.toString();
+        const auto subnet = lanPrivateSubnet(adapter.address, adapter.prefixLength);
+        interfaces_->addItem(adapter.name + " · " + address, QStringList{address, subnet});
     }
     int selected = 0;
     for (int index = 0; index < interfaces_->count(); ++index) {
@@ -345,7 +391,7 @@ void LanPlaybackDialog::setMediaAvailable(bool available, bool disc) {
 }
 
 bool LanPlaybackDialog::canShare() const {
-    return ready_ && host_.state() == QProcess::Running && !closingHost_ && !deviceName_.isEmpty() && mediaAvailable_ &&
+    return ready_ && host_.state() == QProcess::Running && !closingHost_ && hasActiveDevice_ && mediaAvailable_ &&
         !forgetting_ && mediaState_ == MediaState::Idle;
 }
 
@@ -446,6 +492,58 @@ void LanPlaybackDialog::forgetDevices() {
     updateControls();
 }
 
+void LanPlaybackDialog::requestDevices() {
+    if (ready_)
+        writeMessage(QJsonObject{{"command", "listDevices"}});
+}
+
+void LanPlaybackDialog::updateDevices(const QJsonArray &devices) {
+    const auto selected = devices_->currentItem() ? devices_->currentItem()->data(0, Qt::UserRole).toString() : QString{};
+    QSignalBlocker blocked(devices_);
+    devices_->clear();
+    hasActiveDevice_ = false;
+    static const QRegularExpression validId("^[A-Za-z0-9_-]{1,128}$");
+    for (const auto &value : devices) {
+        if (devices_->topLevelItemCount() >= 64)
+            break;
+        const auto device = value.toObject();
+        const auto id = device.value("id").toString();
+        const auto name = device.value("name").toString().simplified().left(128);
+        const bool active = device.value("active").toBool();
+        const bool remembered = device.value("remembered").toBool();
+        if (!validId.match(id).hasMatch() || (!active && !remembered))
+            continue;
+        const QHostAddress address(device.value("address").toString());
+        const auto state = active ? (remembered ? "연결됨 · 기억됨" : "연결됨") : "기억됨";
+        auto *row = new QTreeWidgetItem({name.isEmpty() ? QString("기기") : name,
+            lanPrivateSubnet(address, 32).isEmpty() ? QString("—") : address.toString(), state});
+        row->setData(0, Qt::UserRole, id);
+        row->setData(0, activeDeviceRole, active);
+        row->setData(0, rememberedDeviceRole, remembered);
+        devices_->addTopLevelItem(row);
+        if (selected == id)
+            devices_->setCurrentItem(row);
+        hasActiveDevice_ |= active;
+    }
+    if (!devices_->currentItem() && devices_->topLevelItemCount() > 0)
+        devices_->setCurrentItem(devices_->topLevelItem(0));
+    updateControls();
+}
+
+void LanPlaybackDialog::manageDevice(bool forget) {
+    const auto *device = devices_->currentItem();
+    if (!ready_ || forgetting_ || !device || !device->data(0, forget ? rememberedDeviceRole : activeDeviceRole).toBool())
+        return;
+    const auto id = device->data(0, Qt::UserRole).toString();
+    if (forget && QMessageBox::question(this, "선택 기기 기억 삭제",
+            "이 기기를 목록에서 지우고 연결을 끊습니다. 다음 연결은 PC의 승인이 필요합니다.",
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    if (ready_ && !forgetting_ && !writeMessage(QJsonObject{
+            {"command", forget ? "forgetDevice" : "disconnectDevice"}, {"id", id}}))
+        status_->setText("기기 연결을 변경할 수 없습니다.");
+}
+
 bool LanPlaybackDialog::writeMessage(const QJsonObject &message) {
     if (host_.state() != QProcess::Running || closingHost_ || shuttingDown_)
         return false;
@@ -486,8 +584,9 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             message.value("address").toString() == endpoint_) {
             watchdog_.stop();
             ready_ = true;
-            status_->setText("휴대폰 연결을 기다리는 중입니다.");
+            status_->setText("기기 연결을 기다리는 중입니다.");
             updateControls();
+            requestDevices();
         } else if (event == "error") {
             status_->setText("휴대폰 연결을 시작할 수 없습니다. 선택한 네트워크와 포트 사용 상태를 확인하세요.");
         } else {
@@ -499,29 +598,35 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
     if (event == "pairRequest") {
         showPairRequest(message);
     } else if (event == "deviceConnected" && !forgetting_) {
-        deviceName_ = message.value("device").toString().simplified().left(128);
-        if (deviceName_.isEmpty())
-            deviceName_ = "Android 기기";
-        if (mediaState_ == MediaState::Idle)
-            status_->setText(mediaAvailable_ ? "휴대폰 연결이 승인되었습니다." : "휴대폰이 연결되었습니다. PC에서 미디어를 열고 공유를 시작하세요.");
+        hasActiveDevice_ = true;
+        if (mediaState_ == MediaState::Idle) {
+            if (!mediaAvailable_)
+                status_->setText("기기가 연결되었습니다. PC에서 미디어를 열고 공유를 시작하세요.");
+            else
+                status_->setText(autoShare_ ? "기기 연결이 승인되었습니다." : "기기가 연결되었습니다. 공유 시작을 누르세요.");
+        }
         updateControls();
-        emit deviceAuthorized();
+        if (autoShare_)
+            emit deviceAuthorized();
+        requestDevices();
+    } else if (event == "devices" && message.value("devices").isArray()) {
+        updateDevices(message.value("devices").toArray());
     } else if (event == "sharing" && (mediaState_ == MediaState::Starting || mediaState_ == MediaState::Stopping)) {
         setSharing(true);
         if (mediaState_ == MediaState::Starting) {
             watchdog_.stop();
             mediaState_ = MediaState::Sharing;
-            status_->setText("휴대폰에 공유 중입니다. 이 창을 닫아도 공유가 계속됩니다.");
+            status_->setText("기기에 공유 중입니다. 이 창을 닫아도 공유가 계속됩니다.");
         }
         updateControls();
     } else if (event == "stopped") {
         const bool forgot = command == "forget" || forgetting_;
         forgetting_ = false;
-        deviceName_.clear();
+        updateDevices({});
         dismissPairRequest();
         status_->setText(forgot ? "기기 연결 기록을 지웠습니다." : "모바일 공유를 중지했습니다.");
         finishShare(true);
-        updateControls();
+        requestDevices();
     } else if (event == "error") {
         if (command == "share") {
             if (mediaState_ == MediaState::Starting) {
@@ -535,6 +640,9 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             status_->setText("휴대폰 연결 요청이 만료되었습니다. 앱에서 다시 연결하세요.");
         } else if (command == "discovery" && mediaState_ == MediaState::Idle) {
             status_->setText("자동 검색을 시작할 수 없습니다. 위 주소로 직접 연결하세요.");
+        } else if (command == "disconnectDevice" || command == "forgetDevice") {
+            status_->setText("선택한 기기의 연결을 변경할 수 없습니다.");
+            requestDevices();
         }
     }
 }
@@ -543,7 +651,7 @@ void LanPlaybackDialog::protocolError(const QString &message) {
     reply_.clear();
     protocolFailed_ = true;
     ready_ = false;
-    deviceName_.clear();
+    updateDevices({});
     dismissPairRequest();
     status_->setText(message.isEmpty() ? "모바일 송출 도우미의 응답이 잘못되었습니다." : message);
     host_.closeWriteChannel();
@@ -570,7 +678,7 @@ void LanPlaybackDialog::showPairRequest(const QJsonObject &message) {
     pairingDialog_ = dialog;
     pairingId_ = id;
     dialog->setObjectName("lanPairRequest");
-    dialog->setWindowTitle("휴대폰 연결 승인");
+    dialog->setWindowTitle("기기 연결 승인");
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setMinimumWidth(370);
 
@@ -578,7 +686,7 @@ void LanPlaybackDialog::showPairRequest(const QJsonObject &message) {
     layout->setContentsMargins(22, 20, 22, 20);
     const auto name = message.value("device").toString().simplified().left(128);
     layout->addWidget(plainLabel(name.isEmpty() ? "Android 기기" : name, dialog));
-    layout->addWidget(plainLabel("휴대폰에 같은 번호가 보이면 연결을 승인하세요.", dialog));
+    layout->addWidget(plainLabel("연결하려는 기기에 같은 번호가 보이면 승인하세요.", dialog));
     auto *number = plainLabel(code, dialog);
     number->setObjectName("lanPairingCode");
     number->setAlignment(Qt::AlignCenter);
@@ -667,10 +775,12 @@ void LanPlaybackDialog::updateControls() {
     start_->setEnabled(canShare());
     stop_->setEnabled(!idle && mediaState_ != MediaState::Stopping);
     forget_->setEnabled(ready_ && !forgetting_ && mediaState_ != MediaState::Stopping);
+    const auto *selected = devices_->currentItem();
+    const bool canManage = ready_ && !forgetting_ && mediaState_ != MediaState::Stopping && selected;
+    disconnectDevice_->setEnabled(canManage && selected->data(0, activeDeviceRole).toBool());
+    forgetDevice_->setEnabled(canManage && selected->data(0, rememberedDeviceRole).toBool());
     address_->setText(ready_ ? "직접 연결 주소  " + endpoint_ : QString{});
-    device_->setText(deviceName_.isEmpty() ? QString{} : "승인된 기기  " + deviceName_);
     address_->setVisible(ready_);
-    device_->setVisible(!deviceName_.isEmpty());
 }
 
 }

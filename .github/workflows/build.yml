@@ -4,6 +4,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      update_live_smoke:
+        description: Check the official GitHub release list with the Windows updater
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -44,6 +49,18 @@ jobs:
           New-Item -ItemType Directory -Path build/runtime/fonts -Force | Out-Null
           Copy-Item -Path .deps/fonts/*.ttf,.deps/fonts/*.otf -Destination build/runtime/fonts
           ./scripts/build-windows.ps1
+      - name: Verify the Windows updater reaches GitHub
+        if: inputs.update_live_smoke
+        shell: pwsh
+        env:
+          LUMA_UPDATE_LIVE_SMOKE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $qt = (Get-Content dependencies.lock.json -Raw | ConvertFrom-Json).windows | Where-Object id -eq 'qt'
+          $env:PATH = "$pwd/.deps/$($qt.target)/bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = "$pwd/.deps/$($qt.target)/plugins"
+          & ./build/update_manager_tests.exe liveManualCheckWithNotificationsDisabled -o '-,txt'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile local recognition and reading engines
         shell: pwsh
         run: ./scripts/build-local-ai.ps1

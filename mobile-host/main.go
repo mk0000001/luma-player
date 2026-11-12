@@ -38,12 +38,15 @@ func runWithListener(stdin io.Reader, stdout io.Writer, listen func(validatedCon
 func runWithServices(stdin io.Reader, stdout io.Writer, services playerServices) int {
 	input := bufio.NewReaderSize(stdin, 32*1024)
 	raw, err := readConfig(input)
-	if err != nil || (raw.Mode != "" && raw.Mode != "player") {
+	if err != nil || (raw.Mode != "" && raw.Mode != "player" && raw.Mode != "receiver") {
 		_ = json.NewEncoder(stdout).Encode(startupStatus{Status: "error", Message: "invalid configuration"})
 		return 1
 	}
 	if raw.Mode == "player" {
 		return runPlayer(input, stdout, raw, services)
+	}
+	if raw.Mode == "receiver" {
+		return runReceiver(input, stdout, raw, services.receiverDial)
 	}
 	return runOneShot(input, stdout, raw.config, services.listen)
 }

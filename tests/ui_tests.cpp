@@ -18,8 +18,10 @@
 #include <QTemporaryDir>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QTabBar>
+#include <QTreeWidget>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QDir>
@@ -310,6 +312,117 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(expired->isFinished(),12000);
         QCOMPARE(expired->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),401);
     }
+
+    void windowsPlayersPairAndShareOneSource(){
+        const auto source=qEnvironmentVariable("LUMA_UI_LAN_PC_FIXTURE");
+        const auto address=qEnvironmentVariable("LUMA_UI_LAN_ADDRESS");
+        if(QGuiApplication::platformName()!="windows" || !QFileInfo(source).isFile() || address.isEmpty())
+            QSKIP("Requires a synthetic local fixture, the native player, and a private adapter");
+        QTemporaryDir captionDirectory;
+        QVERIFY(captionDirectory.isValid());
+        const auto captionPath=captionDirectory.filePath("lan-synthetic.srt");
+        QFile captionFile(captionPath);
+        const QByteArray cue="1\n00:00:00,000 --> 00:00:30,000\nSynthetic LAN subtitle fixture\n";
+        QVERIFY(captionFile.open(QIODevice::WriteOnly));
+        QCOMPARE(captionFile.write(cue),qint64(cue.size()));
+        captionFile.close();
+        QSettings().setValue("playback/volume",0);
+        luma::MainWindow host;
+        luma::MainWindow receiver;
+        host.show();
+        receiver.show();
+        host.openSource(source);
+        QTRY_VERIFY_WITH_TIMEOUT(host.diagnostics().value("positionMs").toInteger()>100,15000);
+        QVERIFY(host.loadCaptionFile(captionPath));
+        QTRY_COMPARE_WITH_TIMEOUT(host.diagnostics().value("externalCueCount").toInteger(),qint64(1),10000);
+        host.startLanDiscovery();
+
+        auto *showHost=host.findChild<QPushButton*>("openLanPlayback");
+        auto *showReceiver=receiver.findChild<QPushButton*>("openLanPlayback");
+        QVERIFY(showHost && showReceiver);
+        showHost->click();
+        showReceiver->click();
+        auto *endpoint=host.findChild<QLabel*>("lanPlaybackAddress");
+        auto *openReceiver=receiver.findChild<QPushButton*>("lanReceive");
+        QVERIFY(endpoint && openReceiver);
+        QTRY_VERIFY_WITH_TIMEOUT(endpoint->text().contains(address),12000);
+        openReceiver->click();
+        auto *receiveDialog=receiver.findChild<QDialog*>("lanReceiverDialog");
+        QVERIFY(receiveDialog);
+        auto *destination=receiveDialog->findChild<QLineEdit*>("lanReceiverAddress");
+        auto *connectButton=receiveDialog->findChild<QPushButton*>("lanReceiverConnect");
+        auto *clientCode=receiveDialog->findChild<QLabel*>("lanReceiverCode");
+        auto *confirm=receiveDialog->findChild<QPushButton*>("lanReceiverConfirm");
+        auto *receiverStatus=receiveDialog->findChild<QLabel*>("lanReceiverStatus");
+        auto *pcs=receiveDialog->findChild<QListWidget*>("lanReceiverPcs");
+        QVERIFY(destination && connectButton && clientCode && confirm && receiverStatus && pcs);
+        const auto discovered=[&]() -> QListWidgetItem* {
+            for(int index=0;index<pcs->count();++index){
+                auto *item=pcs->item(index);
+                if(item->data(Qt::UserRole).toString()==address+":48762")return item;
+            }
+            return nullptr;
+        };
+        QTRY_VERIFY2_WITH_TIMEOUT(discovered(),qPrintable(receiverStatus->text()),8000);
+        pcs->setCurrentItem(discovered());
+        QCOMPARE(destination->text(),address+":48762");
+        destination->setText(address);
+        connectButton->click();
+
+        QDialog *approval=nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((approval=host.findChild<QDialog*>("lanPairRequest")),15000);
+        auto *hostCode=approval->findChild<QLabel*>("lanPairingCode");
+        auto *allowOnce=approval->findChild<QPushButton*>("lanPairAllowOnce");
+        QVERIFY(hostCode && allowOnce);
+        QTRY_VERIFY_WITH_TIMEOUT(confirm->isEnabled() && !clientCode->text().isEmpty(),10000);
+        QCOMPARE(clientCode->text().trimmed(),hostCode->text().trimmed());
+        allowOnce->click();
+        QVERIFY(!receiver.diagnostics().value("lanReceiving").toBool());
+        confirm->click();
+        auto *shareDialog=host.findChild<QDialog*>("lanPlaybackDialog");
+        auto *hostStatus=host.findChild<QLabel*>("lanPlaybackStatus");
+        auto *playbackStatus=receiver.findChild<QLabel*>("status");
+        QVERIFY(shareDialog && hostStatus && playbackStatus);
+        QTRY_VERIFY2_WITH_TIMEOUT(shareDialog->property("sharing").toBool(),qPrintable(hostStatus->text()),15000);
+        const auto failure=[&]{
+            const auto state=receiver.diagnostics();
+            return QString("receiving=%1 capture=%2/%3 pos=%4 failed=%5 cue=%6 · %7 · %8")
+                .arg(state.value("lanReceiving").toBool()).arg(state.value("captureRequested").toBool())
+                .arg(state.value("captureApplied").toBool()).arg(state.value("positionMs").toInteger())
+                .arg(state.value("failed").toBool()).arg(state.value("lanSubtitleCueActive").toBool())
+                .arg(receiverStatus->text(),playbackStatus->text());
+        };
+        QTRY_VERIFY2_WITH_TIMEOUT(receiver.diagnostics().value("lanReceiving").toBool() &&
+            receiver.diagnostics().value("positionMs").toInteger()>750 &&
+            receiver.diagnostics().value("lanSubtitleCueActive").toBool(),qPrintable(failure()),20000);
+        const auto playback=receiver.diagnostics();
+        QVERIFY(playback.value("captureRequested").toBool());
+        QVERIFY(playback.value("captureApplied").toBool());
+        QVERIFY(playback.value("lanReceiveSeekable").toBool());
+        QVERIFY(!QJsonDocument(playback).toJson(QJsonDocument::Compact).contains("127.0.0.1"));
+
+        auto *seek=receiver.findChild<QSlider*>("seekSlider");
+        auto *pause=receiver.findChild<QPushButton*>("playButton");
+        QVERIFY(seek && pause);
+        const auto duration=playback.value("durationMs").toInteger();
+        QVERIFY(duration>4000);
+        pause->click();
+        QTRY_VERIFY(!receiver.diagnostics().value("playing").toBool());
+        seek->setSliderDown(true);
+        seek->setValue(6500);
+        seek->setSliderDown(false);
+        QTRY_VERIFY_WITH_TIMEOUT(std::abs(receiver.diagnostics().value("positionMs").toDouble()-duration*.65)<1000,10000);
+
+        auto *devices=host.findChild<QTreeWidget*>("lanDevices");
+        auto *disconnect=host.findChild<QPushButton*>("lanDisconnectDevice");
+        QVERIFY(devices && disconnect);
+        QTRY_VERIFY_WITH_TIMEOUT(devices->topLevelItemCount()>0,8000);
+        devices->setCurrentItem(devices->topLevelItem(0));
+        QTRY_VERIFY_WITH_TIMEOUT(disconnect->isEnabled(),5000);
+        disconnect->click();
+        QTRY_VERIFY_WITH_TIMEOUT(!receiver.diagnostics().value("lanReceiving").toBool(),20000);
+    }
+
     void hdrFollowsDisplayAndSupportsDeveloperForce(){
         const auto hdrMedia=qEnvironmentVariable("LUMA_UI_TEST_HDR_MEDIA");
         const auto sdrMedia=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");

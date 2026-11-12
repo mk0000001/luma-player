@@ -9,7 +9,8 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 - **디스크를 감상하세요.** Blu-ray 메뉴에서 본편과 챕터를 고르고, 마지막으로 본 위치에서 이어볼 수 있습니다. 일반 동영상 파일도 열 수 있습니다.
 - **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 가지고 있는 자막 파일도 열 수 있고, 글꼴과 크기, 글자·배경 투명도를 조절할 수 있습니다.
 - **감상 전에 자막을 준비하세요.** 전체 영상의 자막과 번역을 저장해 두면, 다시 열거나 다른 장면으로 이동할 때 준비된 자막을 바로 쓸 수 있습니다.
-- **휴대폰에서 보세요.** Android에서 같은 내부망의 LumaPlayer PC를 찾아 연결하세요. 첫 연결은 양쪽의 코드를 확인해 PC에서 승인하고, 다음 연결을 위해 기기를 기억할 수 있습니다. 목록에 PC가 없으면 사설 IP를 직접 입력하세요. [휴대폰 연결 안내](docs/LAN-PLAYBACK.md)
+- **다른 기기에서 보세요.** Android 또는 Windows에서 같은 내부망의 LumaPlayer PC를 찾아 연결하세요. 첫 연결은 양쪽의 코드를 확인해 송출 PC에서 승인합니다. 연결된 기기는 PC에서 확인하고 해제할 수 있습니다. [내부망 재생 안내](docs/LAN-PLAYBACK.md)
+- **새 버전을 확인하세요.** Windows 앱은 실행할 때 GitHub에서 업데이트를 확인합니다. 설정에서 수동으로 확인하거나 자동 알림을 끌 수 있습니다. [업데이트 안내](docs/UPDATES.md)
 - **내 화면에 맞춰 감상하세요.** 전체화면이나 항상 위에 뜨는 작은 화면(PiP)으로 볼 수 있습니다. 탐색 바를 클릭하거나 방향키로 장면을 이동하고, 다크·라이트 모드를 고를 수 있습니다.
 
 ### Windows 베타 설치
@@ -59,7 +60,8 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 - **Watch your discs.** Choose the main feature or a chapter from the Blu-ray menu, pick up where you left off, and open regular video files too.
 - **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Load your own subtitles and adjust the font, size, or text and background opacity.
 - **Prepare captions before watching.** Save captions and translation for a whole title, then reuse the completed project when you reopen it or seek to another scene.
-- **Watch on your phone.** Find a LumaPlayer PC on the same network from Android. Compare the code on both screens and approve the first connection on the PC. You can remember the device for next time or enter the PC’s private IP directly. [Phone setup](docs/LAN-PLAYBACK.md)
+- **Watch on another device.** Find a LumaPlayer PC on the same network from Android or Windows. Compare the code on both screens and approve the first connection on the host PC. View and disconnect paired devices on the PC. [LAN playback guide](docs/LAN-PLAYBACK.md)
+- **Check for a new version.** The Windows app checks GitHub at launch. Check manually or turn off automatic notifications in settings. [Update guide](docs/UPDATES.md)
 - **Make it fit your screen.** Switch to fullscreen or always-on-top picture-in-picture. Click the seek track or use the arrow keys to jump, and choose dark or light mode.
 
 ### Install the Windows beta

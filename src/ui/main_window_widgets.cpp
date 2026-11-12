@@ -7,6 +7,9 @@
 #include "media/platform_features.h"
 #include "subtitles/subtitle_file.h"
 #include "subtitles/translation_service.h"
+#ifdef Q_OS_WIN
+#include "update_manager.h"
+#endif
 #include <QApplication>
 #include <QBoxLayout>
 #include <QCheckBox>
@@ -185,7 +188,7 @@ void MainWindow::buildUi(){
     auto *body=new QHBoxLayout;body->setSpacing(0);body->setContentsMargins(0,0,0,0);outer->addLayout(body,1);
     sidebar_=new QWidget;sidebar_->setObjectName("sidebar");sidebar_->setFixedWidth(174);auto *nav=new QVBoxLayout(sidebar_);nav->setContentsMargins(17,25,17,20);nav->setSpacing(14);
     nav->addWidget(label("YOUR COLLECTION","section"));auto *files=button("로컬 미디어");nav->addWidget(files);resumeButton_=button("이어서 보기","resumePlayback");resumeButton_->setEnabled(false);nav->addWidget(resumeButton_);connect(resumeButton_,&QPushButton::clicked,this,&MainWindow::resumeLatest);
-    auto *lanPlayback=button("휴대폰에서 보기","openLanPlayback");lanPlayback->setToolTip("같은 네트워크의 Android 연결과 공유를 관리합니다.");nav->addWidget(lanPlayback);
+    auto *lanPlayback=button("내부망 재생","openLanPlayback");lanPlayback->setToolTip("같은 네트워크의 PC와 Android 연결을 관리합니다.");nav->addWidget(lanPlayback);
     connect(lanPlayback,&QPushButton::clicked,this,&MainWindow::showLanPlayback);
     nav->addSpacing(22);nav->addWidget(label("연결된 디스크","section"));
     discLabel_=label("디스크 확인 중…");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
@@ -268,6 +271,10 @@ void MainWindow::buildUi(){
     connect(displaySettings,&QPushButton::clicked,this,[]{QDesktopServices::openUrl(QUrl("ms-settings:display"));});
 #endif
     buildAudioSettings(settingsLayout);
+#ifdef Q_OS_WIN
+    auto *updates=new UpdateManager(this);
+    updates->addControls(settingsLayout);
+#endif
     captureStatus_=label("보호 디스크를 재생하면 캡처 차단을 적용합니다.","captureStatus");captureStatus_->setWordWrap(true);settingsLayout->addWidget(captureStatus_);auto *privacyNote=label("개발용 캡처 허용은 개발자 모드에서 별도 동의 후 설정할 수 있습니다. Windows 캡처 제외는 DRM·HDCP 인증과는 별개입니다.","muted");privacyNote->setWordWrap(true);settingsLayout->addWidget(privacyNote);
     developerEnabled_=new QCheckBox("개발자 모드");developerEnabled_->setObjectName("developerMode");
     developerEnabled_->setChecked(QSettings().value("ui/developerMode",false).toBool() && QSettings().value("privacy/developerConsentVersion",0).toInt()==privacyConsentVersion);settingsLayout->addWidget(developerEnabled_);

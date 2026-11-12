@@ -24,6 +24,7 @@ const testPlayerDeviceID = "AQIDBAUGBwgJCgsMDQ4PEA"
 
 type playerTestHost struct {
 	url      string
+	endpoint string
 	client   *http.Client
 	pin      string
 	leaf     [32]byte
@@ -66,6 +67,7 @@ func startPlayerTestHost(t *testing.T, store string) playerTestHost {
 	var once sync.Once
 	host := playerTestHost{
 		commands: json.NewEncoder(commands), events: statuses,
+		endpoint: netip.AddrPortFrom(ip, 48762).String(),
 		stop: func() {
 			once.Do(func() {
 				_ = commands.Close()
@@ -83,7 +85,7 @@ func startPlayerTestHost(t *testing.T, store string) playerTestHost {
 	}
 	t.Cleanup(host.stop)
 	host.control(t, map[string]string{
-		"mode": "player", "listen": netip.AddrPortFrom(ip, 48762).String(), "subnet": subnet.String(),
+		"mode": "player", "listen": host.endpoint, "subnet": subnet.String(),
 		"name": "테스트 PC", "store": filepath.ToSlash(store),
 	})
 	ready := host.event(t, "ready")
@@ -253,6 +255,36 @@ func TestPlayerApprovalSharesStopsAndRevokes(t *testing.T) {
 	host.request(t, http.MethodGet, "/v1/session", paired.Token, nil, http.StatusUnauthorized, nil)
 }
 
+func TestPlayerDevicesDisconnectPreservesRememberAndForgetRevokes(t *testing.T) {
+	host := startPlayerTestHost(t, filepath.Join(t.TempDir(), "pairing.dpapi"))
+	paired := host.pair(t, true, "remember")
+	host.control(t, map[string]string{"command": "listDevices"})
+	list := host.event(t, "devices")
+	if list.Devices == nil || len(*list.Devices) != 1 ||
+		(*list.Devices)[0] != (deviceInfo{ID: testPlayerDeviceID, Name: "테스트 휴대폰",
+			Address: "127.0.0.1", Active: true, Remembered: true}) {
+		t.Fatal("the approved remembered device was missing")
+	}
+	host.control(t, map[string]string{"command": "disconnectDevice", "id": testPlayerDeviceID})
+	list = host.event(t, "devices")
+	if list.Devices == nil || len(*list.Devices) != 1 || (*list.Devices)[0].Active || !(*list.Devices)[0].Remembered {
+		t.Fatal("ordinary disconnect discarded the remembered device")
+	}
+	host.request(t, http.MethodGet, "/v1/session", paired.Token, nil, http.StatusUnauthorized, nil)
+	var login struct{ Token string }
+	host.request(t, http.MethodPost, "/v1/pair/login", paired.RememberToken,
+		map[string]string{"deviceId": testPlayerDeviceID}, http.StatusOK, &login)
+	host.event(t, "deviceConnected")
+	host.control(t, map[string]string{"command": "forgetDevice", "id": testPlayerDeviceID})
+	list = host.event(t, "devices")
+	if list.Devices == nil || len(*list.Devices) != 0 {
+		t.Fatal("forgotten device remained listed")
+	}
+	host.request(t, http.MethodGet, "/v1/session", login.Token, nil, http.StatusUnauthorized, nil)
+	host.request(t, http.MethodPost, "/v1/pair/login", paired.RememberToken,
+		map[string]string{"deviceId": testPlayerDeviceID}, http.StatusUnauthorized, nil)
+}
+
 func TestPlayerRememberedLoginSurvivesRestartAndForget(t *testing.T) {
 	store := filepath.Join(t.TempDir(), "pairing.dpapi")
 	first := startPlayerTestHost(t, store)
@@ -284,6 +316,15 @@ func TestPlayerRememberedLoginSurvivesRestartAndForget(t *testing.T) {
 }
 
 func TestPlayerStopAcknowledgesAfterWorkerExit(t *testing.T) {
+	testPlayerWorkerTeardown(t, "stop", "stopped")
+}
+
+func TestPlayerDisconnectAcknowledgesAfterWorkerExit(t *testing.T) {
+	testPlayerWorkerTeardown(t, "disconnectDevice", "devices")
+}
+
+func testPlayerWorkerTeardown(t *testing.T, command, expected string) {
+	t.Helper()
 	cfg, statePath := discConfig(t)
 	cfg.AudioMode = "compatible"
 	host := startPlayerTestHost(t, filepath.Join(t.TempDir(), "pairing.dpapi"))
@@ -312,8 +353,8 @@ func TestPlayerStopAcknowledgesAfterWorkerExit(t *testing.T) {
 		_ = process.Kill()
 		_ = process.Release()
 	})
-	host.control(t, map[string]string{"command": "stop"})
-	host.event(t, "stopped")
+	host.control(t, map[string]string{"command": command, "id": testPlayerDeviceID})
+	host.event(t, expected)
 	exited := make(chan error, 1)
 	go func() {
 		_, err := process.Wait()

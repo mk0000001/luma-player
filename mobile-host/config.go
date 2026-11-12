@@ -63,9 +63,12 @@ type validatedConfig struct {
 
 type initialConfig struct {
 	config
-	Mode  string `json:"mode"`
-	Name  string `json:"name"`
-	Store string `json:"store"`
+	Mode     string `json:"mode"`
+	Name     string `json:"name"`
+	Store    string `json:"store"`
+	Endpoint string `json:"endpoint"`
+	Remember bool   `json:"remember"`
+	Fresh    bool   `json:"fresh"`
 }
 
 func readConfig(input *bufio.Reader) (initialConfig, error) {

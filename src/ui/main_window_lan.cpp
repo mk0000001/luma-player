@@ -1,9 +1,13 @@
 #include "main_window.h"
 #include "lan_playback_dialog.h"
+#include "lan_receiver_dialog.h"
+#include "video_surface.h"
 
 #include <QFileInfo>
 #include <QLabel>
 #include <QScopedValueRollback>
+#include <QSlider>
+#include <QTimer>
 #include <algorithm>
 
 namespace luma {
@@ -12,6 +16,7 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
     if (!lanPlaybackDialog_) {
         lanPlaybackDialog_ = new LanPlaybackDialog(this);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareRequested, this, &MainWindow::startLanShare);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::receiveRequested, this, &MainWindow::showLanReceiver);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::deviceAuthorized, this, &MainWindow::startLanShare);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareStopped, this, &MainWindow::finishLanShare);
         updateLanPlaybackAvailability();
@@ -30,8 +35,62 @@ void MainWindow::showLanPlayback() {
     dialog->activateWindow();
 }
 
+void MainWindow::showLanReceiver() {
+    if (!lanReceiverDialog_) {
+        lanReceiverDialog_ = new LanReceiverDialog(this);
+        connect(lanReceiverDialog_, &LanReceiverDialog::playbackReady, this, &MainWindow::startLanReceive);
+        connect(lanReceiverDialog_, &LanReceiverDialog::playbackEnded, this, &MainWindow::finishLanReceive);
+    }
+    lanReceiverDialog_->setOwnEndpoint(lanPlaybackDialog()->readyEndpoint());
+    lanReceiverDialog_->show();
+    lanReceiverDialog_->raise();
+    lanReceiverDialog_->activateWindow();
+}
+
+void MainWindow::startLanReceive(const LanReceiverPlayback &playback) {
+    if (!openSourceImpl({}, false, 0, &playback)) {
+        const auto message = status_->text();
+        QTimer::singleShot(0, lanReceiverDialog_, [this, message] {
+            if (lanReceiverDialog_->hasPlayback())
+                stopLanReceiver(message);
+        });
+        return;
+    }
+    lanReceiverDialog_->hide();
+    if (lanPlaybackDialog_)
+        lanPlaybackDialog_->hide();
+}
+
+void MainWindow::stopLanReceiver(const QString &message) {
+    if (lanReceiverDialog_)
+        lanReceiverDialog_->stopConnection(message);
+    if (lanRemotePlayback_)
+        finishLanReceive(message);
+}
+
+void MainWindow::finishLanReceive(const QString &message) {
+    if (!lanRemotePlayback_)
+        return;
+    ++sourceGeneration_;
+    resetSubtitleSession();
+    if (active_)
+        active_->stop();
+    active_ = nullptr;
+    lanRemotePlayback_ = false;
+    lanRemoteSeekable_ = false;
+    requestedPlaying_.reset();
+    pendingSeek_ = -1;
+    static_cast<VideoSurface *>(surface_)->setVideoActive(false);
+    welcome_->show();
+    seek_->setEnabled(true);
+    nowTitle_->setText("재생할 미디어를 선택하세요");
+    status_->setText(message.isEmpty() ? "PC 연결을 종료했습니다." : message);
+    applyCapturePolicy();
+    updateLanPlaybackAvailability();
+}
+
 bool MainWindow::lanSourceAvailable() const {
-    if (!active_ || active_->state().failed || recoveryPlayback_ || videoRecoveryExhausted_)
+    if (!active_ || lanRemotePlayback_ || active_->state().failed || recoveryPlayback_ || videoRecoveryExhausted_)
         return false;
     if (active_ != discEngine_.get())
         return lanLocalFileSupported(source_);

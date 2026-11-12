@@ -39,6 +39,60 @@ bool driveRoot(const QString &source) {
     static const QRegularExpression root("^[A-Za-z]:[/\\\\]?$");
     return root.match(source).hasMatch();
 }
+
+bool lanBridgeUrl(const QUrl &url) {
+    const int port = url.port();
+    return url.isValid() && url.scheme() == "http" && port > 0 && port <= 65535 &&
+        url.authority(QUrl::FullyEncoded) == "127.0.0.1:" + QString::number(port) &&
+        !url.hasQuery() && !url.hasFragment();
+}
+
+bool bypassProxyForLanBridge() {
+    // libmpv's HTTP transport reads the proxy environment for media and subtitles.
+    auto exclusions = qgetenv("no_proxy");
+    if (exclusions.isEmpty())
+        exclusions = qgetenv("NO_PROXY");
+    if (exclusions == "*")
+        return true;
+    for (const auto &entry : exclusions.split(',')) {
+        if (entry == "127.0.0.1")
+            return true;
+    }
+    if (!exclusions.isEmpty())
+        exclusions += ',';
+    return qputenv("no_proxy", exclusions + "127.0.0.1");
+}
+
+QByteArray lanDemuxer(const QString &mimeType) {
+    static const QHash<QString,QByteArray> formats{
+        {"video/x-matroska", "demuxer=+mkv"},
+        {"video/webm", "demuxer=+mkv"},
+        {"video/mp4", "demuxer=+lavf,demuxer-lavf-format=mov"},
+        {"video/quicktime", "demuxer=+lavf,demuxer-lavf-format=mov"},
+        {"audio/mp4", "demuxer=+lavf,demuxer-lavf-format=mov"},
+        {"video/mp2t", "demuxer=+lavf,demuxer-lavf-format=mpegts"},
+        {"video/x-msvideo", "demuxer=+lavf,demuxer-lavf-format=avi"},
+        {"audio/flac", "demuxer=+lavf,demuxer-lavf-format=flac"},
+        {"audio/mpeg", "demuxer=+lavf,demuxer-lavf-format=mp3"},
+        {"audio/wav", "demuxer=+lavf,demuxer-lavf-format=wav"}
+    };
+    return formats.value(mimeType);
+}
+}
+
+bool validLanMediaSource(const LanMediaSource &source) {
+    static const QRegularExpression mediaPath("\\A(/[A-Za-z0-9_-]{21}[AQgw])/media\\z");
+    static const QRegularExpression subtitlePath("\\A(/[A-Za-z0-9_-]{21}[AQgw])/subtitle/[A-Za-z0-9_-]{1,64}\\.vtt\\z");
+    const auto media = mediaPath.match(source.url.path(QUrl::FullyEncoded));
+    if (!lanBridgeUrl(source.url) || !media.hasMatch() || lanDemuxer(source.mimeType).isEmpty() || source.subtitles.size() > 8)
+        return false;
+    for (const auto &[url, label] : source.subtitles) {
+        const auto subtitle = subtitlePath.match(url.path(QUrl::FullyEncoded));
+        if (!lanBridgeUrl(url) || url.port() != source.url.port() || !subtitle.hasMatch() ||
+            subtitle.captured(1) != media.captured(1) || label.size() > 128)
+            return false;
+    }
+    return true;
 }
 
 std::optional<QString> normalizedPlaybackSource(const QString &source, bool disc) {
@@ -174,7 +228,9 @@ struct PlaybackEngine::Impl {
     bool discBitstream=false, nightApplied=false;
     bool audioFallbackRetried=false;
     QElapsedTimer audioFallbackWait;
-    QByteArray fileSource;
+    QByteArray fileSource, fileOptions;
+    QVector<QPair<QUrl,QString>> lanSubtitles;
+    bool lanSource=false;
     QString motionMetadata;
     bool motionApplied=false;
     bool dolbyApplied=false;
@@ -230,7 +286,7 @@ struct PlaybackEngine::Impl {
 #undef VF
 #define MF(n) decltype(&::n) n=nullptr
     MF(mpv_create); MF(mpv_initialize); MF(mpv_terminate_destroy); MF(mpv_set_option_string);
-    MF(mpv_set_option); MF(mpv_command); MF(mpv_get_property); MF(mpv_get_property_string);
+    MF(mpv_set_option); MF(mpv_command); MF(mpv_command_async); MF(mpv_get_property); MF(mpv_get_property_string);
     MF(mpv_set_property); MF(mpv_set_property_string); MF(mpv_wait_event); MF(mpv_free);
     MF(mpv_free_node_contents); MF(mpv_request_log_messages); MF(mpv_error_string);
 #undef MF
@@ -273,10 +329,10 @@ struct PlaybackEngine::Impl {
         // Keep the first detailed reason for this session and upgrade a prior generic error.
         if(!errorSent || (detailed && changed)){errorSent=true;emit owner->errorOccurred(message);}
     }
-    int command(const QList<QByteArray> &args) {
+    int command(const QList<QByteArray> &args, bool asynchronous=false) {
         if(!mpv) return MPV_ERROR_UNINITIALIZED;
         QVector<const char *> pointers; for(const auto &s:args) pointers.append(s.constData()); pointers.append(nullptr);
-        const int code=mpv_command(mpv,pointers.data());
+        const int code=asynchronous?mpv_command_async(mpv,0,pointers.data()):mpv_command(mpv,pointers.data());
         if(code<0) emit owner->logMessage(QString("mpv: %1").arg(QString::fromUtf8(mpv_error_string(code))));
         return code;
     }
@@ -343,8 +399,13 @@ struct PlaybackEngine::Impl {
         fileLoaded=false;
         seekReady=false;
         if(state.positionMs>0)deferredSeek=state.positionMs;
-        if(command({"loadfile",fileSource,"replace"})<0)
+        if(loadFile()<0)
             state.audioSettingsError="PCM 오디오로 미디어를 다시 열 수 없습니다.";
+    }
+    int loadFile() {
+        if (fileOptions.isEmpty())
+            return command({"loadfile",fileSource,"replace"});
+        return command({"loadfile",fileSource,"replace","-1",fileOptions});
     }
     double number(const char *key) { double value=0; mpv_get_property(mpv,key,MPV_FORMAT_DOUBLE,&value); return value; }
     std::optional<double> metric(const char *key) {
@@ -436,7 +497,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
     }else{
 #define LOAD(n) ok=d->resolve(d->n,#n)&&ok
         LOAD(mpv_create); LOAD(mpv_initialize); LOAD(mpv_terminate_destroy); LOAD(mpv_set_option_string); LOAD(mpv_set_option);
-        LOAD(mpv_command); LOAD(mpv_get_property); LOAD(mpv_get_property_string); LOAD(mpv_set_property); LOAD(mpv_set_property_string);
+        LOAD(mpv_command); LOAD(mpv_command_async); LOAD(mpv_get_property); LOAD(mpv_get_property_string); LOAD(mpv_set_property); LOAD(mpv_set_property_string);
         LOAD(mpv_wait_event); LOAD(mpv_free); LOAD(mpv_free_node_contents); LOAD(mpv_request_log_messages); LOAD(mpv_error_string);
 #undef LOAD
         if(!ok)return;
@@ -474,6 +535,11 @@ bool PlaybackEngine::openPreparedDisc(const QString &source,WId surface,qint64 d
     return openInternal(source,surface,durationMs);
 }
 bool PlaybackEngine::open(const QString &source,WId surface){return openInternal(source,surface,0);}
+bool PlaybackEngine::openLanMedia(const LanMediaSource &source,WId surface){
+    if(d->kind!=Kind::File || !validLanMediaSource(source))return false;
+    if(!bypassProxyForLanBridge()){d->error="로컬 재생 연결을 준비할 수 없습니다.";return false;}
+    return openInternal(source.url.toString(QUrl::FullyEncoded),surface,0,&source);
+}
 void PlaybackEngine::setVideoOverrides(VideoOverrides options){d->nextVideo=options;}
 void PlaybackEngine::setVideoColorOutput(VideoOverrides::Color color,bool forceHdr){
     if(!d->mpv || !available() || !d->videoOutputActive)return;
@@ -484,11 +550,12 @@ void PlaybackEngine::setVideoColorOutput(VideoOverrides::Color color,bool forceH
     emit updated();
 }
 void PlaybackEngine::setAudioOutputOptions(AudioOutputOptions options){d->nextAudio=options;}
-bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs){
+bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs,const LanMediaSource *lanSource){
     if(!available()){d->fail(d->error);return false;}
     const auto input=normalizedPlaybackSource(source,d->kind==Kind::Disc);
     if(!input){d->error="지원하지 않는 미디어 주소입니다.";return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->error.clear();d->discError.clear();d->managedSubtitle=false;d->managedMpvSubtitle=-1;
+    d->lanSource=lanSource!=nullptr;
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
     d->activeVideo=d->nextVideo;
@@ -534,6 +601,12 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         if(d->libvlc_media_player_play(d->player)<0){d->fail("Blu-ray 재생을 시작할 수 없습니다. 진단 로그를 확인하세요.");return false;}
     }else{
         d->fileSource=input->toUtf8();
+        if(lanSource){
+            d->fileOptions=lanDemuxer(lanSource->mimeType)+
+                ",access-references=no,sub-auto=no,audio-file-auto=no,ytdl=no"
+                ",cache-on-disk=no,resume-playback=no,save-position-on-quit=no";
+            d->lanSubtitles=lanSource->subtitles;
+        }
         d->audioFallbackWait.invalidate();
         d->audioFallbackRetried=false;
         const int64_t wid=static_cast<int64_t>(surface); d->mpv_set_property(d->mpv,"wid",MPV_FORMAT_INT64,const_cast<int64_t *>(&wid));
@@ -561,7 +634,7 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
             d->activeVideo.dolby==VideoOverrides::DolbyVision::Apply?"apply":"auto";
         d->applyVideoColor();
         d->applyFileAudio();
-        if(d->command({"loadfile",d->fileSource,"replace"})<0){d->fail("재생 엔진이 파일 열기 요청을 거부했습니다.");return false;}
+        if(d->loadFile()<0){d->fail("재생 엔진이 파일 열기 요청을 거부했습니다.");return false;}
     }
     d->videoOutputActive=true;d->videoOutputLossSent=false;
     emit logMessage(QString("Opening with %1").arg(name()));return true;
@@ -569,7 +642,7 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
     d->videoOutputActive=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();
-    d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->fileLoaded=false;
+    d->timer.stop();d->state.playing=false;d->state.durationMs=0;d->state.timelineReady=false;d->state.lanSubtitleCueActive=false;d->fileLoaded=false;
     if(d->player){
         // Embedded Win32 video teardown can synchronously message the host HWND.
         // Keep its owner thread pumping while libVLC's blocking stop joins output threads.
@@ -577,7 +650,13 @@ void PlaybackEngine::stop(){
         QEventLoop loop;connect(worker,&QThread::finished,&loop,&QEventLoop::quit);worker->start();
         loop.exec(QEventLoop::ExcludeUserInputEvents);worker->wait();delete worker;
     }
-    if(d->mpv){d->audioFallbackWait.invalidate();d->command({"stop"});}d->stopping.store(false);if(!d->destroying)d->timer.start();
+    if(d->mpv){
+        d->audioFallbackWait.invalidate();
+        d->command({"stop"});
+        d->fileOptions.clear();d->lanSubtitles.clear();
+        if(d->lanSource)d->fileSource.clear();
+    }
+    d->stopping.store(false);if(!d->destroying)d->timer.start();
 }
 void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player){if(d->preparedDiscDuration>0)setPaused(!d->preparedPauseRequested);else d->libvlc_media_player_pause(d->player);}else d->command({"cycle","pause"});}
 void PlaybackEngine::setPaused(bool paused){if(!available())return;if(d->player){d->preparedPauseRequested=paused;d->libvlc_media_player_set_pause(d->player,d->preparedDiscDuration>0 || paused?1:0);}else d->mpv_set_property_string(d->mpv,"pause",paused?"yes":"no");}
@@ -725,7 +804,19 @@ void PlaybackEngine::poll(){
         }
     }else if(d->mpv){
         for(int i=0;i<100;++i){auto *event=d->mpv_wait_event(d->mpv,0);if(!event || event->event_id==MPV_EVENT_NONE)break;
-            if(event->event_id==MPV_EVENT_FILE_LOADED){d->fileLoaded=true;updateFrameInterpolation();}
+            if(event->event_id==MPV_EVENT_FILE_LOADED){
+                d->fileLoaded=true;updateFrameInterpolation();
+                if(!d->lanSubtitles.isEmpty()){
+                    // The primary demuxer is open. Let the WebVTT track select its own format.
+                    if(d->mpv_set_property_string(d->mpv,"file-local-options/demuxer-lavf-format","")>=0){
+                        bool first=true;
+                        for(const auto &[url,label]:d->lanSubtitles){
+                            d->command({"sub-add",url.toEncoded(),first?"select":"auto",label.toUtf8()},true);
+                            first=false;
+                        }
+                    }
+                }
+            }
             if(event->event_id==MPV_EVENT_PLAYBACK_RESTART){d->seekReady=true;if(d->deferredSeek){const auto target=*d->deferredSeek;d->deferredSeek.reset();seek(target);}}
             if(event->event_id==MPV_EVENT_LOG_MESSAGE){
                 auto *m=static_cast<mpv_event_log_message *>(event->data);
@@ -735,7 +826,7 @@ void PlaybackEngine::poll(){
                     d->audioFallbackWait.start();
                     d->mpv_request_log_messages(d->mpv,"warn");
                 }
-                if(m->log_level<=MPV_LOG_LEVEL_WARN)emit logMessage(redactNetworkSources(message));
+                if(m->log_level<=MPV_LOG_LEVEL_WARN && !d->lanSource)emit logMessage(redactNetworkSources(message));
             }
             if(event->event_id==MPV_EVENT_END_FILE){
                 auto *end=static_cast<mpv_event_end_file *>(event->data);
@@ -774,6 +865,7 @@ void PlaybackEngine::poll(){
         d->finishAudioFallback();
         d->state.currentChapter=int(d->number("chapter"));
         d->state.currentAudio=int(d->number("aid"));const auto sid=d->prop("sid");d->state.currentSubtitle=sid=="no"?-1:sid.toInt();
+        d->state.lanSubtitleCueActive=d->lanSource && d->state.currentSubtitle>=0 && !d->prop("sub-text").isEmpty();
         const int trackCount=std::clamp(int(d->number("track-list/count")),0,1000);d->state.audioTracks.clear();d->state.subtitleTracks={{-1,"자막 끄기"}};
         for(int i=0;i<trackCount;++i){const auto prefix=QByteArray("track-list/")+QByteArray::number(i)+"/";const auto type=d->prop((prefix+"type").constData());const int id=int(d->number((prefix+"id").constData()));const auto label=d->prop((prefix+"title").constData())+" "+d->prop((prefix+"lang").constData());if(type=="audio")d->state.audioTracks.append({id,QString("%1 %2").arg(id).arg(label)});if(type=="sub")d->state.subtitleTracks.append({id,QString("%1 %2").arg(id).arg(label)});}
         const int chapters=std::clamp(int(d->number("chapter-list/count")),0,10000);d->state.chapters.clear();

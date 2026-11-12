@@ -34,8 +34,9 @@ func listenLAN(cfg validatedConfig) (net.Listener, error) {
 
 type lanListener struct {
 	net.Listener
-	subnet netip.Prefix
-	slots  chan struct{}
+	subnet   netip.Prefix
+	loopback bool
+	slots    chan struct{}
 }
 
 func (l *lanListener) Accept() (net.Conn, error) {
@@ -45,7 +46,16 @@ func (l *lanListener) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		peer, ok := conn.RemoteAddr().(*net.TCPAddr)
-		if !ok || !allowedPeer(peer.AddrPort().Addr().Unmap(), l.subnet) {
+		var allowed bool
+		if ok {
+			ip := peer.AddrPort().Addr().Unmap()
+			if l.loopback {
+				allowed = ip == netip.AddrFrom4([4]byte{127, 0, 0, 1})
+			} else {
+				allowed = allowedPeer(ip, l.subnet)
+			}
+		}
+		if !allowed {
 			_ = conn.Close()
 			continue
 		}

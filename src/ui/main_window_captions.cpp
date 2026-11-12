@@ -87,6 +87,7 @@ void MainWindow::updateTranslationPreferences(){
 
 void MainWindow::showCaptionPreparation(){
     if(!stopLanShareForSourceChange())return;
+    stopLanReceiver();
     const auto initialFile=active_==fileEngine_.get()?source_:QString{};
     const auto preparationDiscRoot=active_==discEngine_.get()?source_:discPath_;
     CaptionPreparationRequest defaults;defaults.model=model_;defaults.source.language=language_->currentData().toString();defaults.recognitionPreferences=job_.preferences();defaults.translationPreferences=translation_->preferences();defaults.translate=translationEnabled_->isChecked();
@@ -149,11 +150,12 @@ void MainWindow::enableAutomaticSubtitles(const QString &language){const int ind
 
 void MainWindow::automaticCaptionsChanged(bool enabled){
     if(subtitleFileLoader_)subtitleFileLoader_->cancel();presentationDirty_=true;QSettings().setValue("subtitles/aiEnabled",enabled);
+    if(lanRemotePlayback_)return;
     if(enabled){preparedCaptions_.reset();preparedApplied_=false;externalCues_.clear();aiFailed_=false;bufferBypass_=false;aiRetryCount_=0;nextAiAttemptMs_=0;if(active_)active_->setSubtitle(-1);rebuildManagedCaptions();job_.warmUp(model_);scheduleSubtitles();}
     else{cancelSubtitleWork();job_.shutdown();releaseCaptionBuffer(true);if(active_)active_->clearManagedSubtitles();aiStatus_->setText("AI 자동자막 꺼짐");bufferStatus_->setText("AI 자동자막 꺼짐 · 일반 재생");rebuildManagedCaptions();}
 }
 
-bool MainWindow::liveCaptioningActive()const{return aiEnabled_->isChecked() && !preparedCaptions_ && externalCues_.isEmpty();}
+bool MainWindow::liveCaptioningActive()const{return !lanRemotePlayback_ && aiEnabled_->isChecked() && !preparedCaptions_ && externalCues_.isEmpty();}
 
 bool MainWindow::captionTimelineAvailable()const{
     if(!active_)return false;const auto &state=active_->state();

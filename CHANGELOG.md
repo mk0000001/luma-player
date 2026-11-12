@@ -2,6 +2,11 @@
 
 ## 한국어
 
+### 0.2.0-beta.2
+
+- Windows의 **내부망 재생**에서 연결된 기기와 기억한 기기를 확인하고 개별 해제할 수 있습니다. 다른 Windows PC에서도 같은 확인 코드로 연결해 재생합니다.
+- Windows 실행 시 GitHub 업데이트를 확인합니다. 설정에서 수동으로 확인하거나 알림을 끌 수 있습니다. 서명과 SHA-256을 확인한 설치 파일을 사용합니다.
+
 ### 0.2.0-beta.1
 
 - Android에서 같은 내부망의 Windows LumaPlayer를 자동으로 찾거나 사설 IP로 연결합니다. 양쪽의 확인 코드를 비교해 PC에서 승인하며, 기기별로 매번 승인하거나 다음 연결을 위해 기억할 수 있습니다. 로컬 파일과 Blu-ray 본편에 준비된 PC 자막을 함께 전달합니다.
@@ -123,6 +128,11 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.0-beta.2
+
+- View, disconnect, and forget LAN devices in the Windows player. A second Windows PC can connect and play media using the same code approval flow.
+- Check GitHub for Windows updates at launch or from settings. Automatic notifications can be turned off. Installation verifies the signed release manifest and the installer SHA-256.
 
 ### 0.2.0-beta.1
 

@@ -58,10 +58,10 @@ func TestPairingBindsProofAndApprovalToAttemptAndPeer(t *testing.T) {
 		t.Fatal("a different peer could poll an approved token")
 	}
 	result := p.pollPairing(peer, started.ID)
-	if _, ok := p.authorize(peer, result.Token); !ok {
+	if _, device := p.authorize(peer, result.Token, false); device == nil {
 		t.Fatal("approved peer could not use its token")
 	}
-	if _, ok := p.authorize(other, result.Token); ok {
+	if _, device := p.authorize(other, result.Token, false); device != nil {
 		t.Fatal("approved token worked from a different peer")
 	}
 	now = now.Add(90 * time.Second)
@@ -87,5 +87,37 @@ func TestPairingCapsPendingAttemptsPerPeer(t *testing.T) {
 	}
 	if _, status := p.beginPairing(netip.MustParseAddr("192.168.22.5"), request); status != http.StatusOK {
 		t.Fatal("one peer's pending requests blocked another phone")
+	}
+}
+
+func TestDeviceLivenessExpiresUsedTokensButAllowsInitialApprovalWindow(t *testing.T) {
+	p := newPlayer("PC", "", nil, nil, nil)
+	peer := netip.MustParseAddr("192.168.22.4")
+	now := time.Now()
+	p.now = func() time.Time { return now }
+	token, err := pairRandom(16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.activateDevice(testPlayerDeviceID, "Phone", peer, token)
+	now = now.Add(45 * time.Second)
+	if devices := p.deviceList(); len(devices) != 1 || devices[0].Active {
+		t.Fatal("an unused grant looked connected beyond the idle window")
+	}
+	if _, device := p.authorize(peer, token, false); device == nil {
+		t.Fatal("the initial unused grant expired before 90 seconds")
+	}
+	now = now.Add(29 * time.Second)
+	if _, device := p.authorize(peer, token, false); device == nil {
+		t.Fatal("authenticated liveness did not refresh the idle window")
+	}
+	now = now.Add(30 * time.Second)
+	if _, device := p.authorize(peer, token, false); device != nil || len(p.deviceList()) != 0 {
+		t.Fatal("idle temporary grant remained authorized or listed")
+	}
+	p.activateDevice(testPlayerDeviceID, "Phone", peer, token)
+	now = now.Add(90 * time.Second)
+	if _, device := p.authorize(peer, token, false); device != nil {
+		t.Fatal("unused grant survived the approval window")
 	}
 }

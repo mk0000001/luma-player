@@ -207,8 +207,10 @@ func (s *mediaSession) serveMedia(w *responseWriter, r *http.Request) {
 
 type responseWriter struct {
 	http.ResponseWriter
-	controller *http.ResponseController
-	ctx        context.Context
+	controller  *http.ResponseController
+	ctx         context.Context
+	onWrite     func()
+	flushWrites bool
 }
 
 func (w *responseWriter) WriteHeader(status int) {
@@ -226,7 +228,14 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 	if err := w.ctx.Err(); err != nil {
 		return 0, err
 	}
-	return w.ResponseWriter.Write(data)
+	written, err := w.ResponseWriter.Write(data)
+	if err == nil && written > 0 && w.flushWrites {
+		err = w.controller.Flush()
+	}
+	if written > 0 && w.onWrite != nil {
+		w.onWrite()
+	}
+	return written, err
 }
 
 type mediaGate struct {

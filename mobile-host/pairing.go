@@ -63,11 +63,6 @@ type pairAttempt struct {
 	result      pairPollResponse
 }
 
-type activeDevice struct {
-	peer netip.Addr
-	hash [sha256.Size]byte
-}
-
 func (p *player) beginPairing(peer netip.Addr, request pairStartRequest) (pairStartResponse, int) {
 	if !validPairValue(request.DeviceID, 16) || !validPairValue(request.Commitment, 32) ||
 		!validDeviceName(request.Device) {
@@ -112,7 +107,7 @@ func (p *player) revealPairing(peer netip.Addr, request pairRevealRequest) int {
 	if !exists || attempt.peer != peer {
 		return http.StatusNotFound
 	}
-	expected := digestPairValue("luma-pair-commit-v1\n" + p.pin + "\n" + attempt.DeviceID + "\n" + request.ClientNonce)
+	expected := pairCommitment(p.pin, attempt.DeviceID, request.ClientNonce)
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(attempt.Commitment)) != 1 {
 		return http.StatusBadRequest
 	}
@@ -120,11 +115,9 @@ func (p *player) revealPairing(peer netip.Addr, request pairRevealRequest) int {
 		return http.StatusOK
 	}
 	attempt.revealed = true
-	digest := sha256.Sum256([]byte("luma-pair-code-v1\n" + p.pin + "\n" +
-		attempt.DeviceID + "\n" + request.ClientNonce + "\n" + attempt.serverNonce))
 	p.announce(playerStatus{
 		Status: "pairRequest", ID: request.ID, Device: attempt.Device,
-		Code: fmt.Sprintf("%06d", binary.BigEndian.Uint32(digest[:4])%1_000_000), Remember: &attempt.Remember,
+		Code: pairSAS(p.pin, attempt.DeviceID, request.ClientNonce, attempt.serverNonce), Remember: &attempt.Remember,
 	})
 	return http.StatusOK
 }
@@ -132,7 +125,9 @@ func (p *player) revealPairing(peer netip.Addr, request pairRevealRequest) int {
 func (p *player) pollPairing(peer netip.Addr, id string) pairPollResponse {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.expireAttempts(p.now())
+	now := p.now()
+	p.expireAttempts(now)
+	p.expireDevices(now)
 	attempt, exists := p.attempts[id]
 	if !exists || attempt.peer != peer {
 		return pairPollResponse{State: "denied"}
@@ -143,7 +138,9 @@ func (p *player) pollPairing(peer netip.Addr, id string) pairPollResponse {
 func (p *player) decidePairing(id, decision string) (playerStatus, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.expireAttempts(p.now())
+	now := p.now()
+	p.expireAttempts(now)
+	p.expireDevices(now)
 	attempt, exists := p.attempts[id]
 	if !exists || !attempt.revealed || attempt.result.State != "pending" {
 		return playerStatus{}, errPairDecision
@@ -173,13 +170,17 @@ func (p *player) decidePairing(id, decision string) (playerStatus, error) {
 			return playerStatus{}, errCredentialStore
 		}
 		next := maps.Clone(p.remembered)
-		next[attempt.DeviceID] = rememberedDevice{Name: attempt.Device, Hash: digestPairValue(result.RememberToken)}
+		record := rememberedDevice{Name: attempt.Device, Hash: digestPairValue(result.RememberToken)}
+		if attempt.peer.IsPrivate() {
+			record.Address = attempt.peer.String()
+		}
+		next[attempt.DeviceID] = record
 		if err := p.persist(next); err != nil {
 			return playerStatus{}, errCredentialStore
 		}
 		p.remembered = next
 	}
-	p.active[attempt.DeviceID] = activeDevice{peer: attempt.peer, hash: sha256.Sum256([]byte(token))}
+	p.activateDevice(attempt.DeviceID, attempt.Device, attempt.peer, token)
 	attempt.result = result
 	return playerStatus{Status: "deviceConnected", Device: attempt.Device, DeviceID: attempt.DeviceID, Remember: &remember}, nil
 }
@@ -190,7 +191,9 @@ func (p *player) login(peer netip.Addr, deviceID, secret string) (string, int) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.loginRate.allow(peer, p.now()) {
+	now := p.now()
+	p.expireDevices(now)
+	if !p.loginRate.allow(peer, now) {
 		return "", http.StatusTooManyRequests
 	}
 	device, exists := p.remembered[deviceID]
@@ -205,7 +208,11 @@ func (p *player) login(peer netip.Addr, deviceID, secret string) (string, int) {
 	if err != nil {
 		return "", http.StatusServiceUnavailable
 	}
-	p.active[deviceID] = activeDevice{peer: peer, hash: sha256.Sum256([]byte(token))}
+	p.activateDevice(deviceID, device.Name, peer, token)
+	if peer.IsPrivate() {
+		device.Address = peer.String()
+		p.remembered[deviceID] = device
+	}
 	remember := true
 	p.announce(playerStatus{Status: "deviceConnected", Device: device.Name, DeviceID: deviceID, Remember: &remember})
 	return token, http.StatusOK
@@ -244,6 +251,15 @@ func pairRandom(size int) (string, error) {
 func digestPairValue(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func pairCommitment(pin, id, clientNonce string) string {
+	return digestPairValue("luma-pair-commit-v1\n" + pin + "\n" + id + "\n" + clientNonce)
+}
+
+func pairSAS(pin, id, clientNonce, serverNonce string) string {
+	digest := sha256.Sum256([]byte("luma-pair-code-v1\n" + pin + "\n" + id + "\n" + clientNonce + "\n" + serverNonce))
+	return fmt.Sprintf("%06d", binary.BigEndian.Uint32(digest[:4])%1_000_000)
 }
 
 type rateWindow struct {

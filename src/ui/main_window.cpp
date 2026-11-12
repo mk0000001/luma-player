@@ -4,6 +4,7 @@
 #include "caption_preparation_dialog.h"
 #include "fullscreen_controls.h"
 #include "lan_playback_dialog.h"
+#include "lan_receiver_dialog.h"
 #include "player_controls.h"
 #include "performance_overlay.h"
 #include "theme.h"
@@ -115,7 +116,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     });
 }
 
-MainWindow::~MainWindow(){delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
+MainWindow::~MainWindow(){stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 
@@ -124,6 +125,8 @@ QJsonObject MainWindow::diagnostics()const{
     result.insert("translationSkippedCount",translationSkipped_.size());result.insert("translationPendingCount",translationPending_.size());result.insert("translationFailed",translationFailed_);
     result.insert("translationGlossaryEntries",translation_->glossary().size());
     result.insert("pictureInPicture",pictureInPicture_);
+    result.insert("lanReceiving",lanRemotePlayback_);result.insert("lanReceiveSeekable",lanRemoteSeekable_);
+    if(lanRemotePlayback_ && active_)result.insert("lanSubtitleCueActive",active_->state().lanSubtitleCueActive);
     result.insert("performanceOverlay",performance_->summary());
     result.insert("preparedCaptionsApplied",preparedApplied_);result.insert("preparedCueCount",preparedCaptions_?preparedCaptions_->originals.size():0);result.insert("preparedTranslationCount",preparedCaptions_?preparedCaptions_->translations.size():0);
     if(preparationDialog_)result.insert("preparation",preparationDialog_->diagnostics());

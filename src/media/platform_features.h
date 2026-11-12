@@ -12,7 +12,7 @@ class CaptureGuard:public QObject {
 public:
     explicit CaptureGuard(QObject *parent=nullptr);
     void watch(QWidget *window);
-    void setEnabled(bool enabled);
+    void setEnabled(bool enabled, QWidget *onlyWindow=nullptr);
     bool enabled()const{return enabled_;}
     bool applied()const;
     QString status()const;
@@ -20,6 +20,7 @@ protected:
     bool eventFilter(QObject *object,QEvent *event)override;
 private:
     QList<QPointer<QWidget>> windows_;
+    QPointer<QWidget> onlyWindow_;
     bool enabled_=false;
     void apply();
 };

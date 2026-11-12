@@ -2,7 +2,8 @@
 
 ## 한국어
 
-- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 0.2 첫 베타의 태그는 `v0.2.0-beta.1`입니다. Android APK는 대응하는 Windows 버전과 함께 공개합니다.
+- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 0.2 베타는 `v0.2.0-beta.N`으로 태그를 지정합니다. Android APK는 대응하는 Windows 버전과 함께 공개합니다.
+- 인앱 업데이트를 지원하는 Windows 릴리스는 서명한 업데이트 정보와 그 정보에 해당하는 설치 파일을 포함합니다. [업데이트 안내](UPDATES.md)
 - 기존 0.1 공개판의 표기는 `0.1.1`부터 `0.1.6`까지입니다. `v0.1.N` 태그는 대응하는 기존 `v0.1.0-beta.N` 빌드의 커밋을 가리킵니다. 설치 파일과 체크섬은 해당 릴리스의 다운로드에서 확인하세요.
 - **배포한 버전**마다 SemVer의 annotated Git 태그, GitHub Release, 소스 스냅샷, Windows 설치 EXE 또는 포터블 ZIP, SHA-256, `docs/releases/`의 변경·검증 기록을 보관합니다. 모든 임시 컴파일을 릴리스로 만들지는 않습니다.
 - 공개 태그를 이동하거나 이미 공개한 바이너리를 교체하지 않습니다. 수정은 새 버전으로 공개하고 이전 자료를 보존합니다.
@@ -18,7 +19,9 @@
 
 ## English
 
-`VERSION` controls the executable, diagnostics, package and release version. The first 0.2 beta uses the tag `v0.2.0-beta.1`. Publish the Android APK with its corresponding Windows version.
+`VERSION` controls the executable, diagnostics, package and release version. Tag 0.2 betas as `v0.2.0-beta.N`. Publish the Android APK with its corresponding Windows version.
+
+Windows releases with in-app update support include the signed update manifest and the matching installer. [Update guide](UPDATES.md)
 
 The published 0.1 releases use the display names `0.1.1` through `0.1.6`. Each `v0.1.N` tag points to the corresponding historical `v0.1.0-beta.N` build commit. Get its installer and checksum from that build's release downloads.
 

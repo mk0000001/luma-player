@@ -126,10 +126,14 @@ func (p *player) servePlayerMedia(w *responseWriter, r *http.Request, peer netip
 	if rejectRequestBody(w, r) {
 		return
 	}
-	media, authorized := p.authorize(peer, requestBearer(r))
-	if !authorized {
+	trackRequest := path == "/v1/media"
+	media, device := p.authorize(peer, requestBearer(r), trackRequest)
+	if device == nil {
 		unauthorized(w)
 		return
+	}
+	if trackRequest {
+		defer device.requests.Done()
 	}
 	allowedMethods := "GET"
 	if path == "/v1/media" {
@@ -143,7 +147,10 @@ func (p *player) servePlayerMedia(w *responseWriter, r *http.Request, peer netip
 		http.Error(w, "waiting for media", http.StatusConflict)
 		return
 	}
-	media.serve(w, r)
+	if path == "/v1/session" {
+		w.Header().Set("ETag", "\""+media.revision+"\"")
+	}
+	media.serve(w, r, device)
 }
 
 func readPairJSON(w *responseWriter, r *http.Request, target any) bool {

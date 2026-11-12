@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "lan_receiver_dialog.h"
 
 #include "caption_overlay.h"
 #include "video_surface.h"
@@ -45,7 +46,14 @@ void MainWindow::bindEngine(PlaybackEngine *engine){
     engine->setAudioOutputOptions(audioOutputPreferences());
     engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
-    connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}});
+    connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){
+        if(engine==active_ && lanRemotePlayback_){
+            const auto generation=sourceGeneration_;
+            QTimer::singleShot(0,this,[this,generation]{if(lanRemotePlayback_ && generation==sourceGeneration_)stopLanReceiver("PC에서 받은 미디어를 재생할 수 없습니다.");});
+            return;
+        }
+        appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}
+    });
     connect(engine,&PlaybackEngine::videoOutputLost,this,[this,engine](const QString &message){
         const QPointer<PlaybackEngine> target(engine);const auto generation=sourceGeneration_;
         QTimer::singleShot(0,this,[this,target,generation,message]{if(target && target==active_ && generation==sourceGeneration_)recoverVideoOutput(target,message);});
@@ -89,8 +97,10 @@ void MainWindow::recoverVideoOutput(PlaybackEngine *engine,const QString &messag
 void MainWindow::applyCapturePolicy(){
     if(!captureGuard_)return;
     const bool protectedDisc=active_==discEngine_.get() && (discInfo_.aacs || discInfo_.bdplus || !discInfo_.valid);
-    captureGuard_->setEnabled(protectedDisc && !(developerApproved_ && captureApproved_));
-    captureStatus_->setText(protectedDisc?captureGuard_->status():"보호 디스크를 재생하면 Windows 캡처 제외를 적용합니다.");
+    const bool protectedPlayback=lanRemotePlayback_ || protectedDisc;
+    captureGuard_->setEnabled(protectedPlayback && !(developerApproved_ && captureApproved_),
+        lanRemotePlayback_ ? static_cast<VideoSurface*>(surface_)->videoWindow() : nullptr);
+    captureStatus_->setText(protectedPlayback?captureGuard_->status():"보호 디스크나 PC에서 받은 영상에 Windows 캡처 제외를 적용합니다.");
     captureStatus_->setProperty("error",captureGuard_->enabled() && !captureGuard_->applied());
 }
 
@@ -142,7 +152,11 @@ void MainWindow::updateAudioOutputStatus(const PlaybackState &state){
 }
 
 void MainWindow::changeVideoAdapter(){
-    const auto selected=videoGpu_->currentData().toString();if(QSettings().value("video/adapter").toString()==selected)return;
+    const auto selected=videoGpu_->currentData().toString();const auto current=QSettings().value("video/adapter").toString();if(current==selected)return;
+    if(lanRemotePlayback_){
+        const QSignalBlocker blocked(videoGpu_);videoGpu_->setCurrentIndex(videoGpu_->findData(current));
+        status_->setText("PC 연결을 종료한 뒤 그래픽 장치를 바꾸세요.");return;
+    }
     QSettings().setValue("video/adapter",selected);
     const bool reopen=active_==fileEngine_.get();const qint64 position=reopen?active_->state().positionMs:0;
     const bool playing=reopen?wantsPlayback():false;
@@ -175,31 +189,55 @@ void MainWindow::discoverDisc(){
 
 void MainWindow::openSource(const QString &source){openSourceImpl(source,false);}
 
-bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs){
-    const bool disc=isDiscSource(source);
-    const auto input=normalizedPlaybackSource(source,disc);
+bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs,const LanReceiverPlayback *remote){
+    const bool disc=!remote && isDiscSource(source);
+    const auto input=remote ? std::optional<QString>(QString{}) : normalizedPlaybackSource(source,disc);
     if(!input){status_->setText("지원하지 않는 미디어 주소입니다.");return false;}
+    if(remote && !validLanMediaSource(remote->source)){status_->setText("PC 재생 주소를 확인할 수 없습니다.");return false;}
     if(!stopLanShareForSourceChange())return false;
+    if(!remote)stopLanReceiver();
     savePlaybackProgress(true);
     preparedCaptions_.reset();preparedApplied_=false;
     ++sourceGeneration_;videoRecoveryCount_=0;videoRecoveryExhausted_=false;recoveryPlayback_.reset();recoveryAudio_=-1;recoverySubtitle_=-1;recoveryExternalCues_.clear();
     if(subtitleFileLoader_)subtitleFileLoader_->cancel();pendingResume_.reset();directResume_=false;
     resetSubtitleSession();releaseCaptionBuffer(false);if(active_)active_->stop();lastTitle_=-1;lastNavigation_=false;lastAudio_=-2;decodedSamples_=0;pendingSeek_=-1;pendingAudio_=-2;pendingChapter_=-2;pendingTitle_=-2;requestedPlaying_=true;
-    source_=*input;if(disc)discInfo_=inspectDisc(source_);
+    auto *surface=static_cast<VideoSurface*>(surface_);
+    if(remote && !lanReceiverDialog_->hasPlayback()){
+        active_=nullptr;source_.clear();resumeIdentity_.clear();requestedPlaying_.reset();
+        surface->setVideoActive(false);welcome_->show();applyCapturePolicy();
+        status_->setText("PC와의 연결이 종료되었습니다.");return false;
+    }
+    lanRemotePlayback_=remote!=nullptr;lanRemoteSeekable_=remote && remote->seekable;
+    source_=*input;if(disc)discInfo_=inspectDisc(source_);else if(remote)discInfo_={};
     discTargetDurationMs_=disc?preparedDiscDurationMs:0;
-    resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);resumeSavedAt_=0;
+    resumeIdentity_=remote?QString{}:resumeIdentity(source_,disc?&discInfo_:nullptr);
+    if(!remote)pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);
+    resumeSavedAt_=0;
     translation_->setGlossary(configuredTranslationGlossary(disc?resumeIdentity_:QString{}));
-    active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
+    active_=disc?discEngine_.get():fileEngine_.get();
+    nowTitle_->setTextFormat(Qt::PlainText);
+    nowTitle_->setText(remote ? (remote->title.isEmpty()?"PC에서 받은 미디어":remote->title)
+                              : disc ? (discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label) : QFileInfo(source).fileName());
+    seek_->setEnabled(!remote || lanRemoteSeekable_);
     active_->setVideoOverrides(videoOutputPreferences());
     active_->setAudioOutputOptions(audioOutputPreferences());
     surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
-    const auto videoWindow=static_cast<VideoSurface*>(surface_)->videoWindowId();
-    const bool opened=disc && preparedDiscDurationMs>0?active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs):active_->open(source_,videoWindow);
+    const auto videoWindow=surface->videoWindowId();
+    if(remote){
+        surface->setVideoActive(true);
+        applyCapturePolicy();
+        if(captureGuard_->enabled() && !captureGuard_->applied()){
+            finishLanReceive("Windows 영상 캡처 제외를 확인할 수 없어 PC 재생을 시작하지 않았습니다.");
+            return false;
+        }
+    }
+    const bool opened=remote ? active_->openLanMedia(remote->source,videoWindow)
+        : disc && preparedDiscDurationMs>0 ? active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs) : active_->open(source_,videoWindow);
     if(opened){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());if(!disc && (preparedOpen || liveCaptioningActive())){bufferHolding_=true;bufferResume_=true;active_->setPaused(true);}}
     else{status_->setText(active_->lastError());welcome_->show();}
-    applyCapturePolicy();static_cast<VideoSurface*>(surface_)->setVideoActive(opened);updateDisplayStatus();updateMotionSettings();
+    applyCapturePolicy();surface->setVideoActive(opened);updateDisplayStatus();updateMotionSettings();
     updateLanPlaybackAvailability();
-    if(opened && !disc && !preparedOpen && QDir::isAbsolutePath(source_)){
+    if(opened && !remote && !disc && !preparedOpen && QDir::isAbsolutePath(source_)){
         const QFileInfo media(source_);const auto base=media.dir().filePath(media.completeBaseName());
         for(const auto &extension:QStringList{"srt","ass","ssa","vtt","smi","sami"})if(QFileInfo::exists(base+'.'+extension)){loadCaptionFile(base+'.'+extension);break;}
     }
@@ -212,7 +250,7 @@ void MainWindow::updateResumeButton(){
 }
 
 void MainWindow::savePlaybackProgress(bool force){
-    if(!active_ || resumeIdentity_.isEmpty() || pendingResume_ || pendingSeek_>=0 || pendingTitle_!=-2 || pendingChapter_!=-2 || pendingAudio_!=-2)return;
+    if(!active_ || lanRemotePlayback_ || resumeIdentity_.isEmpty() || pendingResume_ || pendingSeek_>=0 || pendingTitle_!=-2 || pendingChapter_!=-2 || pendingAudio_!=-2)return;
     const auto now=QDateTime::currentMSecsSinceEpoch();if(!force && now-resumeSavedAt_<5000)return;
     const auto &state=active_->state();const bool disc=active_==discEngine_.get();if(state.failed || !state.timelineReady || (disc && (state.navigationTitle || state.currentTitle<0)))return;
     resumeHistory_.save(resumeIdentity_,{source_,disc,disc?state.currentTitle:-1,state.positionMs,state.durationMs,state.discMenus,preparedApplied_ && preparedCaptions_?preparedCaptions_->projectFile:QString{}});resumeSavedAt_=now;updateResumeButton();
@@ -337,12 +375,12 @@ void MainWindow::togglePlayback(){
 
 void MainWindow::selectAudio(int id){if(!active_ || lanDiscSharing_ || (active_->state().currentAudio==id && pendingAudio_==-2))return;const bool prepared=preparedCaptions_.has_value();preparedCaptions_.reset();preparedApplied_=false;resetSubtitleSession(!prepared);pendingAudio_=id;pendingControlAt_=QDateTime::currentMSecsSinceEpoch();active_->setAudio(id);if(id<0)releaseCaptionBuffer(true);else holdForCaptionBuffer();}
 
-void MainWindow::selectChapter(int id){if(!active_ || lanDiscSharing_)return;const auto resume=wantsPlayback();cancelSubtitleWork();pendingSeek_=-1;pendingChapter_=id;pendingControlAt_=QDateTime::currentMSecsSinceEpoch();bufferBypass_=false;if(liveCaptioningActive() && captionTimelineAvailable()){bufferHolding_=true;bufferResume_=resume;active_->setPaused(true);}active_->setChapter(id);}
+void MainWindow::selectChapter(int id){if(!active_ || lanDiscSharing_ || (lanRemotePlayback_ && !lanRemoteSeekable_))return;const auto resume=wantsPlayback();cancelSubtitleWork();pendingSeek_=-1;pendingChapter_=id;pendingControlAt_=QDateTime::currentMSecsSinceEpoch();bufferBypass_=false;if(liveCaptioningActive() && captionTimelineAvailable()){bufferHolding_=true;bufferResume_=resume;active_->setPaused(true);}active_->setChapter(id);}
 
 void MainWindow::selectTitle(int id){if(!active_ || lanDiscSharing_)return;savePlaybackProgress(true);resetSubtitleSession();pendingTitle_=id;pendingControlAt_=QDateTime::currentMSecsSinceEpoch();if(id<=0)releaseCaptionBuffer(true);active_->setTitle(id);}
 
 void MainWindow::seekTo(qint64 position){
-    if(!active_ || lanDiscSharing_)return;const auto state=active_->state();const bool resume=wantsPlayback();
+    if(!active_ || lanDiscSharing_ || (lanRemotePlayback_ && !lanRemoteSeekable_))return;const auto state=active_->state();const bool resume=wantsPlayback();
     cancelSubtitleWork();pendingChapter_=-2;position=std::clamp<qint64>(position,0,std::max<qint64>(0,state.durationMs));pendingSeek_=position;seekRequestedAt_=QDateTime::currentMSecsSinceEpoch();bufferBypass_=false;
     if(liveCaptioningActive() && captionTimelineAvailable()){bufferHolding_=true;bufferResume_=resume;active_->setPaused(true);}active_->seek(position);scheduleSubtitles();
 }

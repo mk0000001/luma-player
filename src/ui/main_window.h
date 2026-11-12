@@ -15,7 +15,8 @@
 class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;class QVBoxLayout;
 namespace luma {
 class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;class CaptionPreparationDialog;
-class PerformanceOverlay;class LanPlaybackDialog;
+class PerformanceOverlay;class LanPlaybackDialog;class LanReceiverDialog;
+struct LanReceiverPlayback;
 struct PerformanceInput;
 class MainWindow:public QMainWindow {
     Q_OBJECT
@@ -40,6 +41,7 @@ private:
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
     QPushButton *pipButton_=nullptr,*volumeButton_=nullptr;
     LanPlaybackDialog *lanPlaybackDialog_=nullptr;
+    LanReceiverDialog *lanReceiverDialog_=nullptr;
     QList<QWidget *> controlsHiddenInPip_;
     QRect windowedGeometry_;
     bool windowedMaximized_=false;
@@ -88,6 +90,7 @@ private:
     QString source_,model_,discPath_;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
     bool lanDiscSharing_=false,lanDiscAwaitingPause_=false,lanDiscResume_=false,lanSourceChanging_=false;
+    bool lanRemotePlayback_=false,lanRemoteSeekable_=false;
     QDeadlineTimer lanDiscPauseDeadline_;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;
@@ -110,6 +113,10 @@ private:
     void buildUi();
     LanPlaybackDialog *lanPlaybackDialog();
     void showLanPlayback();
+    void showLanReceiver();
+    void startLanReceive(const LanReceiverPlayback &playback);
+    void finishLanReceive(const QString &message);
+    void stopLanReceiver(const QString &message={});
     bool lanSourceAvailable() const;
     void updateLanPlaybackAvailability();
     void startLanShare();
@@ -127,7 +134,7 @@ private:
     void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
-    bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);
+    bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0,const LanReceiverPlayback *remote=nullptr);
     qint64 discTargetDurationMs_=0;
     void bindEngine(PlaybackEngine *engine);
     void recoverVideoOutput(PlaybackEngine *engine,const QString &message);

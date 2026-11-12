@@ -6,6 +6,10 @@ AppId={{C6A16658-7E17-4F16-B49F-AC61297DD921}
 AppName=LumaPlayer
 AppVersion={#InstallerVersion}
 AppVerName=LumaPlayer {#PlayerVersion}
+VersionInfoProductName=LumaPlayer
+VersionInfoProductTextVersion={#PlayerVersion}
+VersionInfoTextVersion={#PlayerVersion}
+VersionInfoDescription=LumaPlayer Setup
 AppPublisher=LumaPlayer contributors
 AppPublisherURL=https://github.com/mk0000001/luma-player
 DefaultDirName={localappdata}\Programs\LumaPlayer
@@ -22,11 +26,15 @@ WizardStyle=modern
 UninstallDisplayIcon={app}\LumaPlayer.exe
 CloseApplications=no
 RestartApplications=no
+SetupMutex=LumaPlayer.Setup.C6A16658
 DisableProgramGroupPage=yes
 SetupLogging=yes
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
+[CustomMessages]
+korean.UpdateTargetChanged=설치 대상이 업데이트 확인 이후 변경됐거나 확인한 설치본과 다릅니다. 대상 설치본에서 업데이트를 다시 확인해 주세요.
+english.UpdateTargetChanged=The selected copy changed or differs from the copy checked for this update. Check for updates from the intended installation.
 [Types]
 Name: "full"; Description: "권장: 고정밀 인식 + 한국어 번역 / Recommended: accurate ASR + Korean translation"
 Name: "compact"; Description: "기본 Turbo만 (오프라인) / Bundled Turbo only (offline)"
@@ -43,6 +51,17 @@ Name: "{group}\LumaPlayer"; Filename: "{app}\LumaPlayer.exe"; WorkingDir: "{app}
 [Run]
 Filename: "{app}\LumaPlayer.exe"; Description: "LumaPlayer 실행 / Launch LumaPlayer"; Flags: nowait postinstall skipifsilent unchecked
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var ExpectedHash, PlayerPath: String;
+begin
+  Result := '';
+  ExpectedHash := ExpandConstant('{param:LumaCurrentHash|}');
+  PlayerPath := ExpandConstant('{app}\LumaPlayer.exe');
+  if (ExpectedHash <> '') and FileExists(PlayerPath) then
+    if CompareText(GetSHA256OfFile(PlayerPath), ExpectedHash) <> 0 then
+      Result := ExpandConstant('{cm:UpdateTargetChanged}');
+end;
+
 function NeedsModel(RelativePath, ExpectedHash: String): Boolean;
 var Path: String;
 begin
