@@ -14,8 +14,10 @@
 #include <QPlainTextEdit>
 #include <QSaveFile>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <array>
 
 namespace luma {
 
@@ -48,8 +50,14 @@ QJsonObject MainWindow::developerSnapshot() const {
             {"engine", input.disc ? "libVLC" : "libmpv"}, {"playing", state->playing},
             {"buffering", state->buffering || state->fileCacheHolding}, {"failed", state->failed},
             {"videoCodec", state->videoCodec}, {"audioCodec", state->audioCodec},
-            {"decoder", state->hardwareDecoder}, {"droppedFrames", state->droppedVideoFrames},
-            {"lostAudioBuffers", state->lostAudioBuffers}, {"sourceFps", state->sourceFps}
+            {"decoder", state->hardwareDecoder}, {"videoDecoder", state->videoDecoder},
+            {"dolbyVisionProfile", state->dolbyVisionProfile ? QJsonValue(*state->dolbyVisionProfile) : QJsonValue()},
+            {"droppedFrames", state->droppedVideoFrames},
+            {"lostAudioBuffers", state->lostAudioBuffers}, {"sourceFps", state->sourceFps},
+            {"inputTransfer", state->transferFunction}, {"inputPrimaries", state->colorPrimaries},
+            {"outputTransfer", state->outputTransferFunction}, {"outputPrimaries", state->outputPrimaries},
+            {"requestedDecoder", state->videoDecoderRequest}, {"requestedTransfer", state->videoColorRequest},
+            {"requestedDolbyVision", state->dolbyVisionRequest}, {"overrideStatus", state->videoOverrideStatus}
         });
     }
     return result;
@@ -154,6 +162,102 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         if (developerApproved_)
             log_->clear();
     });
+    buildDeveloperVideoTools(layout);
+}
+
+void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
+    using Hardware=VideoOverrides::Hardware;
+    using Codec=VideoOverrides::Codec;
+    using Color=VideoOverrides::Color;
+    using Dolby=VideoOverrides::DolbyVision;
+    auto *heading=new QLabel("영상 디코딩과 색상");
+    heading->setObjectName("section");
+    layout->addWidget(heading);
+    auto *form=new QFormLayout;
+    form->setRowWrapPolicy(QFormLayout::WrapLongRows);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout->addLayout(form);
+    const auto choice=[form](const QString &label,const char *name){
+        auto *box=new ChoiceBox;
+        box->setObjectName(name);
+        form->addRow(label,box);
+        return box;
+    };
+    auto *hardware=choice("디코딩 장치","developerHardware");
+    hardware->addItem("자동",int(Hardware::Auto));
+    hardware->addItem("CPU 소프트웨어",int(Hardware::Software));
+#ifdef Q_OS_WIN
+    hardware->addItem("D3D11VA",int(Hardware::D3D11));
+    hardware->addItem("DXVA2",int(Hardware::DXVA2));
+#elif defined(Q_OS_LINUX)
+    hardware->addItem("VAAPI",int(Hardware::VAAPI));
+#endif
+    auto *codec=choice("파일 디코더 우선순위","developerCodec");
+    codec->addItem("자동",int(Codec::Auto));
+    codec->addItem("H.264 · FFmpeg",int(Codec::H264));
+    codec->addItem("HEVC · FFmpeg",int(Codec::HEVC));
+    codec->addItem("VP9 · FFmpeg",int(Codec::VP9));
+    codec->addItem("AV1 · FFmpeg",int(Codec::AV1));
+    codec->addItem("AV1 · dav1d",int(Codec::Dav1d));
+    auto *color=choice("파일 출력 형식","developerColor");
+    color->addItem("자동",int(Color::Auto));
+    color->addItem("SDR · BT.709",int(Color::SDR));
+    color->addItem("HDR10 · PQ / BT.2020",int(Color::HDR10));
+    color->addItem("HDR · HLG / BT.2020",int(Color::HLG));
+    auto *dolby=choice("파일 Dolby Vision","developerDolby");
+    dolby->addItem("자동",int(Dolby::Auto));
+    dolby->addItem("메타데이터 적용",int(Dolby::Apply));
+    dolby->addItem("메타데이터 무시",int(Dolby::Ignore));
+    dolby->addItem("기본 레이어 + 메타데이터",int(Dolby::BaseLayer));
+    dolby->setToolTip("소스의 Dolby Vision 메타데이터를 영상 변환에 사용합니다. HDR10 출력을 함께 요청할 수 있습니다.");
+
+    const std::array boxes{hardware,codec,color,dolby};
+    QSettings settings;
+    for(auto *box:boxes)
+        box->setCurrentIndex(std::max(0,box->findData(settings.value("developer/"+box->objectName(),0).toInt())));
+    const auto read=[hardware,codec,color,dolby]{
+        return VideoOverrides{Hardware(hardware->currentData().toInt()),Codec(codec->currentData().toInt()),
+                              Color(color->currentData().toInt()),Dolby(dolby->currentData().toInt())};
+    };
+    developerVideoOptions_=read();
+    auto *note=new QLabel("다음에 미디어를 열 때 적용합니다. Blu-ray에는 디코딩 장치 설정을 사용합니다.");
+    note->setWordWrap(true);
+    layout->addWidget(note);
+    auto *reset=new QPushButton("영상 설정 자동으로 되돌리기");
+    reset->setObjectName("resetDeveloperVideo");
+    layout->addWidget(reset);
+    developerVideoStatus_=new QLabel("미디어를 열면 디코더와 입·출력 색상을 표시합니다.");
+    developerVideoStatus_->setObjectName("developerVideoStatus");
+    developerVideoStatus_->setWordWrap(true);
+    developerVideoStatus_->setTextFormat(Qt::PlainText);
+    layout->addWidget(developerVideoStatus_);
+    const auto save=[this,boxes,read]{
+        if(!developerApproved_)return;
+        developerVideoOptions_=read();
+        QSettings preferences;
+        for(auto *box:boxes)preferences.setValue("developer/"+box->objectName(),box->currentData());
+    };
+    for(auto *box:boxes)connect(box,&QComboBox::currentIndexChanged,this,save);
+    connect(reset,&QPushButton::clicked,this,[boxes,save]{
+        for(auto *box:boxes){
+            const QSignalBlocker block(box);
+            box->setCurrentIndex(0);
+        }
+        save();
+    });
+}
+
+void MainWindow::updateDeveloperVideoStatus(const PlaybackState &state) {
+    if(!developerApproved_)return;
+    const auto show=[](const QString &value){return value.isEmpty()?QString("—"):value;};
+    const auto decoder=state.videoDecoder.isEmpty()?state.videoCodec:state.videoDecoder;
+    auto text=QString("디코더 요청 %1\n실제 %2 · %3\n입력 %4 / %5\n출력 요청 %6 · 렌더러 %7 / %8\nDolby Vision 요청 %9")
+        .arg(show(state.videoDecoderRequest),show(decoder),show(state.hardwareDecoder),
+             show(state.transferFunction),show(state.colorPrimaries),show(state.videoColorRequest),
+             show(state.outputTransferFunction),show(state.outputPrimaries),show(state.dolbyVisionRequest));
+    if(state.dolbyVisionProfile)text+=QString(" · 원본 프로필 %1").arg(*state.dolbyVisionProfile);
+    if(!state.videoOverrideStatus.isEmpty())text+="\n"+state.videoOverrideStatus;
+    if(developerVideoStatus_->text()!=text)developerVideoStatus_->setText(text);
 }
 
 }

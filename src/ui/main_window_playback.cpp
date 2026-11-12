@@ -41,6 +41,7 @@ void syncCombo(QComboBox *box,const QVector<MediaItem> &items){
 }
 
 void MainWindow::bindEngine(PlaybackEngine *engine){
+    engine->setVideoOverrides(developerApproved_?developerVideoOptions_:VideoOverrides{});
     engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}});
@@ -135,23 +136,27 @@ void MainWindow::discoverDisc(){
 void MainWindow::openSource(const QString &source){openSourceImpl(source,false);}
 
 void MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs){
+    const bool disc=isDiscSource(source);
+    const auto input=normalizedPlaybackSource(source,disc);
+    if(!input){status_->setText("지원하지 않는 미디어 주소입니다.");return;}
     savePlaybackProgress(true);
     preparedCaptions_.reset();preparedApplied_=false;
     ++sourceGeneration_;videoRecoveryCount_=0;videoRecoveryExhausted_=false;recoveryPlayback_.reset();recoveryAudio_=-1;recoverySubtitle_=-1;recoveryExternalCues_.clear();
     if(subtitleFileLoader_)subtitleFileLoader_->cancel();pendingResume_.reset();directResume_=false;
     resetSubtitleSession();releaseCaptionBuffer(false);if(active_)active_->stop();lastTitle_=-1;lastNavigation_=false;lastAudio_=-2;decodedSamples_=0;pendingSeek_=-1;pendingAudio_=-2;pendingChapter_=-2;pendingTitle_=-2;requestedPlaying_=true;
-    const bool disc=isDiscSource(source);source_=disc?localDiscPath(source):source;if(disc)discInfo_=inspectDisc(source_);
+    source_=*input;if(disc)discInfo_=inspectDisc(source_);
     discTargetDurationMs_=disc?preparedDiscDurationMs:0;
     resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);resumeSavedAt_=0;
     translation_->setGlossary(configuredTranslationGlossary(disc?resumeIdentity_:QString{}));
     active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
+    active_->setVideoOverrides(developerApproved_?developerVideoOptions_:VideoOverrides{});
     surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
     const auto videoWindow=static_cast<VideoSurface*>(surface_)->videoWindowId();
     const bool opened=disc && preparedDiscDurationMs>0?active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs):active_->open(source_,videoWindow);
     if(opened){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());if(!disc && (preparedOpen || liveCaptioningActive())){bufferHolding_=true;bufferResume_=true;active_->setPaused(true);}}
     else{status_->setText(active_->lastError());welcome_->show();}
     applyCapturePolicy();static_cast<VideoSurface*>(surface_)->setVideoActive(opened);updateDisplayStatus();updateMotionSettings();
-    if(opened && !disc && !preparedOpen){
+    if(opened && !disc && !preparedOpen && QDir::isAbsolutePath(source_)){
         const QFileInfo media(source_);const auto base=media.dir().filePath(media.completeBaseName());
         for(const auto &extension:QStringList{"srt","ass","ssa","vtt","smi","sami"})if(QFileInfo::exists(base+'.'+extension)){loadCaptionFile(base+'.'+extension);break;}
     }
@@ -218,6 +223,7 @@ void MainWindow::resumeLatest(){
 
 void MainWindow::refresh(){
     if(!active_)return;const auto state=active_->state();
+    updateDeveloperVideoStatus(state);
     if(videoRecoveryExhausted_)active_->setPaused(true);
     if(recoveryPlayback_ && pendingResume_){
         const bool targetReady=state.timelineReady && (active_!=discEngine_.get() || (!state.navigationTitle && state.currentTitle==pendingResume_->title));

@@ -81,9 +81,13 @@ AI 자막, 미리 만든 자막 프로젝트, 불러온 텍스트 자막에 적�
 
 **설정 → 개발자 모드 → 성능 오버레이**에서 텍스트·그래프·혼합과 왼쪽 또는 오른쪽 위를 선택하세요. 오버레이는 창 모드, 전체화면, 작은 화면에서 영상 위에 표시됩니다. 1초 간격으로 측정하고 최근 90초의 추이를 보여 줍니다.
 
-CPU와 RAM은 시스템 전체 기준이고, 앱 RAM은 플레이어 프로세스의 상주 메모리입니다. Windows GPU·NPU는 드라이버가 보고한 가장 바쁜 엔진의 부하를 사용하며 수치가 없으면 `—`로 표시합니다. Blu-ray I/O는 libVLC 재생 경로의 입력 또는 디먹싱 처리량입니다. 광학 드라이브의 물리 읽기 속도는 캐시와 읽기 방식에 따라 다릅니다. Blu-ray FPS는 연속 재생 중 약 3초간 표시한 프레임을 기준으로 하고, 일반 파일 FPS는 필터 처리량 추정치를 표시합니다.
+CPU·GPU·NPU·RAM은 **시스템 전체 / 플레이어** 순으로 비교합니다. 그래프에서 실선은 전체, 점선은 플레이어입니다. Windows의 플레이어 집계에는 자막 작업 등 하위 프로세스가 포함됩니다. RAM은 프로세스별 상주 메모리의 합으로, 공유 메모리가 중복 집계될 수 있습니다. GPU·NPU 수치는 각 범위에서 가장 바쁜 엔진 기준이며 GPU의 영상 디코딩 부하도 별도로 표시합니다. Linux에서는 시스템과 플레이어 본체의 CPU·RAM을 비교합니다. 수집할 수 없는 수치는 `—`로 표시합니다. Blu-ray I/O는 libVLC의 입력 또는 디먹싱 처리량이고, Blu-ray FPS는 약 3초 동안 실제로 표시한 프레임을 바탕으로 계산합니다. 일반 파일 FPS는 필터 출력 추정치입니다.
 
 **진단 요약 복사**는 재생 상태와 최근 수치의 JSON을 복사합니다. **성능 기록 CSV 저장**은 최근 샘플을 저장하고, **성능 기록 초기화**와 **재생 로그 지우기**는 각 화면의 기록을 비웁니다. JSON과 CSV에는 파일 경로, 자막 본문, 재생 로그가 들어가지 않습니다.
+
+**영상 디코딩과 색상** 설정은 다음에 미디어를 열 때 적용됩니다. 디코딩 장치와 파일 디코더 우선순위를 지정하거나 SDR, HDR10(PQ), HLG 출력을 요청할 수 있습니다. 실제 디코더는 입력 코덱과 장치 지원에 따라 결정됩니다. Dolby Vision은 원본의 메타데이터 적용·무시와 기본 레이어 사용을 선택할 수 있습니다. Blu-ray 메뉴 재생에는 디코딩 장치 설정이 적용됩니다. 설정 아래에서 요청값, 실제 디코더, 입력과 렌더러의 색상 형식, 엔진이 거부한 항목을 확인할 수 있습니다. 연결된 디스플레이의 HDR 활성 상태는 설정의 디스플레이 정보에 별도로 표시됩니다. [mpv 옵션 문서](https://mpv.io/manual/master/)
+
+Windows 시험에서 츠키 무도관 Blu-ray의 D3D11VA 재생, 합성 AV1 파일의 `libdav1d` 선택, 합성 HEVC 파일의 PQ 입력과 렌더러 PQ 출력 타깃을 확인했습니다. 시험 화면은 SDR이었으며 Dolby Vision 디스플레이 출력은 미검증입니다. 미디어 입력 검증을 드래그와 재생 엔진에 적용했고, 네트워크 주소를 파일 엔진의 로그에서 가립니다.
 
 ### Windows 캡처 제외와 확인 범위
 
@@ -180,9 +184,13 @@ Disc history distinguishes disc metadata and main titles rather than relying onl
 
 Go to **Settings → Developer mode → Performance overlay** and choose text, graphs, or both and the upper left or right corner. The overlay sits over the video in windowed, fullscreen, and picture-in-picture modes. It samples once per second and shows the last 90 seconds.
 
-CPU and RAM cover the system, and app RAM is the player process's resident memory. Windows GPU and NPU values use the busiest engine reported by the driver. A dash indicates unavailable data. Blu-ray I/O measures input or demux throughput in libVLC's playback path. Physical drive throughput depends on caching and reads. Blu-ray FPS uses frames presented over about three seconds of continuous playback. File FPS uses the estimated filter output rate.
+CPU, GPU, NPU, and RAM show **system / player**. Solid graph lines show the system and dashed lines show the player. The Windows player figures include child processes such as caption workers. The resident-memory sum may count shared pages more than once. GPU and NPU figures use the busiest engine in each scope, and video decode load is shown separately. On Linux, CPU and RAM compare the system with the main player process. A dash marks an unavailable measurement. Blu-ray I/O measures libVLC input or demux throughput. Blu-ray FPS uses frames presented over about three seconds of continuous playback. File FPS uses the estimated filter output rate.
 
 **Copy diagnostics** copies a JSON snapshot of playback and current metrics. **Save performance CSV** saves recent samples. **Reset performance history** and **Clear playback log** clear their respective records. JSON and CSV omit file paths, subtitle text, and playback logs.
+
+**Video decoding and color** preferences take effect the next time you open media. Choose a decoding device or file decoder preference, or request SDR, HDR10 (PQ), or HLG. The active decoder depends on the input codec and hardware support. Dolby Vision controls apply or ignore source metadata, or use the base layer with metadata. Blu-ray menu playback uses the decoding device setting. The status panel reports requests, the active decoder, input and renderer color, and engine rejections. The display information in Settings separately reports whether HDR is active on the connected display. [mpv option reference](https://mpv.io/manual/master/)
+
+Windows tests observed D3D11VA playback on the Tuki Budokan Blu-ray, `libdav1d` selection on a generated AV1 file, and PQ input and a PQ renderer target on a generated HEVC file. The test display was in SDR. Dolby Vision display output remains unverified. Drag and drop and engine input now validate media sources, and file engine logs mask network addresses.
 
 ### Windows capture exclusion and verification
 

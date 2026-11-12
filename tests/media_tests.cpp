@@ -40,6 +40,19 @@ private slots:
         QVERIFY(isDiscSource("E:")); QVERIFY(isDiscSource("bluray:///E:/"));
         QVERIFY(!isDiscSource("C:/Videos/日本語 film.mkv")); QVERIFY(!isDiscSource("https://example.org/video.mp4"));
     }
+    void mediaSourceValidation(){
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto local=dir.filePath("sample #1.mkv");
+        const auto encoded=QUrl::fromLocalFile(local).toString(QUrl::FullyEncoded);
+        QCOMPARE(normalizedPlaybackSource(encoded,false).value_or(QString{}),local);
+        const QString stream="https://example.invalid/media.mp4";
+        QCOMPARE(normalizedPlaybackSource(stream,false).value_or(QString{}),stream);
+        QVERIFY(!normalizedPlaybackSource(stream,true));
+        QVERIFY(!normalizedPlaybackSource("custom://example.invalid/media.mp4",false));
+        QVERIFY(!normalizedPlaybackSource("https://",false));
+        QVERIFY(!normalizedPlaybackSource("",false));
+    }
     void discUrisUseTheirSchemeRatherThanSlashCount() {
         QVERIFY(isDiscSource("bluray:/tmp/owned-disc"));
         QVERIFY(isDiscSource("BLURAY:/tmp/owned-disc"));

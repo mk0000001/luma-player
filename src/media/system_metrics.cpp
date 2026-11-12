@@ -14,12 +14,17 @@
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <psapi.h>
+#include <tlhelp32.h>
 #include <wrl/client.h>
 #if __has_include(<dxcore.h>)
 #include <initguid.h>
 #include <dxcore.h>
 #define LUMA_HAS_DXCORE 1
 #endif
+#endif
+#ifdef Q_OS_LINUX
+#include <ctime>
+#include <unistd.h>
 #endif
 
 namespace luma {
@@ -79,21 +84,50 @@ void updatePeak(std::optional<double> &peak, double value) {
     peak = std::max(peak.value_or(0.0), std::clamp(value, 0.0, 100.0));
 }
 
+QSet<DWORD> playerProcesses(bool &includesChildren) {
+    QSet<DWORD> result{GetCurrentProcessId()};
+    const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+        return result;
+    QMultiHash<DWORD, DWORD> children;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+        includesChildren = true;
+        do {
+            children.insert(entry.th32ParentProcessID, entry.th32ProcessID);
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    QList<DWORD> pending{GetCurrentProcessId()};
+    while (!pending.isEmpty()) {
+        const auto parent = pending.takeLast();
+        for (const auto child : children.values(parent)) {
+            if (result.contains(child))
+                continue;
+            result.insert(child);
+            pending.append(child);
+        }
+    }
+    return result;
+}
+
 void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
-                        const QSet<quint64> &neural, SystemMetrics &result) {
+                        const QSet<quint64> &neural, const QSet<DWORD> &player, SystemMetrics &result) {
     DWORD bytes = 0, count = 0;
     if (!counter || PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &bytes, &count, nullptr) != PDH_MORE_DATA ||
         bytes > 16 * 1024 * 1024)
         return;
     using Item = PDH_FMT_COUNTERVALUE_ITEM_W;
     std::vector<Item> buffer((bytes + sizeof(Item) - 1) / sizeof(Item));
-    if (PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &bytes, &count, buffer.data()) != ERROR_SUCCESS)
+    if (PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &bytes, &count, buffer.data()) != ERROR_SUCCESS ||
+        count > buffer.size())
         return;
 
     static const QRegularExpression engineName(
-        R"(^pid_\d+_(luid_0x([0-9a-f]+)_0x([0-9a-f]+)_phys_\d+_eng_\d+)_engtype_([^#]+))",
+        R"(^pid_(\d+)_(luid_0x([0-9a-f]+)_0x([0-9a-f]+)_phys_\d+_eng_\d+)_engtype_([^#]+))",
         QRegularExpression::CaseInsensitiveOption);
-    struct Engine { quint64 adapter; bool decode; double usage; };
+    struct Engine { quint64 adapter; bool decode; double usage, playerUsage; };
     QHash<QString, Engine> engines;
     for (DWORD i = 0; i < count; ++i) {
         const auto &item = buffer[i];
@@ -105,24 +139,30 @@ void sampleAccelerators(PDH_HCOUNTER counter, const QSet<quint64> &graphics,
         const auto match = engineName.match(QString::fromWCharArray(item.szName));
         if (!match.hasMatch())
             continue;
-        const auto adapter = (quint64(match.captured(2).toUInt(nullptr, 16)) << 32) |
-                             match.captured(3).toUInt(nullptr, 16);
+        const auto adapter = (quint64(match.captured(3).toUInt(nullptr, 16)) << 32) |
+                             match.captured(4).toUInt(nullptr, 16);
         if (!graphics.contains(adapter) && !neural.contains(adapter))
             continue;
-        const auto id = match.captured(1);
+        const auto id = match.captured(2);
         auto it = engines.find(id);
         if (it == engines.end())
-            it = engines.insert(id, {adapter, match.captured(4).contains("VideoDecode", Qt::CaseInsensitive), 0});
+            it = engines.insert(id, {adapter, match.captured(5).contains("VideoDecode", Qt::CaseInsensitive), 0, 0});
         it->usage += value;
+        if (player.contains(match.captured(1).toULong()))
+            it->playerUsage += value;
     }
     // Sum processes on each physical engine, then take the busiest engine.
     for (const auto &engine : engines) {
-        if (neural.contains(engine.adapter))
+        if (neural.contains(engine.adapter)) {
             updatePeak(result.npuPercent, engine.usage);
-        else {
+            updatePeak(result.playerNpuPercent, engine.playerUsage);
+        } else {
             updatePeak(result.gpuPercent, engine.usage);
-            if (engine.decode)
+            updatePeak(result.playerGpuPercent, engine.playerUsage);
+            if (engine.decode) {
                 updatePeak(result.gpuDecodePercent, engine.usage);
+                updatePeak(result.playerGpuDecodePercent, engine.playerUsage);
+            }
         }
     }
 }
@@ -152,6 +192,8 @@ std::optional<quint64> readKiB(const QByteArray &contents, const QByteArray &nam
 struct SystemMetricsReader::State {
     quint64 total = 0, idle = 0;
 #ifdef Q_OS_WIN
+    struct ProcessTime { quint64 created, used; };
+    QHash<DWORD, ProcessTime> previous;
     PDH_HQUERY query = nullptr;
     PDH_HCOUNTER engine = nullptr;
     const QSet<quint64> graphics = graphicsAdapters(), neural = neuralAdapters();
@@ -164,6 +206,8 @@ struct SystemMetricsReader::State {
         if (query)
             PdhCloseQuery(query);
     }
+#elif defined(Q_OS_LINUX)
+    quint64 playerNanoseconds = 0;
 #endif
 
     void cpu(SystemMetrics &result, quint64 nextTotal, quint64 nextIdle) {
@@ -180,6 +224,7 @@ SystemMetricsReader::~SystemMetricsReader() = default;
 SystemMetrics SystemMetricsReader::sample() {
     SystemMetrics result;
 #ifdef Q_OS_WIN
+    const auto previousTotal = state_->total;
     FILETIME idle{}, kernel{}, user{};
     if (GetSystemTimes(&idle, &kernel, &user))
         state_->cpu(result, ticks(kernel) + ticks(user), ticks(idle));
@@ -189,12 +234,32 @@ SystemMetrics SystemMetricsReader::sample() {
         result.memoryTotal = memory.ullTotalPhys;
         result.memoryUsed = memory.ullTotalPhys - memory.ullAvailPhys;
     }
-    PROCESS_MEMORY_COUNTERS process{};
-    if (K32GetProcessMemoryInfo(GetCurrentProcess(), &process, sizeof(process)))
-        result.playerResident = process.WorkingSetSize;
+    const auto players = playerProcesses(result.includesChildProcesses);
+    QHash<DWORD, State::ProcessTime> current;
+    quint64 used = 0;
+    for (const auto pid : players) {
+        const auto handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!handle)
+            continue;
+        FILETIME created{}, exited{}, processKernel{}, processUser{};
+        if (GetProcessTimes(handle, &created, &exited, &processKernel, &processUser)) {
+            const State::ProcessTime value{ticks(created), ticks(processKernel) + ticks(processUser)};
+            current.insert(pid, value);
+            const auto old = state_->previous.constFind(pid);
+            if (old != state_->previous.cend() && old->created == value.created && value.used >= old->used)
+                used += value.used - old->used;
+        }
+        PROCESS_MEMORY_COUNTERS process{};
+        if (K32GetProcessMemoryInfo(handle, &process, sizeof(process)))
+            result.playerResident = result.playerResident.value_or(0) + process.WorkingSetSize;
+        CloseHandle(handle);
+    }
+    if (previousTotal && state_->total > previousTotal && !state_->previous.isEmpty() && !current.isEmpty())
+        result.playerCpuPercent = std::min(100.0, 100.0 * double(used) / double(state_->total - previousTotal));
+    state_->previous = std::move(current);
     result.npuDetected = !state_->neural.isEmpty();
     if (state_->engine && PdhCollectQueryData(state_->query) == ERROR_SUCCESS)
-        sampleAccelerators(state_->engine, state_->graphics, state_->neural, result);
+        sampleAccelerators(state_->engine, state_->graphics, state_->neural, players, result);
 #elif defined(Q_OS_LINUX)
     QFile cpu("/proc/stat");
     if (cpu.open(QIODevice::ReadOnly)) {
@@ -203,6 +268,15 @@ SystemMetrics SystemMetricsReader::sample() {
             quint64 total = 0;
             for (int i = 1; i <= 8; ++i)
                 total += fields[i].toULongLong();
+            timespec playerTime{};
+            const auto ticksPerSecond = sysconf(_SC_CLK_TCK);
+            if (ticksPerSecond > 0 && clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &playerTime) == 0) {
+                const auto now = quint64(playerTime.tv_sec) * 1000000000 + quint64(playerTime.tv_nsec);
+                if (state_->total && total > state_->total && state_->playerNanoseconds && now >= state_->playerNanoseconds)
+                    result.playerCpuPercent = std::min(100.0, (now - state_->playerNanoseconds) / 10000000.0 *
+                                                       ticksPerSecond / double(total - state_->total));
+                state_->playerNanoseconds = now;
+            }
             state_->cpu(result, total, fields[4].toULongLong() + fields[5].toULongLong());
         }
     }

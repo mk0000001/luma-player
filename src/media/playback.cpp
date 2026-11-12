@@ -30,10 +30,64 @@ namespace luma {
 int discActionCode(DiscAction action){
     switch(action){case DiscAction::Activate:return libvlc_navigate_activate;case DiscAction::Up:return libvlc_navigate_up;case DiscAction::Down:return libvlc_navigate_down;case DiscAction::Left:return libvlc_navigate_left;case DiscAction::Right:return libvlc_navigate_right;case DiscAction::Popup:return libvlc_navigate_popup;}return -1;
 }
+namespace {
+bool validSourceText(const QString &source) {
+    return !source.trimmed().isEmpty() && source.size() <= 32768 &&
+        std::none_of(source.begin(), source.end(), [](QChar c) { return c.category() == QChar::Other_Control; });
+}
+bool driveRoot(const QString &source) {
+    static const QRegularExpression root("^[A-Za-z]:[/\\\\]?$");
+    return root.match(source).hasMatch();
+}
+}
+
+std::optional<QString> normalizedPlaybackSource(const QString &source, bool disc) {
+    if (!validSourceText(source))
+        return std::nullopt;
+
+    const auto nativePath = QDir::fromNativeSeparators(source);
+    const QUrl url(source, QUrl::StrictMode);
+    const auto scheme = url.scheme();
+    const bool absolute = QDir::isAbsolutePath(nativePath);
+    QString path = nativePath;
+    if (!absolute && scheme.isEmpty() && source.contains("://"))
+        return std::nullopt;
+    if (!absolute && !driveRoot(nativePath) && !scheme.isEmpty()) {
+        if (scheme == "file" || (disc && scheme == "bluray")) {
+            if (!url.isValid() || url.hasQuery() || url.hasFragment() || !url.userInfo().isEmpty() || url.port() >= 0)
+                return std::nullopt;
+            auto local = url;
+            local.setScheme("file");
+            path = local.toLocalFile();
+            if (!QDir::isAbsolutePath(path) && !driveRoot(path))
+                return std::nullopt;
+        } else {
+            static const QSet<QString> networkSchemes{"http", "https", "rtsp", "rtsps", "rtmp", "rtmps", "srt", "udp"};
+            if (!disc && url.isValid() && networkSchemes.contains(scheme) && !url.host().isEmpty())
+                return url.toString(QUrl::FullyEncoded);
+#ifndef Q_OS_WIN
+            if (!source.contains("://") && QFileInfo::exists(nativePath))
+                return QFileInfo(nativePath).absoluteFilePath();
+#endif
+            return std::nullopt;
+        }
+    }
+    path = QDir::fromNativeSeparators(path);
+    if (!validSourceText(path))
+        return std::nullopt;
+#ifdef Q_OS_WIN
+    if (path.startsWith("//./") || path.startsWith("//?/"))
+        return std::nullopt;
+    if (driveRoot(path) && path.size() == 2)
+        path += '/';
+#endif
+    return QFileInfo(path).absoluteFilePath();
+}
+
 bool isDiscSource(const QString &source) {
-    return QUrl(source).scheme().compare("bluray",Qt::CaseInsensitive)==0 ||
-        QRegularExpression("^[A-Za-z]:[/\\\\]?$").match(source).hasMatch() ||
-        QFileInfo::exists(QDir(source).filePath("BDMV/index.bdmv"));
+    const auto path = normalizedPlaybackSource(source, true);
+    return path && (QUrl(source).scheme() == "bluray" || driveRoot(source) || driveRoot(*path) ||
+                    QFileInfo::exists(QDir(*path).filePath("BDMV/index.bdmv")));
 }
 bool discTimelineReady(qint64 liveDurationMs,qint64 titleDurationMs,bool navigationTitle){
     if(navigationTitle || liveDurationMs<=0 || titleDurationMs<=0)return false;
@@ -62,6 +116,45 @@ QString videoOutputLossReason(const QString &message){
     const auto name=code=="0x887a0005"?QStringLiteral("DXGI_ERROR_DEVICE_REMOVED"):QStringLiteral("DXGI_ERROR_DEVICE_RESET");
     return QStringLiteral("영상 출력 장치를 사용할 수 없어 영상 출력을 다시 준비해야 합니다. (%1, %2)").arg(name,code);
 }
+
+QString redactNetworkSources(QString message) {
+    static const QRegularExpression urls(R"(\b(?:https?|rtsps?|rtmps?|srt|udp)://[^\s<>]+)",
+                                         QRegularExpression::CaseInsensitiveOption);
+    return message.replace(urls, QStringLiteral("[media URL]"));
+}
+
+const char *hardwareDecoder(VideoOverrides::Hardware hardware, bool copyBack) {
+    switch (hardware) {
+    case VideoOverrides::Hardware::Software: return "no";
+#ifdef Q_OS_WIN
+    case VideoOverrides::Hardware::D3D11: return copyBack ? "d3d11va-copy" : "d3d11va";
+    case VideoOverrides::Hardware::DXVA2: return copyBack ? "dxva2-copy" : "dxva2";
+#elif defined(Q_OS_LINUX)
+    case VideoOverrides::Hardware::VAAPI: return copyBack ? "vaapi-copy" : "vaapi";
+#endif
+    default: return copyBack ? "auto-copy" : "auto-safe";
+    }
+}
+
+const char *preferredDecoder(VideoOverrides::Codec codec) {
+    switch (codec) {
+    case VideoOverrides::Codec::H264: return "h264";
+    case VideoOverrides::Codec::HEVC: return "hevc";
+    case VideoOverrides::Codec::VP9: return "vp9";
+    case VideoOverrides::Codec::AV1: return "av1";
+    case VideoOverrides::Codec::Dav1d: return "libdav1d";
+    default: return "";
+    }
+}
+
+const char *dolbyFilter(VideoOverrides::DolbyVision mode) {
+    switch (mode) {
+    case VideoOverrides::DolbyVision::Apply: return "@luma_dolby:format=dolbyvision=yes";
+    case VideoOverrides::DolbyVision::Ignore: return "@luma_dolby:format=dolbyvision=no";
+    case VideoOverrides::DolbyVision::BaseLayer: return "@luma_dolby:format=dolbyvision=yes:enhancement-layer=no";
+    default: return "";
+    }
+}
 }
 struct PlaybackEngine::Impl {
     PlaybackEngine *owner;
@@ -75,8 +168,10 @@ struct PlaybackEngine::Impl {
     bool videoOutputActive=false,videoOutputLossSent=false;
     bool managedSubtitle=false;
     MotionOptions motion;
+    VideoOverrides nextVideo, activeVideo;
     QString motionMetadata;
     bool motionApplied=false;
+    bool dolbyApplied=false;
     bool fileLoaded=false;
     bool seekReady=false;
     std::optional<qint64> deferredSeek;
@@ -259,7 +354,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
 #undef LOAD
         if(!ok)return;
         d->mpv=d->mpv_create(); if(!d->mpv){d->error="libmpv allocation failed";return;}
-        for(const auto &[key,value]:QList<QPair<QByteArray,QByteArray>>{{"config","no"},{"load-scripts","no"},{"load-unsafe-playlists","no"},{"terminal","no"},{"input-default-bindings","no"},{"input-vo-keyboard","no"},{"osc","no"},{"osd-level","0"},{"idle","yes"},{"keep-open","yes"},{"hwdec","auto-safe"},{"vo","gpu-next"}})
+        for(const auto &[key,value]:QList<QPair<QByteArray,QByteArray>>{{"config","no"},{"load-scripts","no"},{"load-unsafe-playlists","no"},{"terminal","no"},{"input-default-bindings","no"},{"input-builtin-drag-and-drop","no"},{"drag-and-drop","no"},{"input-vo-keyboard","no"},{"osc","no"},{"osd-level","0"},{"idle","yes"},{"keep-open","yes"},{"hwdec","auto-safe"},{"vo","gpu-next"}})
             d->mpv_set_option_string(d->mpv,key.constData(),value.constData());
 #ifdef Q_OS_WIN
         d->mpv_set_option_string(d->mpv,"gpu-api","d3d11");
@@ -292,40 +387,87 @@ bool PlaybackEngine::openPreparedDisc(const QString &source,WId surface,qint64 d
     return openInternal(source,surface,durationMs);
 }
 bool PlaybackEngine::open(const QString &source,WId surface){return openInternal(source,surface,0);}
+void PlaybackEngine::setVideoOverrides(VideoOverrides options){d->nextVideo=options;}
 bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs){
     if(!available()){d->fail(d->error);return false;}
+    const auto input=normalizedPlaybackSource(source,d->kind==Kind::Disc);
+    if(!input){d->error="지원하지 않는 미디어 주소입니다.";return false;}
     stop();++d->generation;d->state={};d->errorSent=false;d->error.clear();d->discError.clear();d->managedSubtitle=false;d->managedMpvSubtitle=-1;
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
+    d->activeVideo=d->nextVideo;
     if(preparedDiscDurationMs>0)d->preparedTitleWait.start();else d->preparedTitleWait.invalidate();
     if(d->kind==Kind::Disc){
-        d->discSoftware=std::exchange(d->nextDiscSoftware,false) || d->discHardwareOption.endsWith("=none");
+        auto hardware=d->discHardwareOption;
+        if(d->activeVideo.hardware==VideoOverrides::Hardware::Software)
+            hardware=":avcodec-hw=none";
+        else if(d->activeVideo.hardware!=VideoOverrides::Hardware::Auto){
+            const QByteArray decoder=hardwareDecoder(d->activeVideo.hardware,false);
+            if(decoder!="auto-safe")hardware=":avcodec-hw="+decoder;
+        }
+        d->discSoftware=std::exchange(d->nextDiscSoftware,false) || hardware.endsWith("=none");
+        if(d->discSoftware)hardware=":avcodec-hw=none";
+        d->state.videoDecoderRequest=QString::fromLatin1(hardware.mid(sizeof(":avcodec-hw=")-1));
         d->discAllocationFailed=false;
         d->discFrameProgress.invalidate();
         d->lastDiscFrame=-1;
-        QString url=source;
-        if(!url.startsWith("bluray://")) { auto path=QDir::fromNativeSeparators(QFileInfo(source).absoluteFilePath()); if(!path.endsWith('/'))path+='/'; url="bluray://"+(path.startsWith('/')?QString{}:QString("/"))+path; }
+        auto path=QDir::fromNativeSeparators(*input);
+        if(!path.endsWith('/'))path+='/';
+        auto url=QUrl::fromLocalFile(path);
+        url.setScheme("bluray");
 #ifdef Q_OS_WIN
         d->libvlc_media_player_set_hwnd(d->player,reinterpret_cast<void *>(surface));
 #elif defined(Q_OS_LINUX)
         d->libvlc_media_player_set_xwindow(d->player,static_cast<uint32_t>(surface));
 #endif
         if(d->media){d->libvlc_media_release(d->media);d->media=nullptr;}
-        d->media=d->libvlc_media_new_location(d->vlc,url.toUtf8().constData());
+        d->media=d->libvlc_media_new_location(d->vlc,url.toEncoded().constData());
         if(!d->media){d->fail("Blu-ray media creation failed");return false;}
         d->libvlc_media_add_option(d->media,d->state.discMenus?":bluray-menu":":no-bluray-menu");
         if(preparedDiscDurationMs>0)d->libvlc_media_add_option(d->media,":start-paused");
         d->libvlc_media_add_option(d->media,":bluray-region=A");
         d->libvlc_media_add_option(d->media,":disc-caching=10000");
-        d->libvlc_media_add_option(d->media,d->discSoftware?":avcodec-hw=none":d->discHardwareOption.constData());
+        d->libvlc_media_add_option(d->media,hardware.constData());
         d->libvlc_media_player_set_media(d->player,d->media);
         if(d->libvlc_media_player_play(d->player)<0){d->fail("Blu-ray 재생을 시작할 수 없습니다. 진단 로그를 확인하세요.");return false;}
     }else{
         const int64_t wid=static_cast<int64_t>(surface); d->mpv_set_property(d->mpv,"wid",MPV_FORMAT_INT64,const_cast<int64_t *>(&wid));
         d->motionMetadata.clear();
         if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
+        if(d->dolbyApplied){d->command({"vf","remove","@luma_dolby"});d->dolbyApplied=false;}
         d->mpv_set_property_string(d->mpv,"interpolation","no");
-        d->command({"loadfile",source.toUtf8(),"replace"});
+        const auto hardware=hardwareDecoder(d->activeVideo.hardware,false);
+        const auto decoder=preferredDecoder(d->activeVideo.codec);
+        const auto color=d->activeVideo.color;
+        const char *transfer=color==VideoOverrides::Color::SDR?"gamma2.2":
+                             color==VideoOverrides::Color::HDR10?"pq":color==VideoOverrides::Color::HLG?"hlg":"auto";
+        const char *primaries=color==VideoOverrides::Color::SDR?"bt.709":
+                              color==VideoOverrides::Color::Auto?"auto":"bt.2020";
+        QStringList rejected;
+        const auto set=[&](const char *name,const char *value,bool reportFailure=true){
+            if(d->mpv_set_property_string(d->mpv,name,value)<0 && reportFailure)rejected.append(QString::fromLatin1(name));
+        };
+        set("options/hwdec",hardware);
+        set("options/vd",decoder);
+        set("options/target-trc",transfer);
+        set("options/target-prim",primaries);
+        set("options/target-colorspace-hint",color==VideoOverrides::Color::Auto?"auto":"yes",color!=VideoOverrides::Color::Auto);
+        d->state.videoDecoderRequest=QString::fromLatin1(hardware);
+        if(*decoder)d->state.videoDecoderRequest+=" / "+QString::fromLatin1(decoder);
+        d->state.videoColorRequest=QString::fromLatin1(transfer);
+        const auto filter=dolbyFilter(d->activeVideo.dolby);
+        if(*filter){
+            d->dolbyApplied=d->command({"vf","add",filter})>=0;
+            if(!d->dolbyApplied)rejected.append("Dolby Vision");
+        }
+        d->state.dolbyVisionRequest=d->activeVideo.dolby==VideoOverrides::DolbyVision::Ignore?"ignore":
+            d->activeVideo.dolby==VideoOverrides::DolbyVision::BaseLayer?"base-layer":
+            d->activeVideo.dolby==VideoOverrides::DolbyVision::Apply?"apply":"auto";
+        if(!rejected.isEmpty()){
+            d->state.videoOverrideStatus="재생 엔진이 거부한 설정 · "+rejected.join(", ");
+            emit logMessage(d->state.videoOverrideStatus);
+        }
+        if(d->command({"loadfile",input->toUtf8(),"replace"})<0){d->fail("재생 엔진이 파일 열기 요청을 거부했습니다.");return false;}
     }
     d->videoOutputActive=true;d->videoOutputLossSent=false;
     emit logMessage(QString("Opening with %1").arg(name()));return true;
@@ -356,7 +498,7 @@ void PlaybackEngine::updateFrameInterpolation(){
     if(metadata==d->motionMetadata)return;d->motionMetadata=metadata;
     const auto plan=motionPlanForSource(d->motion,true,gamma,matrix,peak);d->state.motionStatus=plan.status;
     if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
-    d->mpv_set_property_string(d->mpv,"hwdec",plan.requiresCopyBack?"auto-copy":"auto-safe");
+    d->mpv_set_property_string(d->mpv,"hwdec",hardwareDecoder(d->activeVideo.hardware,plan.requiresCopyBack));
     d->mpv_set_property_string(d->mpv,"interpolation",plan.interpolation.constData());
     d->mpv_set_property_string(d->mpv,"video-sync",plan.videoSync.constData());
     if(!plan.videoFilter.isEmpty()){
@@ -491,13 +633,18 @@ void PlaybackEngine::poll(){
         for(int i=0;i<100;++i){auto *event=d->mpv_wait_event(d->mpv,0);if(!event || event->event_id==MPV_EVENT_NONE)break;
             if(event->event_id==MPV_EVENT_FILE_LOADED){d->fileLoaded=true;updateFrameInterpolation();}
             if(event->event_id==MPV_EVENT_PLAYBACK_RESTART){d->seekReady=true;if(d->deferredSeek){const auto target=*d->deferredSeek;d->deferredSeek.reset();seek(target);}}
-            if(event->event_id==MPV_EVENT_LOG_MESSAGE){auto *m=static_cast<mpv_event_log_message *>(event->data);emit logMessage(QString::fromUtf8(m->text).trimmed());}
+            if(event->event_id==MPV_EVENT_LOG_MESSAGE){auto *m=static_cast<mpv_event_log_message *>(event->data);emit logMessage(redactNetworkSources(QString::fromUtf8(m->text).trimmed()));}
             if(event->event_id==MPV_EVENT_END_FILE){auto *end=static_cast<mpv_event_end_file *>(event->data);if(end->reason==MPV_END_FILE_REASON_ERROR)d->fail(QString::fromUtf8(d->mpv_error_string(end->error)));}
         }
         d->state.positionMs=qint64(d->number("time-pos")*1000);d->state.durationMs=qint64(d->number("duration")*1000);
         d->state.timelineReady=d->fileLoaded && d->state.durationMs>0;
         int paused=1,idle=1;d->mpv_get_property(d->mpv,"pause",MPV_FORMAT_FLAG,&paused);d->mpv_get_property(d->mpv,"idle-active",MPV_FORMAT_FLAG,&idle);d->state.playing=!paused && !idle;
         d->state.videoCodec=d->prop("video-codec");d->state.audioCodec=d->prop("audio-codec-name");d->state.hardwareDecoder=d->prop("hwdec-current");
+        d->state.videoDecoder=d->prop("current-tracks/video/decoder");
+        int64_t dvProfile=0;
+        if(d->mpv_get_property(d->mpv,"current-tracks/video/dolby-vision-profile",MPV_FORMAT_INT64,&dvProfile)>=0 && dvProfile>0 && dvProfile<=255)
+            d->state.dolbyVisionProfile=int(dvProfile);
+        else d->state.dolbyVisionProfile.reset();
         d->state.runtimeVersion=d->prop("mpv-version");d->state.colorPrimaries=d->prop("video-params/primaries");d->state.transferFunction=d->prop("video-params/gamma");
         d->state.sourceFps=d->number("container-fps");d->state.filteredFps=d->number("estimated-vf-fps");d->state.displayFps=d->number("display-fps");
         if(d->performanceMetrics){

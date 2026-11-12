@@ -6,6 +6,16 @@
 #include <optional>
 namespace luma {
 struct MediaItem { int id; QString label; };
+struct VideoOverrides {
+    enum class Hardware { Auto, Software, D3D11, DXVA2, VAAPI };
+    enum class Codec { Auto, H264, HEVC, VP9, AV1, Dav1d };
+    enum class Color { Auto, SDR, HDR10, HLG };
+    enum class DolbyVision { Auto, Apply, Ignore, BaseLayer };
+    Hardware hardware = Hardware::Auto;
+    Codec codec = Codec::Auto;
+    Color color = Color::Auto;
+    DolbyVision dolby = DolbyVision::Auto;
+};
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     bool playing=false, failed=false, navigationTitle=false, buffering=false;
@@ -14,6 +24,8 @@ struct PlaybackState {
     int currentAudio=-1,currentSubtitle=-1,decodedVideo=0,decodedAudio=0,displayedPictures=0,playedAudioBuffers=0;
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
     QString colorPrimaries,transferFunction,outputPrimaries,outputTransferFunction,audioOutput,runtimeVersion;
+    QString videoDecoder, videoDecoderRequest, videoColorRequest, dolbyVisionRequest, videoOverrideStatus;
+    std::optional<int> dolbyVisionProfile;
     int audioSampleRate=0,audioChannels=0,droppedVideoFrames=0,lostAudioBuffers=0;
     bool losslessAudio=false;
     QString motionStatus;
@@ -24,6 +36,7 @@ struct PlaybackState {
     QVector<MediaItem> audioTracks, subtitleTracks, chapters, titles;
 };
 bool isDiscSource(const QString &source);
+std::optional<QString> normalizedPlaybackSource(const QString &source, bool disc);
 // A new title ID alone is insufficient: native live length must match metadata.
 bool discTimelineReady(qint64 liveDurationMs,qint64 titleDurationMs,bool navigationTitle);
 enum class DiscAction { Activate,Up,Down,Left,Right,Popup };
@@ -44,6 +57,7 @@ public:
     void pauseToggle();
     void setPaused(bool paused);
     void setPerformanceMetricsEnabled(bool enabled);
+    void setVideoOverrides(VideoOverrides options);
     void setFrameInterpolation(const QString &mode,int targetFps);
     void seek(qint64 positionMs);
     void setVolume(int volume);

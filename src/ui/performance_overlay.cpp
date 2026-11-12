@@ -148,8 +148,15 @@ void PerformanceOverlay::appendSample(SystemMetrics system) {
     values[Cpu] = system.cpuPercent;
     values[Gpu] = system.gpuPercent;
     values[Npu] = system.npuPercent;
-    if (system.memoryUsed && system.memoryTotal && *system.memoryTotal > 0)
-        values[Ram] = 100.0 * double(*system.memoryUsed) / double(*system.memoryTotal);
+    sample.playerValues[Cpu] = system.playerCpuPercent;
+    sample.playerValues[Gpu] = system.playerGpuPercent;
+    sample.playerValues[Npu] = system.playerNpuPercent;
+    if (system.memoryTotal && *system.memoryTotal > 0) {
+        if (system.memoryUsed)
+            values[Ram] = 100.0 * double(*system.memoryUsed) / double(*system.memoryTotal);
+        if (system.playerResident)
+            sample.playerValues[Ram] = 100.0 * double(*system.playerResident) / double(*system.memoryTotal);
+    }
 
     const auto &playback = sample.input.playback;
     if (playback && !playback->failed) {
@@ -227,30 +234,35 @@ void PerformanceOverlay::paintGraph(QPainter &painter, const QRectF &area, Metri
     painter.setPen(QColor("#334154"));
     painter.drawLine(area.bottomLeft(), area.bottomRight());
     const double maximum = graphMaximum(metric);
-    QPainterPath path;
-    bool connected = false;
     const auto now = history_.constLast().elapsedMs;
-    QPointF last;
-    for (const auto &sample : history_) {
-        const auto value = sample.values[metric];
-        const auto age = now - sample.elapsedMs;
-        if (!value || age >= 90000) {
-            connected = false;
-            continue;
+    const auto draw = [&](bool player, const QPen &pen) {
+        QPainterPath path;
+        bool connected = false;
+        QPointF last;
+        for (const auto &sample : history_) {
+            const auto value = player ? sample.playerValues[metric] : sample.values[metric];
+            const auto age = now - sample.elapsedMs;
+            if (!value || age >= 90000) {
+                connected = false;
+                continue;
+            }
+            const QPointF point(area.right() - area.width() * age / 90000.0,
+                                area.bottom() - area.height() * std::clamp(*value / maximum, 0.0, 1.0));
+            if (connected)
+                path.lineTo(point);
+            else
+                path.moveTo(point);
+            connected = true;
+            last = point;
         }
-        const QPointF point(area.right() - area.width() * age / 90000.0,
-                            area.bottom() - area.height() * std::clamp(*value / maximum, 0.0, 1.0));
+        painter.setPen(pen);
+        painter.drawPath(path);
         if (connected)
-            path.lineTo(point);
-        else
-            path.moveTo(point);
-        connected = true;
-        last = point;
-    }
-    painter.setPen(QPen(color, 1.5));
-    painter.drawPath(path);
-    if (connected)
-        painter.drawEllipse(last, 1.5, 1.5);
+            painter.drawEllipse(last, 1.5, 1.5);
+    };
+    draw(false, QPen(color, 1.5));
+    if (metric <= Ram)
+        draw(true, QPen(QColor("#eef5ff"), 1.4, Qt::DashLine));
 }
 
 void PerformanceOverlay::paintEvent(QPaintEvent *) {
@@ -267,7 +279,8 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
         painter.setPen(color);
         painter.drawText(area, Qt::AlignVCenter | Qt::AlignLeft, QFontMetrics(font).elidedText(text, Qt::ElideRight, area.width()));
     };
-    line({12, 6, width() - 24, 20}, "재생 성능  ·  " + QString(view_ == View::Text ? "1초 간격" : "최근 90초"), QColor("#dce6f5"), 12, true);
+    line({12, 6, width() - 24, 20}, view_ == View::Text ? "재생 성능  ·  전체 / 플레이어" :
+         "재생 성능  ·  전체 실선 / 플레이어 점선", QColor("#dce6f5"), 12, true);
     if (history_.isEmpty()) {
         line({12, 32, width() - 24, 20}, "성능 지표를 수집하는 중…", QColor("#9cacc3"), 12);
         return;
@@ -292,10 +305,11 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
         valueText(values[Ram], "%"), valueText(values[Fps], "", 1), valueText(values[DiscRate], " MiB/s", 1)
     };
     const std::array<QString, MetricCount> details{
-        "시스템 전체", "피크 엔진 · 디코드 " + valueText(sample.system.gpuDecodePercent, "%"),
+        sample.system.includesChildProcesses ? "플레이어와 하위 작업 포함" : "플레이어 본체",
+        "디코드 " + valueText(sample.system.gpuDecodePercent, "%") + " / " + valueText(sample.system.playerGpuDecodePercent, "%"),
         sample.system.npuDetected ? (values[Npu] ? "가장 바쁜 엔진" : "드라이버 수치 없음") : "측정 가능한 장치 없음",
         (sample.system.memoryUsed ? QString::number(double(*sample.system.memoryUsed) / gibibyte, 'f', 1) + " GiB" : "—") +
-            (sample.system.playerResident ? QString(" · 앱 %1 MiB").arg(double(*sample.system.playerResident) / mebibyte, 0, 'f', 0) : ""),
+            (sample.system.playerResident ? QString(" / %1 MiB").arg(double(*sample.system.playerResident) / mebibyte, 0, 'f', 0) : " / —"),
         state && state->sourceFps > 0 ? QString("원본 %1 fps").arg(state->sourceFps, 0, 'f', 2) : "원본 —",
         sample.input.disc ? "libVLC 재생 경로" : "Blu-ray 재생 시 표시"
     };
@@ -306,7 +320,9 @@ void PerformanceOverlay::paintEvent(QPaintEvent *) {
     for (int i = 0; i < MetricCount; ++i) {
         const int x = 12 + (i % 2) * (cellWidth + 6);
         const int y = 27 + (i / 2) * rowHeight;
-        const auto label = titles[i] + (numbers ? "  " + shown[i] : values[i] ? "" : "  —");
+        QString label = titles[i] + (numbers ? "  " + shown[i] : values[i] ? "" : "  —");
+        if (numbers && i <= Ram)
+            label += " / " + valueText(sample.playerValues[i], "%", 1);
         line({x, y, cellWidth, 17}, label, accents[i], 11, true);
         if (!compact) {
             const auto scale = i <= Ram ? QString("%") : i == Fps ? QString(" fps") : QString(" MiB/s");
@@ -357,6 +373,12 @@ QJsonObject PerformanceOverlay::sampleJson(const Sample &sample) {
         {"captionWaiting", sample.input.captionWaiting}, {"videoRecoveries", sample.input.recoveries},
         {"recognitionBackend", sample.input.recognitionBackend}, {"translationBackend", sample.input.translationBackend}
     };
+    result.insert("playerCpuPercent", jsonValue(sample.system.playerCpuPercent));
+    result.insert("playerGpuPercent", jsonValue(sample.system.playerGpuPercent));
+    result.insert("playerNpuPercent", jsonValue(sample.system.playerNpuPercent));
+    result.insert("playerGpuDecodePercent", jsonValue(sample.system.playerGpuDecodePercent));
+    result.insert("playerRamPercent", jsonValue(sample.playerValues[Ram]));
+    result.insert("playerIncludesChildProcesses", sample.system.includesChildProcesses);
     if (const auto &state = sample.input.playback) {
         result.insert("engine", sample.input.disc ? "libVLC" : "libmpv");
         result.insert("playing", state->playing);
@@ -390,7 +412,9 @@ QJsonObject PerformanceOverlay::summary() const {
 
 QByteArray PerformanceOverlay::csv() const {
     static const QStringList columns{
-        "elapsedMs", "cpuPercent", "gpuPercent", "gpuDecodePercent", "npuPercent",
+        "elapsedMs", "cpuPercent", "playerCpuPercent", "gpuPercent", "playerGpuPercent",
+        "gpuDecodePercent", "playerGpuDecodePercent", "npuPercent", "playerNpuPercent",
+        "playerRamPercent", "playerIncludesChildProcesses",
         "ramPercent", "ramUsedMiB", "ramTotalMiB", "playerResidentMiB", "discInputMiBps", "discDemuxMiBps",
         "sourceFps", "filteredFps", "presentedFps", "displayHz", "droppedFrames", "lostAudioBuffers",
         "avSyncMs", "fileCacheSeconds", "captionAheadMs", "captionWaiting", "buffering", "videoRecoveries"

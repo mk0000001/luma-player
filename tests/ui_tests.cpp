@@ -100,6 +100,8 @@ private slots:
         const auto rows=overlay->csv().split('\n');
         QCOMPARE(rows[0].count(','),rows[1].count(','));
         QVERIFY(rows[0].contains("npuPercent") && rows[0].contains("discInputMiBps"));
+        QVERIFY(rows[0].contains("playerCpuPercent") && rows[0].contains("playerGpuPercent") &&
+                rows[0].contains("playerNpuPercent") && rows[0].contains("playerRamPercent"));
         copy->click();
         const auto snapshot=QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object();
         QVERIFY(snapshot.contains("performance"));
@@ -129,6 +131,84 @@ private slots:
         QVERIFY2(seek->value()>7100 && seek->value()<7900,qPrintable(QString("seek value %1 / %2, width %3").arg(seek->value()).arg(seek->maximum()).arg(seek->width())));
     }
 #ifdef Q_OS_WIN
+    void developerVideoOverridesReachFileEngine(){
+        const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
+        if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
+            QSKIP("Requires native Windows output and a local H.264 fixture");
+        restorePerformancePreferences();
+        luma::MainWindow window;
+        window.show();
+        auto *hardware=window.findChild<QComboBox*>("developerHardware");
+        auto *codec=window.findChild<QComboBox*>("developerCodec");
+        auto *color=window.findChild<QComboBox*>("developerColor");
+        auto *dolby=window.findChild<QComboBox*>("developerDolby");
+        auto *reset=window.findChild<QPushButton*>("resetDeveloperVideo");
+        auto *copy=window.findChild<QPushButton*>("copyDiagnostics");
+        QVERIFY(hardware && codec && color && dolby && reset && copy);
+        const auto select=[](auto *box, auto value){box->setCurrentIndex(box->findData(int(value)));};
+        const auto snapshot=[copy]{
+            copy->click();
+            return QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object().value("playback").toObject();
+        };
+        using Options=luma::VideoOverrides;
+        select(hardware,Options::Hardware::Software);
+        select(codec,Options::Codec::H264);
+        select(color,Options::Color::SDR);
+        select(dolby,Options::DolbyVision::Ignore);
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("timelineReady").toBool(),10000);
+        auto actual=snapshot();
+        QVERIFY2(actual.value("overrideStatus").toString().isEmpty(),qPrintable(actual.value("overrideStatus").toString()));
+        QCOMPARE(actual.value("requestedDecoder").toString(),QString("no / h264"));
+        QCOMPARE(actual.value("requestedTransfer").toString(),QString("gamma2.2"));
+        QCOMPARE(actual.value("requestedDolbyVision").toString(),QString("ignore"));
+        QVERIFY(actual.value("videoCodec").toString().contains("H.264",Qt::CaseInsensitive));
+        QTRY_VERIFY_WITH_TIMEOUT(!snapshot().value("outputTransfer").toString().isEmpty(),5000);
+        const auto position=window.diagnostics().value("positionMs").toInteger();
+        window.openSource("https://");
+        QTRY_VERIFY(window.diagnostics().value("positionMs").toInteger()>position);
+
+        select(color,Options::Color::HDR10);
+        select(dolby,Options::DolbyVision::BaseLayer);
+        const auto hdr=qEnvironmentVariable("LUMA_UI_TEST_HDR_MEDIA");
+        const bool hdrFixture=QFileInfo::exists(hdr);
+        select(codec,hdrFixture?Options::Codec::HEVC:Options::Codec::H264);
+        window.openSource(hdrFixture?hdr:media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("timelineReady").toBool(),10000);
+        actual=snapshot();
+        QVERIFY2(actual.value("overrideStatus").toString().isEmpty(),qPrintable(actual.value("overrideStatus").toString()));
+        QCOMPARE(actual.value("requestedTransfer").toString(),QString("pq"));
+        QCOMPARE(actual.value("requestedDolbyVision").toString(),QString("base-layer"));
+        if(hdrFixture){
+            QCOMPARE(actual.value("inputTransfer").toString(),QString("pq"));
+            QCOMPARE(actual.value("inputPrimaries").toString(),QString("bt.2020"));
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!snapshot().value("outputTransfer").toString().isEmpty(),5000);
+        qInfo().noquote()<<"HDR target and reported output:"<<actual.value("requestedTransfer").toString()<<snapshot().value("outputTransfer").toString();
+
+        const auto av1=qEnvironmentVariable("LUMA_UI_TEST_AV1_MEDIA");
+        if(QFileInfo::exists(av1)){
+            select(codec,Options::Codec::Dav1d);
+            select(color,Options::Color::SDR);
+            select(dolby,Options::DolbyVision::Apply);
+            window.openSource(av1);
+            QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("timelineReady").toBool(),10000);
+            actual=snapshot();
+            QVERIFY2(actual.value("overrideStatus").toString().isEmpty(),qPrintable(actual.value("overrideStatus").toString()));
+            QCOMPARE(actual.value("requestedDecoder").toString(),QString("no / libdav1d"));
+            QTRY_COMPARE_WITH_TIMEOUT(snapshot().value("videoDecoder").toString(),QString("libdav1d"),5000);
+        }
+
+        reset->click();
+        for(auto *box:{hardware,codec,color,dolby})QCOMPARE(box->currentIndex(),0);
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("timelineReady").toBool(),10000);
+        actual=snapshot();
+        QVERIFY2(actual.value("overrideStatus").toString().isEmpty(),qPrintable(actual.value("overrideStatus").toString()));
+        QCOMPARE(actual.value("requestedDecoder").toString(),QString("auto-safe"));
+        QCOMPARE(actual.value("requestedTransfer").toString(),QString("auto"));
+        QCOMPARE(actual.value("requestedDolbyVision").toString(),QString("auto"));
+    }
     void pictureInPictureKeepsVideoAndRestoresWindow(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))

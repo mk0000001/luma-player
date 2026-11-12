@@ -45,6 +45,7 @@ private:
     struct Sample {
         qint64 elapsedMs = 0;
         std::array<std::optional<double>, MetricCount> values;
+        std::array<std::optional<double>, MetricCount> playerValues;
         SystemMetrics system;
         PerformanceInput input;
         std::optional<double> inputMiBps, demuxMiBps, presentedFps;

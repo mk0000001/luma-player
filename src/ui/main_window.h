@@ -49,6 +49,8 @@ private:
     CaptionOverlay *captions_=nullptr;
     PerformanceOverlay *performance_=nullptr;
     QCheckBox *performanceEnabled_=nullptr;
+    QLabel *developerVideoStatus_=nullptr;
+    VideoOverrides developerVideoOptions_;
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
     AiDeviceProbe *deviceProbe_=nullptr;
@@ -100,6 +102,8 @@ private:
     void selectTitle(int id);
     void buildUi();
     void buildDeveloperTools(QVBoxLayout *layout);
+    void buildDeveloperVideoTools(QVBoxLayout *layout);
+    void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
     void openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);

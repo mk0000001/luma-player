@@ -76,7 +76,19 @@ bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event){if(event->mimeData()->hasUrls())event->acceptProposedAction();}
 
-void MainWindow::openDroppedUrls(const QList<QUrl> &urls){if(urls.isEmpty())return;const auto path=urls.first().isLocalFile()?urls.first().toLocalFile():urls.first().toString();const auto suffix=QFileInfo(path).suffix().toLower();if(QStringList{"srt","ass","ssa","vtt","smi","sami"}.contains(suffix))loadCaptionFile(path);else openSource(path);}
+void MainWindow::openDroppedUrls(const QList<QUrl> &urls){
+    if(urls.isEmpty())return;
+    const auto &url=urls.first();
+    const auto path=url.toString(QUrl::FullyEncoded);
+    if(url.isLocalFile()){
+        const auto local=normalizedPlaybackSource(path,false);
+        if(local && QStringList{"srt","ass","ssa","vtt","smi","sami"}.contains(QFileInfo(*local).suffix().toLower())){
+            loadCaptionFile(*local);
+            return;
+        }
+    }
+    openSource(path);
+}
 
 void MainWindow::dropEvent(QDropEvent *event){if(event->mimeData()->hasUrls()){openDroppedUrls(event->mimeData()->urls());event->acceptProposedAction();}}
 
