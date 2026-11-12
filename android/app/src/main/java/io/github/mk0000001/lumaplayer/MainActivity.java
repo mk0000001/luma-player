@@ -19,6 +19,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.method.LinkMovementMethod;
 import android.util.Rational;
 import android.view.Display;
 import android.view.SurfaceView;
@@ -191,6 +192,11 @@ public final class MainActivity extends Activity {
             public void showPlaybackInfo() {
                 MainActivity.this.showPlaybackInfo();
             }
+
+            @Override
+            public void showUsageNotice() {
+                MainActivity.this.showUsageNotice();
+            }
         });
         gestures = new PlaybackGestures(playerView, findViewById(R.id.skip_feedback), new PlaybackGestures.Actions() {
             @Override public long positionMs() { return absolutePosition(); }
@@ -213,7 +219,8 @@ public final class MainActivity extends Activity {
         setFullscreen(false);
         findViewById(R.id.disconnect_button).setOnClickListener(view -> disconnect());
         findViewById(R.id.device_info).setOnClickListener(view -> showPlaybackInfo());
-        findViewById(R.id.playback_info).setOnClickListener(view -> showPlaybackInfo());
+        findViewById(R.id.usage_notice_button).setOnClickListener(view -> showUsageNotice());
+        findViewById(R.id.playback_footer_settings).setOnClickListener(view -> navigation.showSettings());
         playerView.setFullscreenButtonClickListener(this::setFullscreen);
         playerView.setControllerShowTimeoutMs(CONTROLS_TIMEOUT_MS);
         playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)
@@ -563,6 +570,18 @@ public final class MainActivity extends Activity {
                 .setPositiveButton(android.R.string.ok, null).show();
     }
 
+    private void showUsageNotice() {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.usage_notice_title)
+                .setMessage(R.string.usage_notice_message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+        TextView message = dialog.findViewById(android.R.id.message);
+        if (message != null) {
+            message.setMovementMethod(LinkMovementMethod.getInstance());
+        }
+    }
+
     private void showWirelessDisplay() {
         try {
             displayPickerOpen = true;
@@ -588,20 +607,20 @@ public final class MainActivity extends Activity {
             Insets keyboard = insets.getInsets(WindowInsets.Type.ime());
             if (fullscreen || isInPictureInPictureMode()) {
                 view.setPadding(0, 0, 0, 0);
-                navigation.setInsets(bars.left, bars.right, bars.bottom);
+                navigation.setInsets(bars.left, bars.top, bars.right, bars.bottom);
             } else {
                 view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, keyboard.bottom));
-                navigation.setInsets(0, 0, 0);
+                navigation.setInsets(0, 0, 0, 0);
             }
         } else {
             if (fullscreen || isInPictureInPictureMode()) {
                 view.setPadding(0, 0, 0, 0);
-                navigation.setInsets(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetRight(),
-                        insets.getSystemWindowInsetBottom());
+                navigation.setInsets(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                        insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             } else {
                 view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                         insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
-                navigation.setInsets(0, 0, 0);
+                navigation.setInsets(0, 0, 0, 0);
             }
         }
         return insets;
@@ -659,17 +678,18 @@ public final class MainActivity extends Activity {
 
     private void applyPlaybackLayout() {
         boolean videoOnly = fullscreen || isInPictureInPictureMode();
-        boolean portrait = !videoOnly && isPortrait();
         int width = playbackScreen.getWidth();
         float density = getResources().getDisplayMetrics().density;
         Configuration configuration = getResources().getConfiguration();
         int widthDp = width > 0 ? Math.round(width / density) : configuration.screenWidthDp;
         int height = playbackScreen.getHeight();
         int heightDp = height > 0 ? Math.round(height / density) : configuration.screenHeightDp;
-        boolean sidePanel = !videoOnly && widthDp >= 720 && heightDp >= 420 && widthDp >= heightDp;
-        navigation.setPortraitChapters(portrait || sidePanel);
+        PlaybackLayout layout = PlaybackLayout.forWindow(widthDp, heightDp, videoOnly);
+        boolean stacked = layout == PlaybackLayout.STACKED;
+        boolean sidePanel = layout == PlaybackLayout.SIDE_BY_SIDE;
+        navigation.setChapterPaneAvailable(stacked || sidePanel);
         playbackDetails.setVisibility(videoOnly ? View.GONE : View.VISIBLE);
-        if (portrait && width == 0) {
+        if (stacked && width == 0) {
             return;
         }
         int orientation = sidePanel ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
@@ -681,11 +701,11 @@ public final class MainActivity extends Activity {
             int panelWidth = Math.round(Math.min(360, Math.max(280, widthDp * .29f)) * density);
             setPaneSize(playbackDetails, panelWidth, ViewGroup.LayoutParams.MATCH_PARENT, 0);
         } else {
-            int playerHeight = portrait ? Math.round(Math.min(width * 9f / 16f,
+            int playerHeight = stacked ? Math.round(Math.min(width * 9f / 16f,
                     heightDp * density * .58f)) : 0;
-            setPaneSize(playbackCanvas, ViewGroup.LayoutParams.MATCH_PARENT, playerHeight, portrait ? 0 : 1);
+            setPaneSize(playbackCanvas, ViewGroup.LayoutParams.MATCH_PARENT, playerHeight, stacked ? 0 : 1);
             setPaneSize(playbackDetails, ViewGroup.LayoutParams.MATCH_PARENT,
-                    portrait ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT, portrait ? 1 : 0);
+                    stacked ? 0 : ViewGroup.LayoutParams.WRAP_CONTENT, stacked ? 1 : 0);
         }
     }
 
@@ -791,6 +811,9 @@ public final class MainActivity extends Activity {
     public void onPictureInPictureModeChanged(boolean inPictureInPicture, Configuration configuration) {
         super.onPictureInPictureModeChanged(inPictureInPicture, configuration);
         gestures.cancel();
+        if (inPictureInPicture) {
+            navigation.closeSettings();
+        }
         playerView.setUseController(!inPictureInPicture);
         applyPlaybackLayout();
         applyVideoAspect();
@@ -798,6 +821,9 @@ public final class MainActivity extends Activity {
     }
 
     private boolean handleBack() {
+        if (navigation.handleSettingsBack()) {
+            return true;
+        }
         if (fullscreen) {
             setFullscreen(false);
         } else if (client != null) {

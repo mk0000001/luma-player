@@ -11,88 +11,92 @@
         android:importantForAccessibility="no" />
 
     <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center"
-        android:orientation="horizontal">
-
-        <ImageButton
-            android:id="@+id/previous_chapter"
-            style="@style/LumaPlaybackIcon"
-            android:contentDescription="@string/previous_chapter"
-            android:src="@drawable/ic_playback_previous" />
-
-        <Button android:id="@+id/skip_back" style="@style/LumaPlaybackAction" />
-
-        <ImageButton
-            android:id="@id/exo_play_pause"
-            style="@style/LumaPlaybackIcon"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginHorizontal="4dp"
-            android:background="@drawable/luma_playback_pill"
-            android:contentDescription="@string/playback_toggle" />
-
-        <Button android:id="@+id/skip_forward" style="@style/LumaPlaybackAction" />
-
-        <ImageButton
-            android:id="@+id/next_chapter"
-            style="@style/LumaPlaybackIcon"
-            android:contentDescription="@string/next_chapter"
-            android:src="@drawable/ic_playback_next" />
-    </LinearLayout>
-
-    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:orientation="vertical"
-        android:paddingHorizontal="8dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
-        <SeekBar
-            android:id="@+id/remote_seek"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:contentDescription="@string/seek_position"
-            android:max="10000"
-            android:progressBackgroundTint="#66FFFFFF"
-            android:progressTint="@color/luma_accent"
-            android:secondaryProgressTint="#A6FFFFFF"
-            android:thumbTint="@color/luma_accent" />
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/previous_chapter"
+                style="@style/LumaPlaybackIcon"
+                android:contentDescription="@string/previous_chapter"
+                android:src="@drawable/ic_playback_previous" />
+
+            <Button android:id="@+id/skip_back" style="@style/LumaPlaybackAction" />
+
+            <ImageButton
+                android:id="@id/exo_play_pause"
+                style="@style/LumaPlaybackIcon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:layout_marginHorizontal="4dp"
+                android:background="@drawable/luma_playback_pill"
+                android:contentDescription="@string/playback_toggle" />
+
+            <Button android:id="@+id/skip_forward" style="@style/LumaPlaybackAction" />
+
+            <ImageButton
+                android:id="@+id/next_chapter"
+                style="@style/LumaPlaybackIcon"
+                android:contentDescription="@string/next_chapter"
+                android:src="@drawable/ic_playback_next" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="-12dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp">
 
-            <TextView
-                android:id="@+id/remote_position"
-                android:layout_width="0dp"
+            <SeekBar
+                android:id="@+id/remote_seek"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:contentDescription="@string/seek_position"
+                android:max="10000"
+                android:progressBackgroundTint="#66FFFFFF"
+                android:progressTint="@color/luma_accent"
+                android:secondaryProgressTint="#A6FFFFFF"
+                android:thumbTint="@color/luma_accent" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:paddingStart="8dp"
-                android:textColor="@android:color/white"
-                android:textSize="13sp" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <ImageButton
-                android:id="@id/exo_subtitle"
-                style="@style/LumaPlaybackIcon"
-                android:contentDescription="@string/playback_captions" />
+                <TextView
+                    android:id="@+id/remote_position"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:paddingStart="8dp"
+                    android:textColor="@android:color/white"
+                    android:textSize="13sp" />
 
-            <ImageButton
-                android:id="@+id/playback_settings"
-                style="@style/LumaPlaybackIcon"
-                android:contentDescription="@string/playback_settings"
-                android:src="@drawable/ic_playback_settings" />
+                <ImageButton
+                    android:id="@id/exo_subtitle"
+                    style="@style/LumaPlaybackIcon"
+                    android:contentDescription="@string/playback_captions" />
 
-            <ImageButton
-                android:id="@id/exo_fullscreen"
-                style="@style/LumaPlaybackIcon"
-                android:contentDescription="@string/playback_fullscreen"
-                android:src="@drawable/ic_playback_fullscreen" />
+                <ImageButton
+                    android:id="@+id/playback_settings"
+                    style="@style/LumaPlaybackIcon"
+                    android:contentDescription="@string/playback_settings"
+                    android:src="@drawable/ic_playback_settings" />
+
+                <ImageButton
+                    android:id="@id/exo_fullscreen"
+                    style="@style/LumaPlaybackIcon"
+                    android:contentDescription="@string/playback_fullscreen"
+                    android:src="@drawable/ic_playback_fullscreen" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

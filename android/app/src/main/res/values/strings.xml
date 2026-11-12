@@ -40,6 +40,8 @@
     <string name="disconnect_action">연결 종료</string>
     <string name="capability_action">기기 지원 형식</string>
     <string name="playback_info_action">재생 정보</string>
+    <string name="usage_notice_title">이용 안내</string>
+    <string name="usage_notice_message">콘텐츠를 재생하거나 저장·공유할 때는 권리자가 허락한 이용 방법과 조건 또는 법률이 허용하는 범위를 확인해 주세요. 사적 복제 예외는 공표된 저작물의 비영리 이용으로, 개인이나 가정 및 이에 준하는 한정된 범위에 적용됩니다. 기술적 보호조치에는 별도의 법률상 제한과 예외가 적용됩니다.\n\n이용자와 개발자의 권리·책임은 관계 법령에 따라 판단합니다. 프로그램의 무보증과 책임 제한은 적용 법률이 허용하는 범위에서 GPLv3 제15~17조에 따릅니다.\n\n<a href="https://www.law.go.kr/법령/저작권법/제46조">저작권법 제46조</a> · <a href="https://www.law.go.kr/법령/저작권법/제30조">제30조</a> · <a href="https://www.law.go.kr/법령/저작권법/제104조의2">제104조의2</a>\n<a href="https://www.law.go.kr/법령/민법/제750조">민법 제750조</a> · <a href="https://www.law.go.kr/법령/약관의규제에관한법률/제7조">약관법 제7조</a> · <a href="https://www.gnu.org/licenses/gpl-3.0.html#section15">GPLv3 제15~17조</a></string>
     <string name="connecting">PC에 연결하는 중…</string>
     <string name="disconnected">연결을 종료했습니다.</string>
     <string name="session_ended">PC의 재생 공유가 종료되었거나 연결이 끊겼습니다.</string>
@@ -78,6 +80,15 @@
     <string name="audio_track_format">%1$s · %2$d Hz</string>
     <string name="capability_footnote">HDR과 공간 음향의 최종 출력은 소스, 디코더, 화면과 연결된 오디오 장치에 따라 달라집니다.</string>
     <string name="playback_settings">설정</string>
+    <string name="playback_footer_settings">재생 설정</string>
+    <string name="settings_back">뒤로</string>
+    <string name="settings_close">닫기</string>
+    <string name="settings_picture">화질 및 화면</string>
+    <string name="settings_playback">재생 및 자막</string>
+    <string name="settings_device">기기 및 정보</string>
+    <string name="settings_aspect">영상 비율</string>
+    <string name="settings_speed_value">%1$s×</string>
+    <string name="settings_option_unavailable">사용할 수 없음</string>
     <string name="previous_chapter">이전 챕터</string>
     <string name="next_chapter">다음 챕터</string>
     <string name="previous_chapter_short">이전</string>
@@ -85,14 +96,10 @@
     <string name="seek_position">재생 위치</string>
     <string name="skip_back_format">−%1$d초</string>
     <string name="skip_forward_format">+%1$d초</string>
-    <string name="stream_quality_format">송출 화질 · %1$s</string>
     <string name="stream_auto">자동</string>
     <string name="stream_original">원본</string>
-    <string name="hdr_format">HDR 출력 · %1$s</string>
     <string name="hdr_original">HDR 원본 우선</string>
     <string name="hdr_sdr">SDR 출력</string>
-    <string name="skip_interval_format">건너뛰기 · %1$d초</string>
-    <string name="screen_ratio_format">전체 화면 · %1$s</string>
     <string name="screen_fill">화면 채우기</string>
     <string name="screen_fit">원본 비율</string>
     <string name="wireless_display">무선 화면 · Smart View</string>
@@ -108,7 +115,6 @@
     <string name="skip_title">건너뛰기 간격</string>
     <string name="interval_seconds">%1$d초</string>
     <string name="subtitle_delay_title">자막 싱크</string>
-    <string name="subtitle_delay_format">자막 싱크 · %1$+.1f초</string>
     <string name="subtitle_delay_value">%1$+.1f초</string>
     <string name="subtitle_delay_unavailable">이 스트림에서는 조절할 자막이 없습니다.</string>
 </resources>

@@ -165,13 +165,25 @@
             android:textSize="14sp"
             android:visibility="gone" />
 
-        <Button
-            android:id="@+id/device_info"
-            style="@style/LumaTextButton"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="start"
             android:layout_marginTop="10dp"
-            android:text="@string/capability_action" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/device_info"
+                style="@style/LumaTextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/capability_action" />
+
+            <Button
+                android:id="@+id/usage_notice_button"
+                style="@style/LumaTextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/usage_notice_title" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

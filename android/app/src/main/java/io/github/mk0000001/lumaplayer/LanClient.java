@@ -313,10 +313,15 @@ final class LanClient implements Closeable {
 
     @Override
     public void close() {
-        closed.set(true);
-        metadataRequests.close();
-        client.dispatcher().cancelAll();
-        client.connectionPool().evictAll();
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        // Closing a pooled TLS connection can perform network I/O.
+        client.dispatcher().executorService().execute(() -> {
+            metadataRequests.close();
+            client.dispatcher().cancelAll();
+            client.connectionPool().evictAll();
+        });
     }
 
     static final class Identity {

@@ -16,8 +16,8 @@ android {
         applicationId = 'io.github.mk0000001.lumaplayer'
         minSdk = 28
         targetSdk = 36
-        versionCode = 20003
-        versionName = '0.2.3'
+        versionCode = 20004
+        versionName = '0.2.4'
     }
 
     compileOptions {

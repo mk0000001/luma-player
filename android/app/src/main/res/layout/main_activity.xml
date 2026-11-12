@@ -116,11 +116,11 @@
                 android:textSize="14sp" />
 
             <Button
-                android:id="@+id/playback_info"
+                android:id="@+id/playback_footer_settings"
                 style="?android:attr/borderlessButtonStyle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/playback_info_action"
+                android:text="@string/playback_footer_settings"
                 android:textAllCaps="false"
                 android:textColor="@color/luma_accent" />
         </LinearLayout>
@@ -155,4 +155,5 @@
         </LinearLayout>
         </LinearLayout>
     </LinearLayout>
+    <include layout="@layout/playback_settings_panel" />
 </FrameLayout>

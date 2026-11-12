@@ -1,7 +1,6 @@
 package io.github.mk0000001.lumaplayer;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
@@ -21,7 +20,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.function.IntConsumer;
 
 @UnstableApi
 final class RemotePlaybackControls {
@@ -35,12 +33,14 @@ final class RemotePlaybackControls {
         void aspectChanged();
         void showWirelessDisplay();
         void showPlaybackInfo();
+        void showUsageNotice();
     }
 
     private final Activity activity;
     private final Actions actions;
     private final SharedPreferences preferences;
     private final View panel;
+    private final PlaybackSettingsPanel settings;
     private final SeekBar seek;
     private final TextView position;
     private final View previous;
@@ -56,7 +56,7 @@ final class RemotePlaybackControls {
     private long displayedPositionSeconds = -1;
     private String durationLabel;
     private boolean foreground;
-    private boolean scrubbing, controlsVisible, portraitChapters;
+    private boolean scrubbing, controlsVisible, chapterPaneAvailable;
     private int selectedChapter = -1;
     private int displayedSkipSeconds;
     private String profile;
@@ -70,6 +70,7 @@ final class RemotePlaybackControls {
         this.actions = actions;
         preferences = activity.getSharedPreferences("playback", Context.MODE_PRIVATE);
         panel = activity.findViewById(R.id.playback_navigation);
+        settings = new PlaybackSettingsPanel(activity, this::showSettings);
         chapterPanel = activity.findViewById(R.id.portrait_chapters);
         chapterList = activity.findViewById(R.id.portrait_chapter_list);
         chapterList.setOnItemClickListener((parent, view, index, id) -> {
@@ -137,6 +138,7 @@ final class RemotePlaybackControls {
             readRemoteOptions(session.options);
         } else {
             controlsVisible = false;
+            settings.close();
         }
         selectedChapter = -1;
         List<String> chapterRows = new ArrayList<>();
@@ -200,20 +202,21 @@ final class RemotePlaybackControls {
         refresh();
     }
 
-    void setInsets(int left, int right, int bottom) {
+    void setInsets(int left, int top, int right, int bottom) {
         panel.setPadding(left, 0, right, bottom);
+        settings.setInsets(left, top, right, bottom);
     }
 
-    void setPortraitChapters(boolean show) {
-        if (portraitChapters != show) {
-            portraitChapters = show;
+    void setChapterPaneAvailable(boolean show) {
+        if (chapterPaneAvailable != show) {
+            chapterPaneAvailable = show;
             updateChapterVisibility();
             refresh();
         }
     }
 
     private void updateChapterVisibility() {
-        chapterPanel.setVisibility(portraitChapters && canSeek() && !session.chaptersMs.isEmpty()
+        chapterPanel.setVisibility(chapterPaneAvailable && canSeek() && !session.chaptersMs.isEmpty()
                 ? View.VISIBLE : View.GONE);
     }
 
@@ -348,47 +351,54 @@ final class RemotePlaybackControls {
         }
     }
 
-    private void showSettings() {
+    void showSettings() {
         if (session == null) {
             return;
         }
         Player player = actions.player();
         String speed = player == null ? "1" : speedLabel(player.getPlaybackParameters().speed);
-        String[] options = {
-                activity.getString(R.string.stream_quality_format, qualityLabel(profile)),
-                activity.getString(R.string.hdr_format, hdrLabel(hdr)),
-                activity.getString(R.string.skip_interval_format, skipSeconds),
-                activity.getString(R.string.screen_ratio_format, fill ? activity.getString(R.string.screen_fill)
-                        : activity.getString(R.string.screen_fit)),
-                activity.getString(R.string.subtitle_delay_format, subtitleDelayMs / 1000.0),
-                activity.getString(R.string.playback_speed_format, speed),
-                activity.getString(R.string.playback_audio_tracks),
-                activity.getString(R.string.wireless_display),
-                activity.getString(R.string.playback_info_action),
-                activity.getString(R.string.quality_presets)
-        };
-        new AlertDialog.Builder(activity).setTitle(R.string.playback_settings)
-                .setItems(options, (dialog, index) -> {
-                    switch (index) {
-                        case 0 -> showQuality();
-                        case 1 -> showHdr();
-                        case 2 -> showSkip();
-                        case 3 -> choose(R.string.playback_settings,
-                                new String[]{activity.getString(R.string.screen_fill),
-                                        activity.getString(R.string.screen_fit)}, fill ? 0 : 1, choice -> {
-                                    fill = choice == 0;
-                                    preferences.edit().putBoolean("fill", fill).apply();
-                                    actions.aspectChanged();
-                                });
-                        case 4 -> showSubtitleDelay();
-                        case 5 -> showSpeed();
-                        case 6 -> showAudioTracks();
-                        case 7 -> actions.showWirelessDisplay();
-                        case 8 -> actions.showPlaybackInfo();
-                        case 9 -> showQualityPresets();
-                        default -> { }
-                    }
-                }).show();
+        settings.show(R.string.playback_footer_settings, false);
+        settings.addSection(R.string.settings_picture);
+        settings.addRow(R.string.quality_presets, null, this::showQualityPresets);
+        settings.addRow(R.string.quality_title, qualityLabel(profile), this::showQuality);
+        settings.addRow(R.string.hdr_title, hdrLabel(hdr), this::showHdr);
+        settings.addRow(R.string.settings_aspect, activity.getString(fill ? R.string.screen_fill : R.string.screen_fit),
+                this::showAspect);
+        settings.addSection(R.string.settings_playback);
+        settings.addRow(R.string.playback_speed, activity.getString(R.string.settings_speed_value, speed),
+                this::showSpeed);
+        settings.addRow(R.string.skip_title, activity.getString(R.string.interval_seconds, skipSeconds), this::showSkip);
+        String delay = canAdjustSubtitleDelay() ? activity.getString(R.string.subtitle_delay_value, subtitleDelayMs / 1000.0)
+                : activity.getString(R.string.settings_option_unavailable);
+        settings.addRow(R.string.subtitle_delay_title, delay, this::showSubtitleDelay);
+        settings.addRow(R.string.playback_audio_tracks, null, () -> openFromSettings(this::showAudioTracks));
+        settings.addSection(R.string.settings_device);
+        settings.addRow(R.string.wireless_display, null, () -> openFromSettings(actions::showWirelessDisplay));
+        settings.addRow(R.string.playback_info_action, null, () -> openFromSettings(actions::showPlaybackInfo));
+        settings.addRow(R.string.usage_notice_title, null, () -> openFromSettings(actions::showUsageNotice));
+    }
+
+    boolean handleSettingsBack() {
+        return settings.handleBack();
+    }
+
+    void closeSettings() {
+        settings.close();
+    }
+
+    private void openFromSettings(Runnable action) {
+        settings.close();
+        action.run();
+    }
+
+    private void showAspect() {
+        settings.choose(R.string.settings_aspect,
+                new String[]{activity.getString(R.string.screen_fill), activity.getString(R.string.screen_fit)},
+                fill ? 0 : 1, choice -> {
+                    fill = choice == 0;
+                    preferences.edit().putBoolean("fill", fill).apply();
+                    actions.aspectChanged();
+                });
     }
 
     private static String speedLabel(float speed) {
@@ -402,7 +412,7 @@ final class RemotePlaybackControls {
         }
         List<Float> speeds = Arrays.asList(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f);
         String[] labels = speeds.stream().map(speed -> speedLabel(speed) + "×").toArray(String[]::new);
-        choose(R.string.playback_speed, labels, speeds.indexOf(player.getPlaybackParameters().speed), choice -> {
+        settings.choose(R.string.playback_speed, labels, speeds.indexOf(player.getPlaybackParameters().speed), choice -> {
             if (actions.player() == player) {
                 player.setPlaybackSpeed(speeds.get(choice));
             }
@@ -434,15 +444,15 @@ final class RemotePlaybackControls {
 
     private void showQuality() {
         if (session.profiles.size() < 2) {
-            new AlertDialog.Builder(activity).setMessage(R.string.quality_pc_upgrade)
-                    .setPositiveButton(android.R.string.ok, null).show();
+            settings.show(R.string.quality_title, true);
+            settings.addHint(R.string.quality_pc_upgrade);
             return;
         }
         List<String> values = new ArrayList<>();
         values.add("auto");
         values.addAll(session.profiles);
         String[] labels = values.stream().map(this::qualityLabel).toArray(String[]::new);
-        choose(R.string.quality_title, labels, values.indexOf(profile), choice -> {
+        settings.choose(R.string.quality_title, labels, values.indexOf(profile), choice -> {
             profile = values.get(choice);
             preferences.edit().putString("profile", profile).apply();
             actions.streamOptionsChanged();
@@ -464,7 +474,7 @@ final class RemotePlaybackControls {
         }
         String presetHdr = "auto".equals(profile) ? "auto" : "sdr";
         int selected = presetHdr.equals(hdr) ? profiles.indexOf(profile) : -1;
-        choose(R.string.quality_presets, labels.toArray(new String[0]), selected, choice -> {
+        settings.choose(R.string.quality_presets, labels.toArray(new String[0]), selected, choice -> {
             profile = profiles.get(choice);
             hdr = choice == 0 ? "auto" : "sdr";
             preferences.edit().putString("profile", profile).putString("hdr", hdr).apply();
@@ -474,7 +484,7 @@ final class RemotePlaybackControls {
 
     private void showHdr() {
         String[] values = {"auto", "original", "sdr"};
-        choose(R.string.hdr_title, new String[]{hdrLabel(values[0]), hdrLabel(values[1]), hdrLabel(values[2])},
+        settings.choose(R.string.hdr_title, new String[]{hdrLabel(values[0]), hdrLabel(values[1]), hdrLabel(values[2])},
                 Arrays.asList(values).indexOf(hdr), choice -> {
                     hdr = values[choice];
                     preferences.edit().putString("hdr", hdr).apply();
@@ -486,7 +496,7 @@ final class RemotePlaybackControls {
         List<Integer> values = Arrays.asList(5, 10, 15, 30);
         String[] labels = values.stream().map(value -> activity.getString(R.string.interval_seconds, value))
                 .toArray(String[]::new);
-        choose(R.string.skip_title, labels, values.indexOf(skipSeconds), choice -> {
+        settings.choose(R.string.skip_title, labels, values.indexOf(skipSeconds), choice -> {
             skipSeconds = values.get(choice);
             preferences.edit().putInt("skipSeconds", skipSeconds).apply();
             refresh();
@@ -494,27 +504,23 @@ final class RemotePlaybackControls {
     }
 
     private void showSubtitleDelay() {
-        if (!session.supportsCaptionOffset || session.subtitles.isEmpty()) {
-            new AlertDialog.Builder(activity).setMessage(R.string.subtitle_delay_unavailable)
-                    .setPositiveButton(android.R.string.ok, null).show();
+        if (!canAdjustSubtitleDelay()) {
+            settings.show(R.string.subtitle_delay_title, true);
+            settings.addHint(R.string.subtitle_delay_unavailable);
             return;
         }
         String[] labels = new String[21];
         for (int index = 0; index < labels.length; index++) {
             labels[index] = activity.getString(R.string.subtitle_delay_value, (index - 10) * 0.5);
         }
-        choose(R.string.subtitle_delay_title, labels, subtitleDelayMs / 500 + 10, choice -> {
+        settings.choose(R.string.subtitle_delay_title, labels, subtitleDelayMs / 500 + 10, choice -> {
             subtitleDelayMs = (choice - 10) * 500;
             preferences.edit().putInt("subtitleDelayMs", subtitleDelayMs).apply();
             actions.streamOptionsChanged();
         });
     }
 
-    private void choose(int title, String[] labels, int selected, IntConsumer callback) {
-        new AlertDialog.Builder(activity).setTitle(title)
-                .setSingleChoiceItems(labels, selected, (dialog, choice) -> {
-                    dialog.dismiss();
-                    callback.accept(choice);
-                }).setNegativeButton(android.R.string.cancel, null).show();
+    private boolean canAdjustSubtitleDelay() {
+        return session != null && session.supportsCaptionOffset && !session.subtitles.isEmpty();
     }
 }

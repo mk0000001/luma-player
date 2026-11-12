@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/playback_settings_overlay"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:visibility="gone">
+
+    <View
+        android:id="@+id/playback_settings_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#35000000"
+        android:importantForAccessibility="no" />
+
+    <LinearLayout
+        android:id="@+id/playback_settings_sheet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_margin="12dp"
+        android:background="@drawable/luma_settings_panel"
+        android:clickable="true"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/playback_settings_back"
+                style="@style/LumaTextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="48dp"
+                android:text="@string/settings_back"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/playback_settings_title"
+                style="@style/LumaSectionTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:accessibilityHeading="true"
+                android:paddingStart="8dp" />
+
+            <Button
+                android:id="@+id/playback_settings_close"
+                style="@style/LumaTextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="48dp"
+                android:text="@string/settings_close" />
+        </LinearLayout>
+
+        <ScrollView
+            android:id="@+id/playback_settings_scroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:overScrollMode="ifContentScrolls">
+
+            <LinearLayout
+                android:id="@+id/playback_settings_rows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="6dp" />
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>
