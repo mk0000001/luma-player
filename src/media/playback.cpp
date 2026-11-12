@@ -169,6 +169,12 @@ struct PlaybackEngine::Impl {
     bool managedSubtitle=false;
     MotionOptions motion;
     VideoOverrides nextVideo, activeVideo;
+    AudioOutputOptions nextAudio;
+    QStringList videoRejections;
+    bool discBitstream=false, nightApplied=false;
+    bool audioFallbackRetried=false;
+    QElapsedTimer audioFallbackWait;
+    QByteArray fileSource;
     QString motionMetadata;
     bool motionApplied=false;
     bool dolbyApplied=false;
@@ -229,6 +235,28 @@ struct PlaybackEngine::Impl {
     MF(mpv_free_node_contents); MF(mpv_request_log_messages); MF(mpv_error_string);
 #undef MF
     explicit Impl(PlaybackEngine *o,Kind k):owner(o),kind(k){}
+    bool initDisc(bool bitstream) {
+        QList<const char *> options{"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1"};
+        options.append(bitstream ? "--spdif" : "--no-spdif");
+#ifdef Q_OS_WIN
+        options.append(bitstream ? "--mmdevice-passthrough=2" : "--mmdevice-passthrough=0");
+        if(bitstream)options.append("--aout=mmdevice");
+#endif
+        auto *instance=libvlc_new(int(options.size()),options.data());
+        if(!instance)return false;
+        auto *replacement=libvlc_media_player_new(instance);
+        if(!replacement){libvlc_release(instance);return false;}
+        if(player)libvlc_media_player_release(player);
+        if(media){libvlc_media_release(media);media=nullptr;}
+        if(vlc){libvlc_log_unset(vlc);libvlc_release(vlc);}
+        vlc=instance;
+        player=replacement;
+        discBitstream=bitstream;
+        libvlc_log_set(vlc,&Impl::log,this);
+        libvlc_video_set_key_input(player,0);
+        libvlc_video_set_mouse_input(player,1);
+        return true;
+    }
     ~Impl(){
         lib.unload();
 #ifdef Q_OS_WIN
@@ -253,6 +281,71 @@ struct PlaybackEngine::Impl {
         return code;
     }
     QString prop(const char *key) { char *s=mpv_get_property_string(mpv,key); if(!s)return {}; const auto result=QString::fromUtf8(s); mpv_free(s); return result; }
+    void applyVideoColor() {
+        using Color=VideoOverrides::Color;
+        auto color=activeVideo.color;
+        const bool forced=activeVideo.forceHdr;
+        if(forced && (color==Color::Auto || color==Color::SDR))color=Color::HDR10;
+        const char *transfer=color==Color::SDR?"gamma2.2":color==Color::HDR10?"pq":color==Color::HLG?"hlg":"auto";
+        const char *primaries=color==Color::SDR?"bt.709":color==Color::Auto?"auto":"bt.2020";
+        auto rejected=videoRejections;
+        const auto set=[&](const char *name,const char *value,bool required=true){
+            if(mpv_set_property_string(mpv,name,value)<0 && required)rejected.append(QString::fromLatin1(name));
+        };
+        set("options/target-trc",transfer);
+        set("options/target-prim",primaries);
+        set("options/target-colorspace-hint",color==Color::Auto?"auto":"yes",color!=Color::Auto);
+        set("options/target-colorspace-hint-strict",forced?"no":"yes",forced);
+        set("options/inverse-tone-mapping",forced?"yes":"no",forced);
+        state.videoColorRequest=QString::fromLatin1(transfer);
+        state.videoColorForced=forced;
+        const auto error=rejected.isEmpty()?QString{}:QString("재생 엔진이 거부한 설정 · ")+rejected.join(", ");
+        if(!error.isEmpty() && error!=state.videoOverrideStatus)emit owner->logMessage(error);
+        state.videoOverrideStatus=error;
+    }
+    void applyFileAudio() {
+        using Profile=AudioOutputOptions::Profile;
+        QStringList rejected;
+        const auto set=[&](const char *name,const char *value){
+            if(mpv_set_property_string(mpv,name,value)<0)rejected.append(QString::fromLatin1(name));
+        };
+        if(nightApplied){command({"af","remove","@luma_night"});nightApplied=false;}
+#ifdef Q_OS_WIN
+        set("options/ao",nextAudio.bitstream?"wasapi":"");
+#endif
+        set("options/audio-spdif",nextAudio.bitstream?"ac3,eac3,dts,dts-hd,truehd":"");
+        const auto profile=nextAudio.bitstream?Profile::Auto:nextAudio.profile;
+        const char *channels=profile==Profile::Stereo?"stereo":profile==Profile::Surround51?"5.1,stereo":
+                             profile==Profile::Surround71?"7.1,5.1,stereo":"auto-safe";
+        set("options/audio-channels",channels);
+        if(profile==Profile::Night){
+            nightApplied=command({"af","add","@luma_night:lavfi=[acompressor=threshold=0.125:ratio=3:attack=20:release=250]"})>=0;
+            if(!nightApplied)rejected.append("야간 모드");
+        }
+        if(!rejected.isEmpty())state.audioSettingsError="재생 엔진이 거부한 설정 · "+rejected.join(", ");
+        mpv_request_log_messages(mpv,nextAudio.bitstream?"v":"warn");
+    }
+    void finishAudioFallback() {
+        if(!audioFallbackWait.isValid())return;
+        if(!state.audioFormat.isEmpty() && !state.audioOutput.isEmpty() && state.audioOutput!="null"){
+            audioFallbackWait.invalidate();
+            return;
+        }
+        if(audioFallbackWait.elapsed()<1000)return;
+        audioFallbackWait.invalidate();
+        audioFallbackRetried=true;
+        if(mpv_set_property_string(mpv,"options/audio-spdif","")<0){
+            state.audioSettingsError="PCM 오디오 전환을 시작할 수 없습니다.";
+            return;
+        }
+        // Some WASAPI devices reject compressed audio and libmpv's PCM decoder
+        // then waits for another packet. Reload once with PCM already selected.
+        fileLoaded=false;
+        seekReady=false;
+        if(state.positionMs>0)deferredSeek=state.positionMs;
+        if(command({"loadfile",fileSource,"replace"})<0)
+            state.audioSettingsError="PCM 오디오로 미디어를 다시 열 수 없습니다.";
+    }
     double number(const char *key) { double value=0; mpv_get_property(mpv,key,MPV_FORMAT_DOUBLE,&value); return value; }
     std::optional<double> metric(const char *key) {
         double value=0;
@@ -339,13 +432,7 @@ PlaybackEngine::PlaybackEngine(Kind kind,const QString &runtimeRoot,QObject *par
         if(decoder!="hardware" && decoder!="dxva2")d->discHardwareOption=":avcodec-hw=none";
 #endif
         if(decoder=="dxva2")d->discHardwareOption=":avcodec-hw=dxva2";
-        const char *options[]={"--no-video-title-show","--no-osd","--no-snapshot-preview","--no-lua","--verbose=1"};
-        d->vlc=d->libvlc_new(int(std::size(options)),options);
-        if(!d->vlc){d->error="libVLC initialization failed";return;}
-        d->libvlc_log_set(d->vlc,&Impl::log,d.get());
-        d->player=d->libvlc_media_player_new(d->vlc);
-        if(!d->player){d->error="libVLC player allocation failed";return;}
-        d->libvlc_video_set_key_input(d->player,0); d->libvlc_video_set_mouse_input(d->player,1);
+        if(!d->initDisc(false)){d->error="libVLC initialization failed";return;}
     }else{
 #define LOAD(n) ok=d->resolve(d->n,#n)&&ok
         LOAD(mpv_create); LOAD(mpv_initialize); LOAD(mpv_terminate_destroy); LOAD(mpv_set_option_string); LOAD(mpv_set_option);
@@ -388,6 +475,15 @@ bool PlaybackEngine::openPreparedDisc(const QString &source,WId surface,qint64 d
 }
 bool PlaybackEngine::open(const QString &source,WId surface){return openInternal(source,surface,0);}
 void PlaybackEngine::setVideoOverrides(VideoOverrides options){d->nextVideo=options;}
+void PlaybackEngine::setVideoColorOutput(VideoOverrides::Color color,bool forceHdr){
+    if(!d->mpv || !available() || !d->videoOutputActive)return;
+    if(d->activeVideo.color==color && d->activeVideo.forceHdr==forceHdr)return;
+    d->activeVideo.color=color;
+    d->activeVideo.forceHdr=forceHdr;
+    d->applyVideoColor();
+    emit updated();
+}
+void PlaybackEngine::setAudioOutputOptions(AudioOutputOptions options){d->nextAudio=options;}
 bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 preparedDiscDurationMs){
     if(!available()){d->fail(d->error);return false;}
     const auto input=normalizedPlaybackSource(source,d->kind==Kind::Disc);
@@ -396,8 +492,14 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
     d->fileLoaded=false;d->seekReady=false;d->deferredSeek.reset();d->navigationTitles.clear();d->titleDurations.clear();d->titleMetadataReady=false;
     d->preparedDiscDuration=preparedDiscDurationMs;d->preparedNativeTitle=-1;d->preparedPauseRequested=false;d->state.discMenus=preparedDiscDurationMs==0;
     d->activeVideo=d->nextVideo;
+    d->state.audioBitstreamRequested=d->nextAudio.bitstream;
     if(preparedDiscDurationMs>0)d->preparedTitleWait.start();else d->preparedTitleWait.invalidate();
     if(d->kind==Kind::Disc){
+        if(d->discBitstream!=d->nextAudio.bitstream && !d->initDisc(d->nextAudio.bitstream)){
+            d->fail("Blu-ray 오디오 출력을 준비할 수 없습니다. 오디오 출력 설정을 확인해 주세요.");
+            return false;
+        }
+        d->state.audioVolumeExternal=d->discBitstream;
         auto hardware=d->discHardwareOption;
         if(d->activeVideo.hardware==VideoOverrides::Hardware::Software)
             hardware=":avcodec-hw=none";
@@ -431,6 +533,9 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         d->libvlc_media_player_set_media(d->player,d->media);
         if(d->libvlc_media_player_play(d->player)<0){d->fail("Blu-ray 재생을 시작할 수 없습니다. 진단 로그를 확인하세요.");return false;}
     }else{
+        d->fileSource=input->toUtf8();
+        d->audioFallbackWait.invalidate();
+        d->audioFallbackRetried=false;
         const int64_t wid=static_cast<int64_t>(surface); d->mpv_set_property(d->mpv,"wid",MPV_FORMAT_INT64,const_cast<int64_t *>(&wid));
         d->motionMetadata.clear();
         if(d->motionApplied){d->command({"vf","remove","@luma_motion"});d->motionApplied=false;}
@@ -438,36 +543,25 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
         d->mpv_set_property_string(d->mpv,"interpolation","no");
         const auto hardware=hardwareDecoder(d->activeVideo.hardware,false);
         const auto decoder=preferredDecoder(d->activeVideo.codec);
-        const auto color=d->activeVideo.color;
-        const char *transfer=color==VideoOverrides::Color::SDR?"gamma2.2":
-                             color==VideoOverrides::Color::HDR10?"pq":color==VideoOverrides::Color::HLG?"hlg":"auto";
-        const char *primaries=color==VideoOverrides::Color::SDR?"bt.709":
-                              color==VideoOverrides::Color::Auto?"auto":"bt.2020";
-        QStringList rejected;
-        const auto set=[&](const char *name,const char *value,bool reportFailure=true){
-            if(d->mpv_set_property_string(d->mpv,name,value)<0 && reportFailure)rejected.append(QString::fromLatin1(name));
+        d->videoRejections.clear();
+        const auto set=[&](const char *name,const char *value){
+            if(d->mpv_set_property_string(d->mpv,name,value)<0)d->videoRejections.append(QString::fromLatin1(name));
         };
         set("options/hwdec",hardware);
         set("options/vd",decoder);
-        set("options/target-trc",transfer);
-        set("options/target-prim",primaries);
-        set("options/target-colorspace-hint",color==VideoOverrides::Color::Auto?"auto":"yes",color!=VideoOverrides::Color::Auto);
         d->state.videoDecoderRequest=QString::fromLatin1(hardware);
         if(*decoder)d->state.videoDecoderRequest+=" / "+QString::fromLatin1(decoder);
-        d->state.videoColorRequest=QString::fromLatin1(transfer);
         const auto filter=dolbyFilter(d->activeVideo.dolby);
         if(*filter){
             d->dolbyApplied=d->command({"vf","add",filter})>=0;
-            if(!d->dolbyApplied)rejected.append("Dolby Vision");
+            if(!d->dolbyApplied)d->videoRejections.append("Dolby Vision");
         }
         d->state.dolbyVisionRequest=d->activeVideo.dolby==VideoOverrides::DolbyVision::Ignore?"ignore":
             d->activeVideo.dolby==VideoOverrides::DolbyVision::BaseLayer?"base-layer":
             d->activeVideo.dolby==VideoOverrides::DolbyVision::Apply?"apply":"auto";
-        if(!rejected.isEmpty()){
-            d->state.videoOverrideStatus="재생 엔진이 거부한 설정 · "+rejected.join(", ");
-            emit logMessage(d->state.videoOverrideStatus);
-        }
-        if(d->command({"loadfile",input->toUtf8(),"replace"})<0){d->fail("재생 엔진이 파일 열기 요청을 거부했습니다.");return false;}
+        d->applyVideoColor();
+        d->applyFileAudio();
+        if(d->command({"loadfile",d->fileSource,"replace"})<0){d->fail("재생 엔진이 파일 열기 요청을 거부했습니다.");return false;}
     }
     d->videoOutputActive=true;d->videoOutputLossSent=false;
     emit logMessage(QString("Opening with %1").arg(name()));return true;
@@ -483,7 +577,7 @@ void PlaybackEngine::stop(){
         QEventLoop loop;connect(worker,&QThread::finished,&loop,&QEventLoop::quit);worker->start();
         loop.exec(QEventLoop::ExcludeUserInputEvents);worker->wait();delete worker;
     }
-    if(d->mpv)d->command({"stop"});d->stopping.store(false);if(!d->destroying)d->timer.start();
+    if(d->mpv){d->audioFallbackWait.invalidate();d->command({"stop"});}d->stopping.store(false);if(!d->destroying)d->timer.start();
 }
 void PlaybackEngine::pauseToggle(){if(!available())return;if(d->player){if(d->preparedDiscDuration>0)setPaused(!d->preparedPauseRequested);else d->libvlc_media_player_pause(d->player);}else d->command({"cycle","pause"});}
 void PlaybackEngine::setPaused(bool paused){if(!available())return;if(d->player){d->preparedPauseRequested=paused;d->libvlc_media_player_set_pause(d->player,d->preparedDiscDuration>0 || paused?1:0);}else d->mpv_set_property_string(d->mpv,"pause",paused?"yes":"no");}
@@ -633,8 +727,23 @@ void PlaybackEngine::poll(){
         for(int i=0;i<100;++i){auto *event=d->mpv_wait_event(d->mpv,0);if(!event || event->event_id==MPV_EVENT_NONE)break;
             if(event->event_id==MPV_EVENT_FILE_LOADED){d->fileLoaded=true;updateFrameInterpolation();}
             if(event->event_id==MPV_EVENT_PLAYBACK_RESTART){d->seekReady=true;if(d->deferredSeek){const auto target=*d->deferredSeek;d->deferredSeek.reset();seek(target);}}
-            if(event->event_id==MPV_EVENT_LOG_MESSAGE){auto *m=static_cast<mpv_event_log_message *>(event->data);emit logMessage(redactNetworkSources(QString::fromUtf8(m->text).trimmed()));}
-            if(event->event_id==MPV_EVENT_END_FILE){auto *end=static_cast<mpv_event_end_file *>(event->data);if(end->reason==MPV_END_FILE_REASON_ERROR)d->fail(QString::fromUtf8(d->mpv_error_string(end->error)));}
+            if(event->event_id==MPV_EVENT_LOG_MESSAGE){
+                auto *m=static_cast<mpv_event_log_message *>(event->data);
+                const auto message=QString::fromUtf8(m->text).trimmed();
+                if(d->videoOutputActive && d->state.audioBitstreamRequested && !d->audioFallbackRetried &&
+                   QByteArrayView(m->prefix)=="cplayer" && message=="Falling back to PCM output."){
+                    d->audioFallbackWait.start();
+                    d->mpv_request_log_messages(d->mpv,"warn");
+                }
+                if(m->log_level<=MPV_LOG_LEVEL_WARN)emit logMessage(redactNetworkSources(message));
+            }
+            if(event->event_id==MPV_EVENT_END_FILE){
+                auto *end=static_cast<mpv_event_end_file *>(event->data);
+                if(end->reason!=MPV_END_FILE_REASON_ERROR)continue;
+                if(end->error==MPV_ERROR_AO_INIT_FAILED && d->videoOutputActive && d->state.audioBitstreamRequested && !d->audioFallbackRetried){
+                    if(!d->audioFallbackWait.isValid())d->audioFallbackWait.start();
+                }else d->fail(QString::fromUtf8(d->mpv_error_string(end->error)));
+            }
         }
         d->state.positionMs=qint64(d->number("time-pos")*1000);d->state.durationMs=qint64(d->number("duration")*1000);
         d->state.timelineReady=d->fileLoaded && d->state.durationMs>0;
@@ -658,6 +767,11 @@ void PlaybackEngine::poll(){
         updateFrameInterpolation();
         d->state.outputPrimaries=d->prop("video-target-params/primaries");d->state.outputTransferFunction=d->prop("video-target-params/gamma");
         d->state.audioSampleRate=int(d->number("audio-params/samplerate"));d->state.audioChannels=int(d->number("audio-params/channel-count"));d->state.audioOutput=d->prop("current-ao");d->state.droppedVideoFrames=int(d->number("frame-drop-count"));
+        d->state.audioFormat=d->prop("audio-out-params/format");
+        d->state.audioLayout=d->prop("audio-out-params/hr-channels");
+        d->state.audioBitstreamActive=d->state.audioFormat.startsWith("spdif-") && !d->state.audioOutput.isEmpty() && d->state.audioOutput!="null";
+        d->state.audioVolumeExternal=d->state.audioBitstreamActive;
+        d->finishAudioFallback();
         d->state.currentChapter=int(d->number("chapter"));
         d->state.currentAudio=int(d->number("aid"));const auto sid=d->prop("sid");d->state.currentSubtitle=sid=="no"?-1:sid.toInt();
         const int trackCount=std::clamp(int(d->number("track-list/count")),0,1000);d->state.audioTracks.clear();d->state.subtitleTracks={{-1,"자막 끄기"}};

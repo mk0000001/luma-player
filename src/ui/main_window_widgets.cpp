@@ -12,6 +12,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -33,6 +34,7 @@
 #include <QStandardPaths>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QUrl>
 #include <algorithm>
 
 #ifdef Q_OS_WIN
@@ -51,6 +53,7 @@ QLabel *label(const QString &text,const char *name=nullptr){
     return widget;
 }
 QPushButton *button(const QString &text,const char *name=nullptr){auto *widget=new QPushButton(text);widget->setCursor(Qt::PointingHandCursor);if(name)widget->setObjectName(name);return widget;}
+void choice(QVBoxLayout *layout,const QString &name,QComboBox *&box){layout->addWidget(label(name,"section"));box=new ChoiceBox;layout->addWidget(box);}
 QScrollArea *scrollPanel(QWidget *contents){auto *scroll=new QScrollArea;scroll->setWidgetResizable(true);scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);scroll->setWidget(contents);return scroll;}
 void setSavedChoice(QComboBox *box,const QString &key,const QString &fallback={}){const auto saved=QSettings().value(key,fallback).toString();for(int i=0;i<box->count();++i)if(box->itemData(i).toString()==saved){box->setCurrentIndex(i);break;}}
 void addCaptionAppearance(QVBoxLayout *settingsLayout,CaptionOverlay *overlay){
@@ -140,6 +143,38 @@ bool confirmDeveloperUse(QWidget *parent,bool capture){
 }
 }
 
+void MainWindow::buildAudioSettings(QVBoxLayout *layout){
+    using Profile=AudioOutputOptions::Profile;
+    choice(layout,"오디오 출력",audioOutputMode_);
+    audioOutputMode_->setObjectName("audioOutputMode");
+    audioOutputMode_->addItem("시스템 오디오 · PCM","system");
+    audioOutputMode_->addItem("HDMI 비트스트림 · AV 리시버","bitstream");
+    setSavedChoice(audioOutputMode_,"audio/output","system");
+    choice(layout,"파일 PCM 음장",audioProfile_);
+    audioProfile_->setObjectName("audioProfile");
+    audioProfile_->addItem("자동 · 장치 채널 사용",int(Profile::Auto));
+    audioProfile_->addItem("스테레오",int(Profile::Stereo));
+    audioProfile_->addItem("5.1 서라운드 우선",int(Profile::Surround51));
+    audioProfile_->addItem("7.1 서라운드 우선",int(Profile::Surround71));
+    audioProfile_->addItem("야간 모드 · 큰 소리 완화",int(Profile::Night));
+    setSavedChoice(audioProfile_,"audio/profile","0");
+    audioProfile_->setEnabled(audioOutputMode_->currentData()=="system");
+    auto *note=label("미디어를 다시 열면 적용합니다. Atmos와 DTS:X 비트스트림은 해당 트랙과 호환 리시버가 필요합니다.","muted");
+    note->setWordWrap(true);layout->addWidget(note);
+#ifdef Q_OS_WIN
+    auto *spatial=button("Windows 공간 음향 설정","subtle");layout->addWidget(spatial);
+    spatial->setToolTip("Windows Sonic, Dolby Atmos for Headphones, DTS Headphone:X는 Windows 출력 장치에서 선택합니다.");
+    connect(spatial,&QPushButton::clicked,this,[]{QDesktopServices::openUrl(QUrl("ms-settings:sound"));});
+#endif
+    audioOutputStatus_=label("재생을 시작하면 실제 오디오 출력을 표시합니다.","muted");
+    audioOutputStatus_->setObjectName("audioOutputStatus");audioOutputStatus_->setWordWrap(true);layout->addWidget(audioOutputStatus_);
+    connect(audioOutputMode_,&QComboBox::currentIndexChanged,this,[this]{
+        QSettings().setValue("audio/output",audioOutputMode_->currentData());
+        audioProfile_->setEnabled(audioOutputMode_->currentData()=="system");
+    });
+    connect(audioProfile_,&QComboBox::currentIndexChanged,this,[this]{QSettings().setValue("audio/profile",audioProfile_->currentData());});
+}
+
 void MainWindow::buildUi(){
     installPlayerTheme();
     auto *central=new QWidget;setCentralWidget(central);auto *outer=new QVBoxLayout(central);outer->setContentsMargins(0,0,0,0);outer->setSpacing(0);
@@ -167,12 +202,12 @@ void MainWindow::buildUi(){
     for(auto *control:{previous,back,play,forward,next})buttons->addWidget(control);
     clock_=label("00:00 / 00:00","muted");clock_->setMinimumWidth(115);buttons->addSpacing(5);buttons->addWidget(clock_);buttons->addStretch();
     rate_=new ChoiceBox;rate_->setObjectName("playbackRate");rate_->setAccessibleName("재생 속도");for(double speed:{.5,.75,1.,1.25,1.5,2.})rate_->addItem(QString::number(speed)+"×",speed);rate_->setCurrentIndex(2);rate_->setMinimumHeight(30);rate_->setFixedSize(70,32);buttons->addWidget(rate_);
-    auto *volumeIcon=new IconButton(PlayerIcon::Volume,"음량");volumeIcon->setFocusPolicy(Qt::NoFocus);buttons->addWidget(volumeIcon);volume_=new QSlider(Qt::Horizontal);volume_->setObjectName("volumeSlider");volume_->setAccessibleName("음량");volume_->setRange(0,100);volume_->setValue(QSettings().value("playback/volume",70).toInt());volume_->setFixedWidth(65);buttons->addWidget(volume_);
+    volumeButton_=new IconButton(PlayerIcon::Volume,"음량");volumeButton_->setFocusPolicy(Qt::NoFocus);buttons->addWidget(volumeButton_);volume_=new QSlider(Qt::Horizontal);volume_->setObjectName("volumeSlider");volume_->setAccessibleName("음량");volume_->setRange(0,100);volume_->setValue(QSettings().value("playback/volume",70).toInt());volume_->setFixedWidth(65);buttons->addWidget(volume_);
     auto *quick=button("자막");quick->setObjectName("captionQuick");quick->setFixedHeight(32);buttons->addWidget(quick);
     auto *remoteButton=button("메뉴");remoteButton->setObjectName("remoteQuick");remoteButton->setToolTip("Blu-ray 디스크 리모컨");remoteButton->setFixedHeight(32);buttons->addWidget(remoteButton);
     auto *pip=new IconButton(PlayerIcon::PictureInPicture,"작은 화면 · Ctrl+Shift+P");pip->setObjectName("pictureInPicture");pipButton_=pip;pip->setEnabled(false);buttons->addWidget(pip);
     auto *full=new IconButton(PlayerIcon::Fullscreen,"전체 화면 · F11");fullButton_=full;buttons->addWidget(full);transportLayout->addLayout(buttons);centerLayout->addWidget(transport_);
-    controlsHiddenInPip_={previous,back,forward,next,rate_,volumeIcon,volume_,quick,remoteButton,full};
+    controlsHiddenInPip_={previous,back,forward,next,rate_,volumeButton_,volume_,quick,remoteButton,full};
     status_=label("미디어를 선택하면 준비가 시작됩니다.","status");status_->setWordWrap(true);centerLayout->addWidget(status_);body->addWidget(center,1);
     captions_=new CaptionOverlay(surface_);
     panel_=new QWidget;panel_->setObjectName("settingsPanel");panel_->setFixedWidth(306);auto *panelLayout=new QVBoxLayout(panel_);panelLayout->setContentsMargins(0,0,0,0);auto *tabs=new QTabWidget;tabs->setObjectName("settingsTabs");panelLayout->addWidget(tabs);body->addWidget(panel_);
@@ -184,7 +219,6 @@ void MainWindow::buildUi(){
     const QList<DiscAction> actions={DiscAction::Up,DiscAction::Left,DiscAction::Activate,DiscAction::Right,DiscAction::Down};const QStringList names={"위","왼쪽","확인","오른쪽","아래"};
     for(int i=0;i<keys.size();++i){auto *control=new IconButton(keys[i].first,"디스크 "+names[i]);control->setFixedSize(54,34);remote->addWidget(control,keys[i].second.y(),keys[i].second.x());connect(control,&QPushButton::clicked,this,[this,action=actions[i]]{if(active_==discEngine_.get())active_->navigate(discActionCode(action));});}
     discLayout->addLayout(remote);
-    auto choice=[&](QVBoxLayout *layout,const QString &name,QComboBox *&box){layout->addWidget(label(name,"section"));box=new ChoiceBox;layout->addWidget(box);};
     choice(discLayout,"타이틀",titles_);titles_->setObjectName("discTitles");choice(discLayout,"오디오",audio_);audio_->setObjectName("audioTracks");choice(discLayout,"디스크 자막",subs_);subs_->setObjectName("subtitleTracks");auto *external=button("자막 파일 추가","subtle");external->setToolTip("UTF-8 SRT 원문을 보존하며 독음·번역을 별도로 표시합니다.");discLayout->addWidget(external);discLayout->addWidget(label("챕터","section"));chapters_=new QListWidget;chapters_->setMinimumHeight(120);discLayout->addWidget(chapters_,1);tabs->addTab(scrollPanel(discTab),"디스크");
     auto *aiTab=new QWidget;auto *aiLayout=new QVBoxLayout(aiTab);aiLayout->setContentsMargins(17,18,17,18);aiLayout->setSpacing(10);aiLayout->addWidget(label("LOCAL CAPTIONS","section"));
     auto *aiIntro=label("원문부터 번역까지.\n내 기기에서 함께.","nowTitle");aiIntro->setWordWrap(true);aiLayout->addWidget(aiIntro);
@@ -211,13 +245,26 @@ void MainWindow::buildUi(){
     auto *settingsTab=new QWidget;auto *settingsLayout=new QVBoxLayout(settingsTab);settingsLayout->setContentsMargins(17,18,17,18);settingsLayout->setSpacing(12);
     addCaptionAppearance(settingsLayout,captions_);
     settingsLayout->addWidget(label("PLAYBACK & PRIVACY","section"));
+    choice(settingsLayout,"파일 HDR 출력",hdrOutputMode_);hdrOutputMode_->setObjectName("hdrOutputMode");
+    hdrOutputMode_->addItem("자동 · HDR 화면에 맞춤","auto");hdrOutputMode_->addItem("끔 · SDR 출력","sdr");
+    setSavedChoice(hdrOutputMode_,"video/hdrOutput","auto");
+    hdrPlaybackStatus_=label("파일을 열면 영상 출력 형식을 표시합니다.","muted");
+    hdrPlaybackStatus_->setObjectName("hdrPlaybackStatus");hdrPlaybackStatus_->setWordWrap(true);settingsLayout->addWidget(hdrPlaybackStatus_);
+    connect(hdrOutputMode_,&QComboBox::currentIndexChanged,this,[this]{
+        QSettings().setValue("video/hdrOutput",hdrOutputMode_->currentData());applyVideoOutputPreferences();
+    });
     choice(settingsLayout,"파일 영상 GPU",videoGpu_);videoGpu_->setObjectName("videoGpu");videoGpu_->addItem("자동 선택",QString{});for(const auto &entry:videoAdapters()){const auto adapter=entry.toObject();videoGpu_->addItem(adapter.value("name").toString(),adapter.value("id").toString());}setSavedChoice(videoGpu_,"video/adapter");
     auto *videoNote=label("파일 재생에 적용됩니다. 재생 중 변경하면 현재 위치에서 다시 연결합니다.","muted");videoNote->setWordWrap(true);settingsLayout->addWidget(videoNote);
     choice(settingsLayout,"프레임 보간",motionMode_);motionMode_->setObjectName("motionMode");motionMode_->addItem("꺼짐","off");motionMode_->addItem("부드러운 표시 · GPU 블렌딩","display");motionMode_->addItem("모션 보간 · 실험적 CPU 처리","optical");setSavedChoice(motionMode_,"motion/mode","off");
     choice(settingsLayout,"모션 보간 목표 FPS",motionFps_);motionFps_->setObjectName("motionFps");for(int fps:{60,90,120,144,165,240,360})motionFps_->addItem(QString::number(fps)+" fps",fps);setSavedChoice(motionFps_,"motion/fps","120");
     motionStatus_=label("파일 영상에서 사용할 수 있습니다.","muted");motionStatus_->setObjectName("motionStatus");motionStatus_->setWordWrap(true);settingsLayout->addWidget(motionStatus_);
     auto *motionNote=label("파일 전용 · 디스크 메뉴에는 적용하지 않습니다.\nCPU 모션 보간은 부하가 높습니다. 목표 FPS와 실제 처리·출력 FPS는 다를 수 있습니다.","muted");motionNote->setWordWrap(true);settingsLayout->addWidget(motionNote);
-    displayStatus_=label("디스플레이 정보 확인 중…","displayStatus");displayStatus_->setWordWrap(true);settingsLayout->addWidget(displayStatus_);
+    displayStatus_=label("디스플레이 정보 확인 중…","displayStatus");displayStatus_->setObjectName("displayStatus");displayStatus_->setWordWrap(true);settingsLayout->addWidget(displayStatus_);
+#ifdef Q_OS_WIN
+    auto *displaySettings=button("Windows 디스플레이 설정","subtle");settingsLayout->addWidget(displaySettings);
+    connect(displaySettings,&QPushButton::clicked,this,[]{QDesktopServices::openUrl(QUrl("ms-settings:display"));});
+#endif
+    buildAudioSettings(settingsLayout);
     captureStatus_=label("보호 디스크를 재생하면 캡처 차단을 적용합니다.","captureStatus");captureStatus_->setWordWrap(true);settingsLayout->addWidget(captureStatus_);auto *privacyNote=label("개발용 캡처 허용은 개발자 모드에서 별도 동의 후 설정할 수 있습니다. Windows 캡처 제외는 DRM·HDCP 인증과는 별개입니다.","muted");privacyNote->setWordWrap(true);settingsLayout->addWidget(privacyNote);
     developerEnabled_=new QCheckBox("개발자 모드");developerEnabled_->setObjectName("developerMode");
     developerEnabled_->setChecked(QSettings().value("ui/developerMode",false).toBool() && QSettings().value("privacy/developerConsentVersion",0).toInt()==privacyConsentVersion);settingsLayout->addWidget(developerEnabled_);
@@ -234,7 +281,7 @@ void MainWindow::buildUi(){
         developerApproved_=enabled;
         QSettings().setValue("ui/developerMode",enabled);QSettings().setValue("privacy/developerConsentVersion",enabled?privacyConsentVersion:0);
         if(!enabled){captureAllowed_->setChecked(false);performanceEnabled_->setChecked(false);}
-        developerPanel->setVisible(enabled);codec_->setVisible(enabled);applyCapturePolicy();
+        developerPanel->setVisible(enabled);codec_->setVisible(enabled);applyCapturePolicy();applyVideoOutputPreferences();
     });
     connect(captureAllowed_,&QCheckBox::toggled,this,[this](bool allowed){
         if(allowed && (!developerEnabled_->isChecked() || !confirmDeveloperUse(this,true))){QSignalBlocker guard(captureAllowed_);captureAllowed_->setChecked(false);allowed=false;}
@@ -255,8 +302,8 @@ void MainWindow::buildUi(){
     connect(back,&QPushButton::clicked,this,[this]{if(active_)seekTo(active_->state().positionMs-10000);});connect(forward,&QPushButton::clicked,this,[this]{if(active_)seekTo(active_->state().positionMs+10000);});
     connect(previous,&QPushButton::clicked,this,[this]{if(active_)selectChapter(std::max(0,active_->state().currentChapter-1));});connect(next,&QPushButton::clicked,this,[this]{if(active_)selectChapter(active_->state().currentChapter+1);});
     connect(seek_,&QSlider::sliderReleased,this,[this]{if(active_)seekTo(active_->state().durationMs*seek_->value()/10000);});
-    connect(volume_,&QSlider::valueChanged,this,[this,volumeIcon](int volume){QSettings().setValue("playback/volume",volume);if(volume>0){lastUnmutedVolume_=volume;QSettings().setValue("playback/lastUnmutedVolume",volume);}volumeIcon->setToolTip(volume?"음소거 · M":"음소거 해제 · M");if(active_)active_->setVolume(volume);});
-    connect(volumeIcon,&QPushButton::clicked,this,&MainWindow::toggleMute);
+    connect(volume_,&QSlider::valueChanged,this,[this](int volume){QSettings().setValue("playback/volume",volume);if(volume>0){lastUnmutedVolume_=volume;QSettings().setValue("playback/lastUnmutedVolume",volume);}volumeButton_->setToolTip(volume?"음소거 · M":"음소거 해제 · M");if(active_)active_->setVolume(volume);});
+    connect(volumeButton_,&QPushButton::clicked,this,&MainWindow::toggleMute);
     connect(rate_,&QComboBox::activated,this,[this]{if(active_)active_->setRate(rate_->currentData().toDouble());});connect(full,&QPushButton::clicked,this,&MainWindow::toggleFullScreen);
     connect(pip,&QPushButton::clicked,this,&MainWindow::togglePictureInPicture);
     connect(topMenu,&QPushButton::clicked,this,[this]{if(active_==discEngine_.get()){selectTitle(0);surface_->setFocus();}});

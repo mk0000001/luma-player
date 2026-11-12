@@ -15,6 +15,12 @@ struct VideoOverrides {
     Codec codec = Codec::Auto;
     Color color = Color::Auto;
     DolbyVision dolby = DolbyVision::Auto;
+    bool forceHdr = false;
+};
+struct AudioOutputOptions {
+    enum class Profile { Auto, Stereo, Surround51, Surround71, Night };
+    bool bitstream = false;
+    Profile profile = Profile::Auto;
 };
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
@@ -25,9 +31,12 @@ struct PlaybackState {
     QString mediaTitle, videoCodec, audioCodec, hardwareDecoder;
     QString colorPrimaries,transferFunction,outputPrimaries,outputTransferFunction,audioOutput,runtimeVersion;
     QString videoDecoder, videoDecoderRequest, videoColorRequest, dolbyVisionRequest, videoOverrideStatus;
+    bool videoColorForced=false;
     std::optional<int> dolbyVisionProfile;
     int audioSampleRate=0,audioChannels=0,droppedVideoFrames=0,lostAudioBuffers=0;
     bool losslessAudio=false;
+    QString audioFormat, audioLayout, audioSettingsError;
+    bool audioBitstreamRequested=false, audioBitstreamActive=false, audioVolumeExternal=false;
     QString motionStatus;
     double sourceFps=0,filteredFps=0,displayFps=0;
     bool discStatisticsAvailable=false, fileCacheHolding=false;
@@ -58,6 +67,8 @@ public:
     void setPaused(bool paused);
     void setPerformanceMetricsEnabled(bool enabled);
     void setVideoOverrides(VideoOverrides options);
+    void setVideoColorOutput(VideoOverrides::Color color,bool forceHdr);
+    void setAudioOutputOptions(AudioOutputOptions options);
     void setFrameInterpolation(const QString &mode,int targetFps);
     void seek(qint64 positionMs);
     void setVolume(int volume);

@@ -41,7 +41,8 @@ void syncCombo(QComboBox *box,const QVector<MediaItem> &items){
 }
 
 void MainWindow::bindEngine(PlaybackEngine *engine){
-    engine->setVideoOverrides(developerApproved_?developerVideoOptions_:VideoOverrides{});
+    engine->setVideoOverrides(videoOutputPreferences());
+    engine->setAudioOutputOptions(audioOutputPreferences());
     engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}});
@@ -101,6 +102,45 @@ void MainWindow::updateDisplayStatus(){
     displayStatus_->setToolTip("현재 Windows 출력 상태입니다. Dolby Vision 인증 출력은 확인되지 않았습니다.");
 }
 
+VideoOverrides MainWindow::videoOutputPreferences() const {
+    auto result=developerApproved_?developerVideoOptions_:VideoOverrides{};
+    if(result.color==VideoOverrides::Color::Auto && hdrOutputMode_->currentData()=="sdr")
+        result.color=VideoOverrides::Color::SDR;
+    return result;
+}
+
+AudioOutputOptions MainWindow::audioOutputPreferences() const {
+    return {audioOutputMode_->currentData()=="bitstream",AudioOutputOptions::Profile(audioProfile_->currentData().toInt())};
+}
+
+void MainWindow::applyVideoOutputPreferences(){
+    if(!fileEngine_)return;
+    const auto options=videoOutputPreferences();
+    fileEngine_->setVideoOverrides(options);
+    if(active_==fileEngine_.get())fileEngine_->setVideoColorOutput(options.color,options.forceHdr);
+}
+
+void MainWindow::updateAudioOutputStatus(const PlaybackState &state){
+    const bool external=state.audioVolumeExternal && !state.failed;
+    if(volume_->isEnabled()==external){
+        volume_->setEnabled(!external);volumeButton_->setEnabled(!external);
+        const auto hint=external?QString("AV 리시버에서 음량 조절"):QString{};
+        volume_->setToolTip(hint);
+        volumeButton_->setToolTip(external?hint:volume_->value()>0?"음소거 · M":"음소거 해제 · M");
+    }
+    QString text;
+    if(state.audioBitstreamActive)text="비트스트림 · "+state.audioFormat+" · 리시버에서 음량 조절";
+    else if(state.audioBitstreamRequested && active_==discEngine_.get())
+        text="Blu-ray 비트스트림 요청 · 리시버에서 출력 형식과 음량을 확인하세요.";
+    else if(!state.audioFormat.isEmpty()){
+        text=state.audioBitstreamRequested?"PCM으로 재생 중":"시스템 PCM";
+        text+=" · "+QStringList{state.audioLayout,state.audioOutput}.filter(QRegularExpression(".+")).join(" · ");
+    }else if(!state.audioCodec.isEmpty())text="오디오 · "+state.audioCodec;
+    else text="재생을 시작하면 실제 오디오 출력을 표시합니다.";
+    if(!state.audioSettingsError.isEmpty())text+="\n"+state.audioSettingsError;
+    if(audioOutputStatus_->text()!=text)audioOutputStatus_->setText(text);
+}
+
 void MainWindow::changeVideoAdapter(){
     const auto selected=videoGpu_->currentData().toString();if(QSettings().value("video/adapter").toString()==selected)return;
     QSettings().setValue("video/adapter",selected);
@@ -149,7 +189,8 @@ void MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     resumeIdentity_=resumeIdentity(source_,disc?&discInfo_:nullptr);pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);resumeSavedAt_=0;
     translation_->setGlossary(configuredTranslationGlossary(disc?resumeIdentity_:QString{}));
     active_=disc?discEngine_.get():fileEngine_.get();nowTitle_->setText(disc?(discInfo_.label.isEmpty()?"Blu-ray":discInfo_.label):QFileInfo(source).fileName());
-    active_->setVideoOverrides(developerApproved_?developerVideoOptions_:VideoOverrides{});
+    active_->setVideoOverrides(videoOutputPreferences());
+    active_->setAudioOutputOptions(audioOutputPreferences());
     surface_->setFocus(Qt::OtherFocusReason);welcome_->hide();status_->setProperty("error",false);status_->setText("미디어를 여는 중…");
     const auto videoWindow=static_cast<VideoSurface*>(surface_)->videoWindowId();
     const bool opened=disc && preparedDiscDurationMs>0?active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs):active_->open(source_,videoWindow);
@@ -224,6 +265,11 @@ void MainWindow::resumeLatest(){
 void MainWindow::refresh(){
     if(!active_)return;const auto state=active_->state();
     updateDeveloperVideoStatus(state);
+    updateAudioOutputStatus(state);
+    const auto hdrText=active_==discEngine_.get()?QString("Blu-ray 메뉴 재생은 디스크 엔진의 영상 출력을 사용합니다."):
+        state.outputTransferFunction.isEmpty()?QString("파일을 열면 영상 출력 형식을 표시합니다."):
+        QString("렌더러 %1 / %2").arg(state.outputTransferFunction,state.outputPrimaries);
+    if(hdrPlaybackStatus_->text()!=hdrText)hdrPlaybackStatus_->setText(hdrText);
     if(videoRecoveryExhausted_)active_->setPaused(true);
     if(recoveryPlayback_ && pendingResume_){
         const bool targetReady=state.timelineReady && (active_!=discEngine_.get() || (!state.navigationTitle && state.currentTitle==pendingResume_->title));
@@ -295,6 +341,6 @@ void MainWindow::seekTo(qint64 position){
     if(liveCaptioningActive() && captionTimelineAvailable()){bufferHolding_=true;bufferResume_=resume;active_->setPaused(true);}active_->seek(position);scheduleSubtitles();
 }
 
-void MainWindow::toggleMute(){if(volume_->value()>0){lastUnmutedVolume_=volume_->value();volume_->setValue(0);}else volume_->setValue(std::clamp(lastUnmutedVolume_,1,100));}
+void MainWindow::toggleMute(){if(!volume_->isEnabled())return;if(volume_->value()>0){lastUnmutedVolume_=volume_->value();volume_->setValue(0);}else volume_->setValue(std::clamp(lastUnmutedVolume_,1,100));}
 
 }

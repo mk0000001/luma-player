@@ -11,6 +11,7 @@
 #include <QFontDatabase>
 #include <QRawFont>
 #include <QSettings>
+#include <QScreen>
 #include <QSlider>
 #include <QSpinBox>
 #include <QTemporaryDir>
@@ -76,6 +77,25 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void hdrAndAudioAreAvailableWithoutDeveloperMode(){
+        luma::MainWindow window;
+        auto *hdr=window.findChild<QComboBox*>("hdrOutputMode");
+        auto *audio=window.findChild<QComboBox*>("audioOutputMode");
+        auto *force=window.findChild<QCheckBox*>("developerForceHdr");
+        auto *developer=window.findChild<QWidget*>("developerDiagnostics");
+        QVERIFY(hdr && audio && force && developer);
+        QVERIFY(!developer->isAncestorOf(hdr) && !developer->isAncestorOf(audio));
+        QVERIFY(developer->isAncestorOf(force));
+        QVERIFY(!window.diagnostics().value("developerMode").toBool());
+        QCOMPARE(hdr->currentData().toString(),QString("auto"));
+        QCOMPARE(audio->currentData().toString(),QString("system"));
+        hdr->setCurrentIndex(hdr->findData("sdr"));
+        QCOMPARE(QSettings().value("video/hdrOutput").toString(),QString("sdr"));
+        hdr->setCurrentIndex(hdr->findData("auto"));
+        QCOMPARE(QSettings().value("video/hdrOutput").toString(),QString("auto"));
+        audio->setCurrentIndex(audio->findData("bitstream"));
+        QCOMPARE(QSettings().value("audio/output").toString(),QString("bitstream"));
+    }
     void developerPerformanceOverlayRequiresConsentAndExportsSamples(){
         QSettings().setValue("developer/performanceEnabled",true);
         luma::MainWindow window;
@@ -131,6 +151,91 @@ private slots:
         QVERIFY2(seek->value()>7100 && seek->value()<7900,qPrintable(QString("seek value %1 / %2, width %3").arg(seek->value()).arg(seek->maximum()).arg(seek->width())));
     }
 #ifdef Q_OS_WIN
+    void hdrFollowsDisplayAndSupportsDeveloperForce(){
+        const auto hdrMedia=qEnvironmentVariable("LUMA_UI_TEST_HDR_MEDIA");
+        const auto sdrMedia=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
+        const auto hdrName=qEnvironmentVariable("LUMA_UI_HDR_SCREEN"),sdrName=qEnvironmentVariable("LUMA_UI_SDR_SCREEN");
+        if(QGuiApplication::platformName()!="windows" || hdrName.isEmpty() || sdrName.isEmpty() ||
+           !QFileInfo::exists(hdrMedia) || !QFileInfo::exists(sdrMedia))QSKIP("Requires native HDR and SDR displays and owned fixtures");
+        const auto findScreen=[](const QString &name)->QScreen*{
+            for(auto *screen:QGuiApplication::screens())
+                if(screen->name().endsWith(name,Qt::CaseInsensitive) || screen->model().compare(name,Qt::CaseInsensitive)==0)return screen;
+            return nullptr;
+        };
+        auto *hdrScreen=findScreen(hdrName),*sdrScreen=findScreen(sdrName);
+        QStringList screens;
+        for(auto *screen:QGuiApplication::screens())screens.append(screen->name()+" / "+screen->model());
+        QVERIFY2(hdrScreen && sdrScreen && hdrScreen!=sdrScreen,qPrintable(screens.join("; ")));
+        luma::MainWindow window;
+        const auto move=[&](QScreen *screen){window.setScreen(screen);window.move(screen->availableGeometry().topLeft()+QPoint(20,20));};
+        move(hdrScreen);window.show();
+        auto *hdr=window.findChild<QComboBox*>("hdrOutputMode");
+        auto *force=window.findChild<QCheckBox*>("developerForceHdr");
+        auto *developer=window.findChild<QCheckBox*>("developerMode");
+        auto *displayLabel=window.findChild<QLabel*>("displayStatus");
+        QVERIFY(hdr && force && developer && displayLabel);
+        QTRY_VERIFY(window.diagnostics().value("display").toObject().value("hdrActive").toBool());
+        window.openSource(hdrMedia);
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("videoTransfer").toString(),QString("pq"),10000);
+        QCOMPARE(window.diagnostics().value("requestedVideoTransfer").toString(),QString("auto"));
+        QVERIFY(!developer->isChecked());
+        hdr->setCurrentIndex(hdr->findData("sdr"));
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("requestedVideoTransfer").toString(),QString("gamma2.2"),5000);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("videoTransfer").toString()!="pq",5000);
+        hdr->setCurrentIndex(hdr->findData("auto"));
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("videoTransfer").toString(),QString("pq"),5000);
+
+        move(sdrScreen);
+        QTRY_VERIFY(displayLabel->text().contains("SDR 출력"));
+        window.openSource(sdrMedia);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>200,10000);
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        force->setChecked(true);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("forcedHdr").toBool(),5000);
+        const auto status=window.diagnostics().value("videoOverrideStatus").toString();
+        QVERIFY2(status.isEmpty(),qPrintable(status));
+        QTRY_COMPARE_WITH_TIMEOUT(window.diagnostics().value("videoTransfer").toString(),QString("pq"),5000);
+        QCOMPARE(window.diagnostics().value("videoPrimaries").toString(),QString("bt.2020"));
+        QVERIFY(!window.diagnostics().value("display").toObject().value("hdrActive").toBool());
+        qInfo().noquote()<<"SDR display with forced renderer:"<<displayLabel->text()<<window.diagnostics().value("videoTransfer").toString();
+        developer->setChecked(false);
+        QTRY_VERIFY(!window.diagnostics().value("forcedHdr").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("videoTransfer").toString()!="pq",5000);
+    }
+    void nativeAudioReopensWithBitstreamOrPcmFallback(){
+        const auto media=qEnvironmentVariable("LUMA_UI_AUDIO_MEDIA");
+        if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))QSKIP("Requires native output and a silent Dolby Digital Plus fixture");
+        QSettings().setValue("playback/volume",0);
+        luma::MainWindow window;
+        window.show();
+        auto *mode=window.findChild<QComboBox*>("audioOutputMode");
+        auto *profile=window.findChild<QComboBox*>("audioProfile");
+        auto *volume=window.findChild<QSlider*>("volumeSlider");
+        QVERIFY(mode && profile && volume);
+        profile->setCurrentIndex(profile->findData(int(luma::AudioOutputOptions::Profile::Night)));
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("audioCodecFormat").toString().isEmpty(),10000);
+        QVERIFY2(window.diagnostics().value("audioSettingsError").toString().isEmpty(),qPrintable(window.diagnostics().value("audioSettingsError").toString()));
+        QVERIFY(!window.diagnostics().value("audioBitstreamRequested").toBool());
+        QVERIFY(volume->isEnabled());
+        mode->setCurrentIndex(mode->findData("bitstream"));
+        QVERIFY(!profile->isEnabled());
+        window.openSource(media);
+        QCOMPARE(window.diagnostics().value("audioBitstreamRequested").toBool(),true);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("audioBitstreamRequested").toBool() &&
+                                 !window.diagnostics().value("audioCodecFormat").toString().isEmpty(),10000);
+        const auto bitstream=window.diagnostics();
+        QVERIFY2(bitstream.value("audioSettingsError").toString().isEmpty(),qPrintable(bitstream.value("audioSettingsError").toString()));
+        QCOMPARE(volume->isEnabled(),!bitstream.value("audioBitstreamActive").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>300,5000);
+        qInfo().noquote()<<"Audio after bitstream request:"<<bitstream.value("audioOutput").toString()<<bitstream.value("audioCodecFormat").toString();
+        mode->setCurrentIndex(mode->findData("system"));
+        window.openSource(media);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.diagnostics().value("audioCodecFormat").toString().isEmpty(),10000);
+        QVERIFY(!window.diagnostics().value("audioBitstreamRequested").toBool());
+        QVERIFY(!window.diagnostics().value("audioBitstreamActive").toBool());
+        QVERIFY(volume->isEnabled());
+    }
     void developerVideoOverridesReachFileEngine(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
@@ -143,12 +248,15 @@ private slots:
         auto *color=window.findChild<QComboBox*>("developerColor");
         auto *dolby=window.findChild<QComboBox*>("developerDolby");
         auto *reset=window.findChild<QPushButton*>("resetDeveloperVideo");
-        auto *copy=window.findChild<QPushButton*>("copyDiagnostics");
-        QVERIFY(hardware && codec && color && dolby && reset && copy);
+        QVERIFY(hardware && codec && color && dolby && reset);
         const auto select=[](auto *box, auto value){box->setCurrentIndex(box->findData(int(value)));};
-        const auto snapshot=[copy]{
-            copy->click();
-            return QJsonDocument::fromJson(QApplication::clipboard()->text().toUtf8()).object().value("playback").toObject();
+        const auto snapshot=[&window]{
+            const auto state=window.diagnostics();
+            return QJsonObject{{"requestedDecoder",state.value("requestedVideoDecoder")},
+                {"requestedTransfer",state.value("requestedVideoTransfer")},{"requestedDolbyVision",state.value("requestedDolbyVision")},
+                {"inputTransfer",state.value("videoInputTransfer")},{"inputPrimaries",state.value("videoInputPrimaries")},
+                {"outputTransfer",state.value("videoTransfer")},{"overrideStatus",state.value("videoOverrideStatus")},
+                {"videoCodec",state.value("videoCodec")},{"videoDecoder",state.value("videoDecoder")}};
         };
         using Options=luma::VideoOverrides;
         select(hardware,Options::Hardware::Software);

@@ -57,6 +57,9 @@ QJsonObject MainWindow::developerSnapshot() const {
             {"inputTransfer", state->transferFunction}, {"inputPrimaries", state->colorPrimaries},
             {"outputTransfer", state->outputTransferFunction}, {"outputPrimaries", state->outputPrimaries},
             {"requestedDecoder", state->videoDecoderRequest}, {"requestedTransfer", state->videoColorRequest},
+            {"forcedHdr", state->videoColorForced}, {"audioFormat", state->audioFormat},
+            {"audioLayout", state->audioLayout}, {"audioBitstreamRequested", state->audioBitstreamRequested},
+            {"audioBitstreamActive", state->audioBitstreamActive}, {"audioVolumeExternal", state->audioVolumeExternal},
             {"requestedDolbyVision", state->dolbyVisionRequest}, {"overrideStatus", state->videoOverrideStatus}
         });
     }
@@ -210,17 +213,22 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
     dolby->addItem("메타데이터 무시",int(Dolby::Ignore));
     dolby->addItem("기본 레이어 + 메타데이터",int(Dolby::BaseLayer));
     dolby->setToolTip("소스의 Dolby Vision 메타데이터를 영상 변환에 사용합니다. HDR10 출력을 함께 요청할 수 있습니다.");
+    auto *force=new QCheckBox("SDR 화면에서도 HDR 렌더링 강제");
+    force->setObjectName("developerForceHdr");
+    force->setToolTip("시험용 설정입니다. SDR 화면에서 색상과 밝기가 달라질 수 있습니다.");
+    layout->addWidget(force);
 
     const std::array boxes{hardware,codec,color,dolby};
     QSettings settings;
+    force->setChecked(settings.value("developer/forceHdr",false).toBool());
     for(auto *box:boxes)
         box->setCurrentIndex(std::max(0,box->findData(settings.value("developer/"+box->objectName(),0).toInt())));
-    const auto read=[hardware,codec,color,dolby]{
+    const auto read=[hardware,codec,color,dolby,force]{
         return VideoOverrides{Hardware(hardware->currentData().toInt()),Codec(codec->currentData().toInt()),
-                              Color(color->currentData().toInt()),Dolby(dolby->currentData().toInt())};
+                              Color(color->currentData().toInt()),Dolby(dolby->currentData().toInt()),force->isChecked()};
     };
     developerVideoOptions_=read();
-    auto *note=new QLabel("다음에 미디어를 열 때 적용합니다. Blu-ray에는 디코딩 장치 설정을 사용합니다.");
+    auto *note=new QLabel("출력 형식과 HDR 강제는 현재 파일에 적용합니다. 디코더와 Dolby Vision 설정은 다음에 열 때 적용합니다.");
     note->setWordWrap(true);
     layout->addWidget(note);
     auto *reset=new QPushButton("영상 설정 자동으로 되돌리기");
@@ -231,18 +239,22 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
     developerVideoStatus_->setWordWrap(true);
     developerVideoStatus_->setTextFormat(Qt::PlainText);
     layout->addWidget(developerVideoStatus_);
-    const auto save=[this,boxes,read]{
+    const auto save=[this,boxes,read,force]{
         if(!developerApproved_)return;
         developerVideoOptions_=read();
         QSettings preferences;
         for(auto *box:boxes)preferences.setValue("developer/"+box->objectName(),box->currentData());
+        preferences.setValue("developer/forceHdr",force->isChecked());
+        applyVideoOutputPreferences();
     };
     for(auto *box:boxes)connect(box,&QComboBox::currentIndexChanged,this,save);
-    connect(reset,&QPushButton::clicked,this,[boxes,save]{
+    connect(force,&QCheckBox::toggled,this,save);
+    connect(reset,&QPushButton::clicked,this,[boxes,save,force]{
         for(auto *box:boxes){
             const QSignalBlocker block(box);
             box->setCurrentIndex(0);
         }
+        const QSignalBlocker block(force);force->setChecked(false);
         save();
     });
 }
@@ -256,6 +268,7 @@ void MainWindow::updateDeveloperVideoStatus(const PlaybackState &state) {
              show(state.transferFunction),show(state.colorPrimaries),show(state.videoColorRequest),
              show(state.outputTransferFunction),show(state.outputPrimaries),show(state.dolbyVisionRequest));
     if(state.dolbyVisionProfile)text+=QString(" · 원본 프로필 %1").arg(*state.dolbyVisionProfile);
+    if(state.videoColorForced)text+="\nSDR 화면 HDR 렌더링 강제";
     if(!state.videoOverrideStatus.isEmpty())text+="\n"+state.videoOverrideStatus;
     if(developerVideoStatus_->text()!=text)developerVideoStatus_->setText(text);
 }

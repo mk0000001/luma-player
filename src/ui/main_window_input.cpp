@@ -22,6 +22,7 @@
 #include <QSlider>
 #include <QTabBar>
 #include <QTextEdit>
+#include <QTimer>
 #include <algorithm>
 
 #ifdef Q_OS_WIN
@@ -59,13 +60,15 @@ bool MainWindow::eventFilter(QObject *object,QEvent *event){
     else if(modifiers!=Qt::NoModifier)return false;
     else if(code==Qt::Key_F || code==Qt::Key_Return || code==Qt::Key_Enter)toggleFullScreen();
     else if(code==Qt::Key_Left || code==Qt::Key_Right){if(active_)seekTo(active_->state().positionMs+(code==Qt::Key_Left?-10000:10000));}
-    else if(code==Qt::Key_Up || code==Qt::Key_Down)volume_->setValue(std::clamp(volume_->value()+(code==Qt::Key_Up?5:-5),0,100));
+    else if(code==Qt::Key_Up || code==Qt::Key_Down){if(volume_->isEnabled())volume_->setValue(std::clamp(volume_->value()+(code==Qt::Key_Up?5:-5),0,100));}
     else if(code==Qt::Key_M)toggleMute();else if(code==Qt::Key_Space){if(qobject_cast<QAbstractButton*>(target))return false;togglePlayback();}else return false;
     if(fullscreenControls_)fullscreenControls_->activity();return true;
 }
 
 bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *result){
 #ifdef Q_OS_WIN
+    if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_DISPLAYCHANGE)
+        QTimer::singleShot(0,this,&MainWindow::updateDisplayStatus);
     if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_MOVING &&
        surface_ && movePlaybackWindows(this,eventType,message,result,
             {static_cast<VideoSurface*>(surface_)->videoWindow(),captions_,transport_,performance_}))

@@ -85,9 +85,17 @@ CPU·GPU·NPU·RAM은 **시스템 전체 / 플레이어** 순으로 비교합니
 
 **진단 요약 복사**는 재생 상태와 최근 수치의 JSON을 복사합니다. **성능 기록 CSV 저장**은 최근 샘플을 저장하고, **성능 기록 초기화**와 **재생 로그 지우기**는 각 화면의 기록을 비웁니다. JSON과 CSV에는 파일 경로, 자막 본문, 재생 로그가 들어가지 않습니다.
 
-**영상 디코딩과 색상** 설정은 다음에 미디어를 열 때 적용됩니다. 디코딩 장치와 파일 디코더 우선순위를 지정하거나 SDR, HDR10(PQ), HLG 출력을 요청할 수 있습니다. 실제 디코더는 입력 코덱과 장치 지원에 따라 결정됩니다. Dolby Vision은 원본의 메타데이터 적용·무시와 기본 레이어 사용을 선택할 수 있습니다. Blu-ray 메뉴 재생에는 디코딩 장치 설정이 적용됩니다. 설정 아래에서 요청값, 실제 디코더, 입력과 렌더러의 색상 형식, 엔진이 거부한 항목을 확인할 수 있습니다. 연결된 디스플레이의 HDR 활성 상태는 설정의 디스플레이 정보에 별도로 표시됩니다. [mpv 옵션 문서](https://mpv.io/manual/master/)
+**설정 → 파일 HDR 출력**의 기본값은 자동입니다. Windows HDR이 활성화된 화면에서 파일 렌더러가 HDR 출력을 협상합니다. **끔 · SDR 출력**은 HDR 파일을 SDR로 톤 매핑합니다. 두 선택은 재생 중에도 바꿀 수 있습니다. 화면을 옮기면 디스플레이 상태가 갱신됩니다.
 
-Windows 시험에서 츠키 무도관 Blu-ray의 D3D11VA 재생, 합성 AV1 파일의 `libdav1d` 선택, 합성 HEVC 파일의 PQ 입력과 렌더러 PQ 출력 타깃을 확인했습니다. 시험 화면은 SDR이었으며 Dolby Vision 디스플레이 출력은 미검증입니다. 미디어 입력 검증을 드래그와 재생 엔진에 적용했고, 네트워크 주소를 파일 엔진의 로그에서 가립니다.
+**개발자 모드 → 영상 디코딩과 색상**에서는 SDR, HDR10(PQ), HLG를 지정할 수 있습니다. **SDR 화면에서도 HDR 렌더링 강제**는 출력 협상 결과와 별도로 파일 렌더러의 HDR 타깃을 강제하고 SDR 소스에 역톤 매핑을 허용합니다. 실제 모니터 모드는 설정의 디스플레이 상태에서 확인할 수 있습니다. 디코딩 장치와 파일 디코더 우선순위, Dolby Vision 메타데이터 옵션은 미디어를 다시 열면 적용됩니다. Blu-ray 메뉴 재생은 디스크 엔진의 영상 출력을 사용합니다. [mpv 옵션 문서](https://mpv.io/manual/master/)
+
+Windows 시험에서 츠키 무도관 Blu-ray의 D3D11VA 재생, 합성 AV1 파일의 `libdav1d` 선택, 25G64에서 합성 HEVC HDR10 파일의 PQ / BT.2020 출력을 확인했습니다. 25G64의 240Hz 연결에서 Windows는 채널당 8비트를 보고했습니다. Dolby Vision 디스플레이 출력은 미검증입니다. 미디어 입력 검증을 드래그와 재생 엔진에 적용했고, 네트워크 주소를 파일 엔진의 로그에서 가립니다.
+
+### 오디오 출력과 공간 음향
+
+**시스템 오디오 · PCM**은 Windows에서 출력 장치의 공간 음향 설정을 사용합니다. **Windows 공간 음향 설정**에서 Windows Sonic, Dolby Atmos for Headphones, DTS Headphone:X를 선택할 수 있습니다. 파일 PCM은 자동 채널, 스테레오, 5.1/7.1 우선 또는 야간 모드를 선택할 수 있습니다. 야간 모드는 큰 소리를 완화합니다. [Windows 공간 음향](https://support.microsoft.com/en-us/windows/hardware/drivers/how-to-turn-on-spatial-sound-in-windows)
+
+**HDMI 비트스트림 · AV 리시버**는 호환 장치에 Dolby Digital, Dolby Digital Plus, TrueHD, DTS, DTS-HD 비트스트림을 요청합니다. Dolby Atmos 또는 DTS:X는 해당 메타데이터가 포함된 원본 트랙과 이를 해석하는 리시버가 필요합니다. 비트스트림 출력 시 리시버에서 음량을 조절합니다. 파일 엔진은 출력 형식과 PCM 전환 여부를 표시합니다. Blu-ray 메뉴 재생에서는 리시버에서 실제 출력 형식을 확인하세요. 오디오 설정은 미디어를 다시 열면 적용됩니다. Windows USB DAC에서 Dolby Digital Plus 비트스트림 거부 후 WASAPI PCM 재생을 확인했습니다. Atmos·DTS:X 리시버 출력은 미검증입니다. [mpv 오디오 옵션](https://mpv.io/manual/master/) · [VideoLAN WASAPI 지원](https://github.com/videolan/vlc-3.0/blob/master/NEWS)
 
 ### Windows 캡처 제외와 확인 범위
 
@@ -188,9 +196,17 @@ CPU, GPU, NPU, and RAM show **system / player**. Solid graph lines show the syst
 
 **Copy diagnostics** copies a JSON snapshot of playback and current metrics. **Save performance CSV** saves recent samples. **Reset performance history** and **Clear playback log** clear their respective records. JSON and CSV omit file paths, subtitle text, and playback logs.
 
-**Video decoding and color** preferences take effect the next time you open media. Choose a decoding device or file decoder preference, or request SDR, HDR10 (PQ), or HLG. The active decoder depends on the input codec and hardware support. Dolby Vision controls apply or ignore source metadata, or use the base layer with metadata. Blu-ray menu playback uses the decoding device setting. The status panel reports requests, the active decoder, input and renderer color, and engine rejections. The display information in Settings separately reports whether HDR is active on the connected display. [mpv option reference](https://mpv.io/manual/master/)
+**Settings → File HDR output** defaults to Auto. The file renderer negotiates HDR when the Windows display has HDR active. **Off · SDR output** tone maps HDR files to SDR. Either option can be changed during playback. The display status follows the monitor as you move the window.
 
-Windows tests observed D3D11VA playback on the Tuki Budokan Blu-ray, `libdav1d` selection on a generated AV1 file, and PQ input and a PQ renderer target on a generated HEVC file. The test display was in SDR. Dolby Vision display output remains unverified. Drag and drop and engine input now validate media sources, and file engine logs mask network addresses.
+**Developer mode → Video decoding and color** can request SDR, HDR10 (PQ), or HLG. **Force HDR rendering on an SDR display** overrides the renderer target independently of the negotiated display mode and enables inverse tone mapping for SDR sources. Settings separately reports the monitor's active mode. Decoder device, file decoder preference, and Dolby Vision metadata choices take effect when you reopen media. Blu-ray menu playback uses the disc engine's video output. [mpv option reference](https://mpv.io/manual/master/)
+
+Windows tests observed D3D11VA playback on the Tuki Budokan Blu-ray, `libdav1d` selection on a generated AV1 file, and PQ / BT.2020 output for a generated HEVC HDR10 file on a 25G64. Windows reported 8 bits per channel at 240 Hz on that connection. Dolby Vision display output remains unverified. Drag and drop and engine input validate media sources, and file engine logs mask network addresses.
+
+### Audio output and spatial sound
+
+**System audio · PCM** uses the Windows output device's spatial sound settings. Use **Windows spatial sound settings** to select Windows Sonic, Dolby Atmos for Headphones, or DTS Headphone:X. File PCM profiles include automatic layout, stereo, preferred 5.1/7.1 layouts, and a night mode that compresses loud peaks. [Windows spatial sound](https://support.microsoft.com/en-us/windows/hardware/drivers/how-to-turn-on-spatial-sound-in-windows)
+
+**HDMI bitstream · AV receiver** requests Dolby Digital, Dolby Digital Plus, TrueHD, DTS, and DTS-HD passthrough on compatible devices. Dolby Atmos and DTS:X require source tracks containing the relevant metadata and a receiver that can decode it. Adjust bitstream volume on the receiver. The file engine reports the active output format and PCM fallback. For Blu-ray menu playback, check the receiver for the active format. Reopen the media to apply audio preferences. A Windows USB DAC rejected Dolby Digital Plus bitstream and resumed playback as WASAPI PCM. Atmos and DTS:X receiver output remains unverified. [mpv audio options](https://mpv.io/manual/master/) · [VideoLAN WASAPI support](https://github.com/videolan/vlc-3.0/blob/master/NEWS)
 
 ### Windows capture exclusion and verification
 

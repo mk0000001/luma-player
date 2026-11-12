@@ -27,6 +27,7 @@
 #include <QSignalBlocker>
 #include <QTime>
 #include <QTimer>
+#include <QWindow>
 
 namespace luma {
 
@@ -107,7 +108,10 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         int index=translationGpu_->findData(saved);if(index<0 && !saved.isEmpty()){translationGpu_->addItem("저장된 GPU · "+saved,saved);index=translationGpu_->count()-1;}if(index>=0)translationGpu_->setCurrentIndex(index);
     });
     connect(translationDeviceProbe_,&TranslationDeviceProbe::failed,this,[this](const QString &message){appendLog("번역 장치 확인: "+message);});
-    QTimer::singleShot(0,this,[this]{discoverDisc();deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();});
+    QTimer::singleShot(0,this,[this]{
+        discoverDisc();deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();
+        if(auto *window=windowHandle())connect(window,&QWindow::screenChanged,this,&MainWindow::updateDisplayStatus,Qt::QueuedConnection);
+    });
 }
 
 MainWindow::~MainWindow(){performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
@@ -136,6 +140,23 @@ QJsonObject MainWindow::diagnostics()const{
     if(active_){const auto &state=active_->state();result.insert("engine",active_->name());result.insert("positionMs",state.positionMs);result.insert("durationMs",state.durationMs);result.insert("playing",state.playing);result.insert("failed",state.failed);result.insert("title",state.currentTitle);result.insert("chapter",state.currentChapter);result.insert("chapterCount",state.chapters.size());result.insert("audioTrackCount",state.audioTracks.size());result.insert("videoCodec",state.videoCodec);result.insert("hardwareDecoder",state.hardwareDecoder);result.insert("audioCodec",state.audioCodec);result.insert("decodedVideo",state.decodedVideo);result.insert("decodedAudio",state.decodedAudio);result.insert("displayedPictures",state.displayedPictures);result.insert("playedAudioBuffers",state.playedAudioBuffers);result.insert("captionBufferedAheadMs",coverage_.bufferedAhead(state.positionMs,state.durationMs));result.insert("sourceFps",state.sourceFps);result.insert("filteredFps",state.filteredFps);result.insert("displayFps",state.displayFps);result.insert("motionStatus",state.motionStatus);}
     if(active_){
         const auto &state=active_->state();
+        result.insert("requestedVideoTransfer",state.videoColorRequest);
+        result.insert("requestedVideoDecoder",state.videoDecoderRequest);
+        result.insert("requestedDolbyVision",state.dolbyVisionRequest);
+        result.insert("videoDecoder",state.videoDecoder);
+        result.insert("videoInputTransfer",state.transferFunction);
+        result.insert("videoInputPrimaries",state.colorPrimaries);
+        result.insert("videoTransfer",state.outputTransferFunction);
+        result.insert("videoPrimaries",state.outputPrimaries);
+        result.insert("forcedHdr",state.videoColorForced);
+        result.insert("videoOverrideStatus",state.videoOverrideStatus);
+        result.insert("audioCodecFormat",state.audioFormat);
+        result.insert("audioLayout",state.audioLayout);
+        result.insert("audioOutput",state.audioOutput);
+        result.insert("audioBitstreamRequested",state.audioBitstreamRequested);
+        result.insert("audioBitstreamActive",state.audioBitstreamActive);
+        result.insert("audioVolumeExternal",state.audioVolumeExternal);
+        result.insert("audioSettingsError",state.audioSettingsError);
         result.insert("mediaBuffering",state.buffering);
         result.insert("droppedVideoFrames",state.droppedVideoFrames);
         result.insert("lostAudioBuffers",state.lostAudioBuffers);

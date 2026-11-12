@@ -36,7 +36,7 @@ private:
     QLabel *nowTitle_=nullptr,*status_=nullptr,*clock_=nullptr,*discLabel_=nullptr,*discDetails_=nullptr,*aiStatus_=nullptr,*codec_=nullptr,*accelerator_=nullptr;
     QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr,*npuStatus_=nullptr;
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
-    QPushButton *pipButton_=nullptr;
+    QPushButton *pipButton_=nullptr,*volumeButton_=nullptr;
     QList<QWidget *> controlsHiddenInPip_;
     QRect windowedGeometry_;
     bool windowedMaximized_=false;
@@ -50,6 +50,8 @@ private:
     PerformanceOverlay *performance_=nullptr;
     QCheckBox *performanceEnabled_=nullptr;
     QLabel *developerVideoStatus_=nullptr;
+    QLabel *audioOutputStatus_=nullptr,*hdrPlaybackStatus_=nullptr;
+    QComboBox *hdrOutputMode_=nullptr,*audioOutputMode_=nullptr,*audioProfile_=nullptr;
     VideoOverrides developerVideoOptions_;
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
@@ -103,6 +105,11 @@ private:
     void buildUi();
     void buildDeveloperTools(QVBoxLayout *layout);
     void buildDeveloperVideoTools(QVBoxLayout *layout);
+    void buildAudioSettings(QVBoxLayout *layout);
+    VideoOverrides videoOutputPreferences() const;
+    AudioOutputOptions audioOutputPreferences() const;
+    void applyVideoOutputPreferences();
+    void updateAudioOutputStatus(const PlaybackState &state);
     void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
