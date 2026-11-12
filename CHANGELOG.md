@@ -2,6 +2,12 @@
 
 ## 한국어
 
+### 0.2.0-beta.1
+
+- Android에서 같은 내부망의 Windows LumaPlayer를 자동으로 찾거나 사설 IP로 연결합니다. 양쪽의 확인 코드를 비교해 PC에서 승인하며, 기기별로 매번 승인하거나 다음 연결을 위해 기억할 수 있습니다. 로컬 파일과 Blu-ray 본편에 준비된 PC 자막을 함께 전달합니다.
+- Android 보안 영상 표면과 캡처 차단을 적용했습니다. HDR·Dolby Vision·공간 음향은 원본과 기기의 지원 범위에서 재생합니다.
+- 일반 설정에 HDR 자동/SDR 전환과 PCM·HDMI 비트스트림을 추가했습니다. 개발자 모드에 시스템·플레이어 성능 비교와 SDR 화면 HDR 렌더링 시험 옵션을 제공합니다.
+
 ### 0.1.0-beta.6 — 2026-11-12 공개 베타
 
 - Linux Qt 6.4 환경에서도 빌드할 수 있도록 창 이동과 자막 코드의 헤더를 수정했습니다.
@@ -117,6 +123,12 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.0-beta.1
+
+- Discover LumaPlayer PCs on the LAN from Android or enter a private IP. Compare the code on both screens and approve the connection on the PC. Choose per-device approval or remember the device for next time. Prepared PC captions can accompany local files and Blu-ray titles.
+- Secure Android video surfaces and capture protection are enabled. HDR, Dolby Vision, and spatial audio depend on the original media and device capabilities.
+- HDR auto/SDR switching, PCM, and HDMI bitstream are available in Settings. Developer mode adds system/player performance comparisons and forced HDR rendering for SDR display tests.
 
 ### 0.1.0-beta.6 — 2026-11-12 public beta
 

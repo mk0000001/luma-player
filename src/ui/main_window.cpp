@@ -3,6 +3,7 @@
 #include "caption_overlay.h"
 #include "caption_preparation_dialog.h"
 #include "fullscreen_controls.h"
+#include "lan_playback_dialog.h"
 #include "player_controls.h"
 #include "performance_overlay.h"
 #include "theme.h"
@@ -114,7 +115,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     });
 }
 
-MainWindow::~MainWindow(){performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
+MainWindow::~MainWindow(){delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 

@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QCheckBox>
+#include <QDialog>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
@@ -33,7 +34,7 @@ namespace luma {
 
 bool MainWindow::eventFilter(QObject *object,QEvent *event){
     if(event->type()!=QEvent::KeyPress || QApplication::activePopupWidget() || QApplication::activeModalWidget())return QMainWindow::eventFilter(object,event);
-    auto *target=qobject_cast<QWidget*>(object);if(!target)return QMainWindow::eventFilter(object,event);
+    auto *target=qobject_cast<QWidget*>(object);if(!target || qobject_cast<QDialog*>(target->window()))return QMainWindow::eventFilter(object,event);
     bool belongs=false;for(auto *owner=target;owner;owner=owner->parentWidget())if(owner==this){belongs=true;break;}if(!belongs)return false;
     auto *key=static_cast<QKeyEvent*>(event);const auto modifiers=key->modifiers() & ~Qt::KeypadModifier;const auto code=key->key();
     if(developerApproved_ && modifiers==(Qt::ControlModifier|Qt::ShiftModifier) && code==Qt::Key_D){
@@ -51,7 +52,7 @@ bool MainWindow::eventFilter(QObject *object,QEvent *event){
     if(modifiers==Qt::ControlModifier){
         if(code==Qt::Key_O)findChild<QPushButton*>("openMediaButton")->click();
         else if(code==Qt::Key_D)discButton_->click();
-        else if(active_==discEngine_.get()){
+        else if(!lanDiscSharing_ && active_==discEngine_.get()){
             std::optional<DiscAction> action;
             if(code==Qt::Key_Up)action=DiscAction::Up;else if(code==Qt::Key_Down)action=DiscAction::Down;else if(code==Qt::Key_Left)action=DiscAction::Left;else if(code==Qt::Key_Right)action=DiscAction::Right;else if(code==Qt::Key_Return || code==Qt::Key_Enter)action=DiscAction::Activate;else return false;
             active_->navigate(discActionCode(*action));

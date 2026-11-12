@@ -86,6 +86,7 @@ void MainWindow::updateTranslationPreferences(){
 }
 
 void MainWindow::showCaptionPreparation(){
+    if(!stopLanShareForSourceChange())return;
     const auto initialFile=active_==fileEngine_.get()?source_:QString{};
     const auto preparationDiscRoot=active_==discEngine_.get()?source_:discPath_;
     CaptionPreparationRequest defaults;defaults.model=model_;defaults.source.language=language_->currentData().toString();defaults.recognitionPreferences=job_.preferences();defaults.translationPreferences=translation_->preferences();defaults.translate=translationEnabled_->isChecked();
@@ -101,6 +102,7 @@ void MainWindow::showCaptionPreparation(){
     defaults.translationModel=QSettings().value("translation/model",QFileInfo::exists(quality)?quality:root+"Qwen3-4B-Q4_K_M.gguf").toString();
     savePlaybackProgress(true);preparedCaptions_.reset();preparedApplied_=false;resetSubtitleSession();job_.shutdown();translation_->setModel(defaults.translationModel);
     releaseCaptionBuffer(false);if(active_)active_->stop();active_=nullptr;pendingResume_.reset();requestedPlaying_=false;
+    updateLanPlaybackAvailability();
     static_cast<VideoSurface*>(surface_)->setVideoActive(false);welcome_->show();applyCapturePolicy();status_->setText("영상 재생 없이 전체 자막을 준비합니다.");
     CaptionPreparationDialog dialog(defaults,preparationDiscRoot,initialFile,this);preparationDialog_=&dialog;
     const int result=dialog.exec();preparationDialog_.clear();
@@ -115,8 +117,10 @@ bool MainWindow::loadPreparedCaptionProject(const QString &path){
 
 bool MainWindow::playPreparedCaptions(CaptionPreparationResult result){
     QString error;if(!CaptionPreparationService::sourceUnchanged(result,&error)){status_->setText("준비한 자막의 미디어가 변경됐습니다. "+error);return false;}
-    const auto source=result.request.source.source;openSourceImpl(source,true,result.request.source.disc?result.request.durationMs:0);subtitleFileLoader_->cancel();
-    if(!active_ || active_->state().failed)return false;
+    const auto source=result.request.source.source;
+    if(!openSourceImpl(source,true,result.request.source.disc?result.request.durationMs:0))return false;
+    subtitleFileLoader_->cancel();
+    if(active_->state().failed)return false;
     if(pendingResume_ && std::abs(pendingResume_->durationMs-result.request.durationMs)>1000)pendingResume_.reset();
     preparedCaptions_=std::move(result);preparedApplied_=false;applyPreparedCaptions();
     aiStatus_->setText("전체 자막 프로젝트 준비됨 · 해당 본편에서 표시합니다.");
@@ -172,7 +176,7 @@ void MainWindow::holdForCaptionBuffer(){
 }
 
 void MainWindow::updateCaptionBuffer(){
-    if(!liveCaptioningActive() || !active_)return;
+    if(lanDiscSharing_ || !liveCaptioningActive() || !active_)return;
     const auto &state=active_->state();
     if(active_==discEngine_.get() && state.navigationTitle){releaseCaptionBuffer(true);bufferStatus_->setText("디스크 메뉴 · 본편에서 자막을 준비합니다.");return;}
     if(!state.timelineReady){
@@ -257,6 +261,7 @@ void MainWindow::applyExternalCaptions(QVector<SubtitleCue> cues){
 void MainWindow::subtitleImportFailed(const QString &message){enableAutomaticSubtitles(language_->currentData().toString());status_->setText(message+" 자동 자막을 켰습니다.");appendLog("자막 불러오기: "+message);}
 
 void MainWindow::scheduleSubtitles(){
+    if(lanDiscSharing_)return;
     if(!liveCaptioningActive() || !active_ || videoRecoveryExhausted_)return;
     updateCaptionBuffer();
     if(job_.busy() || pendingAudio_!=-2 || pendingChapter_!=-2 || pendingTitle_!=-2)return;

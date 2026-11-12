@@ -1,0 +1,211 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"math/bits"
+	"net/http"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"time"
+)
+
+const (
+	ffmpegStartupTimeout = 30 * time.Second
+	maxMatroskaHeader    = 1024 * 1024
+)
+
+type remuxOutcome int
+
+const (
+	remuxFailed remuxOutcome = iota
+	remuxNeedsPCM
+	remuxStreamed
+)
+
+func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
+	outcome := streamMatroska(ctx, w, s.config.FFmpeg, discArguments(s.config, false))
+	if outcome == remuxNeedsPCM && s.config.AudioMode == "original" && ctx.Err() == nil {
+		outcome = streamMatroska(ctx, w, s.config.FFmpeg, discArguments(s.config, true))
+	}
+	if outcome != remuxStreamed && ctx.Err() == nil {
+		http.Error(w, "could not start the selected Blu-ray stream", http.StatusServiceUnavailable)
+	}
+}
+
+func discArguments(cfg validatedConfig, convertPCM bool) []string {
+	playlist, _ := strconv.Atoi(cfg.Playlist)
+	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
+	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
+		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
+	} else if cfg.AudioIndex == -1 {
+		audioMap += "?"
+	}
+	args := []string{
+		"-hide_banner", "-nostdin", "-loglevel", "error",
+		"-protocol_whitelist", "bluray", "-playlist", strconv.Itoa(playlist),
+		"-i", "bluray:" + filepath.ToSlash(cfg.Source),
+		"-map", "0:v:0", "-map", audioMap,
+		"-c:v", "copy",
+	}
+	switch {
+	case cfg.AudioMode == "compatible":
+		args = append(args, "-c:a", "aac", "-ac", "2", "-b:a", "192k")
+	case convertPCM:
+		args = append(args, "-c:a", "pcm_s24le")
+	default:
+		args = append(args, "-c:a", "copy")
+	}
+	return append(args,
+		"-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
+		"-f", "matroska", "-live", "1", "-flush_packets", "1", "pipe:1",
+	)
+}
+
+func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, args []string) remuxOutcome {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	timer := time.AfterFunc(ffmpegStartupTimeout, cancel)
+	defer timer.Stop()
+
+	command := exec.CommandContext(ctx, ffmpeg, args...)
+	command.Dir = filepath.Dir(ffmpeg)
+	command.WaitDelay = 2 * time.Second
+	hideProcess(command)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return remuxFailed
+	}
+	defer stdout.Close()
+	var diagnostics ffmpegDiagnostics
+	command.Stderr = &diagnostics
+	if command.Start() != nil {
+		return remuxFailed
+	}
+
+	prefix, err := readMatroskaPrefix(stdout)
+	if err != nil {
+		if err != io.EOF && err != io.ErrUnexpectedEOF {
+			cancel()
+		}
+		waitErr := command.Wait()
+		if waitErr != nil && ctx.Err() == nil &&
+			bytes.Contains(diagnostics.data, []byte("No wav codec tag found for codec pcm_bluray")) {
+			return remuxNeedsPCM
+		}
+		return remuxFailed
+	}
+	timer.Stop()
+
+	w.Header().Set("Content-Type", matroskaMIME)
+	_, err = w.Write(prefix)
+	if err == nil {
+		err = w.controller.Flush()
+	}
+	if err == nil {
+		_, err = io.Copy(w, stdout)
+	}
+	if err != nil {
+		cancel()
+	}
+	if waitErr := command.Wait(); waitErr != nil && err == nil && parent.Err() == nil {
+		panic(http.ErrAbortHandler)
+	}
+	return remuxStreamed
+}
+
+type ffmpegDiagnostics struct {
+	data []byte
+}
+
+func (d *ffmpegDiagnostics) Write(data []byte) (int, error) {
+	const limit = 32 * 1024
+	d.data = append(d.data, data[:min(len(data), limit-len(d.data))]...)
+	return len(data), nil
+}
+
+var errInvalidMatroska = errors.New("invalid Matroska stream")
+
+// FFmpeg can write the EBML and Segment headers before rejecting an audio codec.
+// Keep the response uncommitted until its first Cluster has been written.
+func readMatroskaPrefix(stdout io.Reader) ([]byte, error) {
+	const (
+		ebml    = 0x1a45dfa3
+		segment = 0x18538067
+		cluster = 0x1f43b675
+	)
+	var prefix bytes.Buffer
+	limited := &io.LimitedReader{R: stdout, N: maxMatroskaHeader}
+	reader := bufio.NewReader(io.TeeReader(limited, &prefix))
+	id, size, known, err := readEBMLElement(reader)
+	if err != nil {
+		return nil, err
+	}
+	if id != ebml || !known || size > maxMatroskaHeader {
+		return nil, errInvalidMatroska
+	}
+	if _, err = io.CopyN(io.Discard, reader, int64(size)); err != nil {
+		return nil, err
+	}
+	id, _, _, err = readEBMLElement(reader)
+	if err != nil {
+		return nil, err
+	}
+	if id != segment {
+		return nil, errInvalidMatroska
+	}
+	for {
+		id, size, known, err = readEBMLElement(reader)
+		if err != nil {
+			if limited.N == 0 {
+				return nil, errInvalidMatroska
+			}
+			return nil, err
+		}
+		if id == cluster {
+			return prefix.Bytes(), nil
+		}
+		if !known || size > uint64(limited.N)+uint64(reader.Buffered()) {
+			return nil, errInvalidMatroska
+		}
+		if _, err = io.CopyN(io.Discard, reader, int64(size)); err != nil {
+			return nil, err
+		}
+	}
+}
+
+func readEBMLElement(reader io.ByteReader) (id uint64, size uint64, known bool, err error) {
+	id, _, err = readEBMLInteger(reader, 4, false)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	size, bytes, err := readEBMLInteger(reader, 8, true)
+	return id, size, size != (1<<(7*bytes))-1, err
+}
+
+func readEBMLInteger(reader io.ByteReader, maximum int, removeMarker bool) (uint64, int, error) {
+	first, err := reader.ReadByte()
+	if err != nil {
+		return 0, 0, err
+	}
+	length := bits.LeadingZeros8(first) + 1
+	if length > maximum {
+		return 0, 0, errInvalidMatroska
+	}
+	if removeMarker {
+		first &= 0xff >> length
+	}
+	value := uint64(first)
+	for index := 1; index < length; index++ {
+		next, err := reader.ReadByte()
+		if err != nil {
+			return 0, 0, err
+		}
+		value = value<<8 | uint64(next)
+	}
+	return value, length, nil
+}

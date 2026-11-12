@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="LumaTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/luma_accent</item>
+        <item name="android:fontFamily">@font/noto_sans_cjk_kr</item>
+        <item name="android:windowBackground">@color/luma_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="LumaTitle">
+        <item name="android:textColor">@color/luma_text</item>
+        <item name="android:textSize">34sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="LumaSectionTitle">
+        <item name="android:textColor">@color/luma_text</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="LumaPrimaryButton" parent="android:style/Widget.Material.Button">
+        <item name="android:background">@drawable/action_pill</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="android:minHeight">52dp</item>
+        <item name="android:paddingHorizontal">22dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/luma_button_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="LumaTextButton" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/luma_accent</item>
+    </style>
+</resources>

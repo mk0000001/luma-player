@@ -18,6 +18,16 @@ jobs:
       - name: Fetch verified native dependencies
         shell: pwsh
         run: ./scripts/bootstrap-windows.ps1 -SkipAiModel
+      - name: Test the local HTTPS media host
+        shell: pwsh
+        working-directory: mobile-host
+        run: |
+          $env:GOTOOLCHAIN = 'local'
+          $env:GOPROXY = 'off'
+          & ../.deps/go/bin/go.exe test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ../.deps/go/bin/go.exe vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify installer and packaging safeguards
         shell: pwsh
         run: |
@@ -65,6 +75,14 @@ jobs:
             build/Testing/Temporary/
             build/*-test-results.txt
             .deps/build-ai/Testing/Temporary/
+  android:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test, lint, and assemble the Android client
+        shell: pwsh
+        run: ./android/build.ps1
   linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

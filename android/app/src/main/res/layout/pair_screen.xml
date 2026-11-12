@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/pair_screen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:visibility="gone">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="24dp">
+
+        <Button
+            android:id="@+id/pair_cancel_button"
+            style="@style/LumaTextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start"
+            android:text="@string/pair_cancel" />
+
+        <TextView
+            android:id="@+id/pair_pc_name"
+            style="@style/LumaTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:accessibilityHeading="true" />
+
+        <TextView
+            android:id="@+id/pair_pc_address"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:textColor="@color/luma_muted"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/pair_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:accessibilityLiveRegion="polite"
+            android:textColor="@color/luma_text"
+            android:textSize="16sp" />
+
+        <RadioGroup
+            android:id="@+id/pair_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/form_card"
+            android:checkedButton="@+id/pair_remember_always"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <RadioButton
+                android:id="@id/pair_remember_always"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/pair_remember_always"
+                android:textColor="@color/luma_text"
+                android:textSize="16sp" />
+
+            <RadioButton
+                android:id="@+id/pair_remember_device"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/pair_remember_device"
+                android:textColor="@color/luma_text"
+                android:textSize="16sp" />
+        </RadioGroup>
+
+        <Button
+            android:id="@+id/pair_start_button"
+            style="@style/LumaPrimaryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/pair_start" />
+
+        <TextView
+            android:id="@+id/pair_code"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/form_card"
+            android:gravity="center"
+            android:letterSpacing="0.13"
+            android:minHeight="112dp"
+            android:textColor="@color/luma_text"
+            android:textSize="42sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/pair_confirm_button"
+            style="@style/LumaPrimaryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/pair_confirm"
+            android:visibility="gone" />
+    </LinearLayout>
+</ScrollView>

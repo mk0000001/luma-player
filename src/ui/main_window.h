@@ -1,4 +1,5 @@
 #pragma once
+#include <QDeadlineTimer>
 #include <QMainWindow>
 #include <QTemporaryDir>
 #include <QSet>
@@ -14,7 +15,7 @@
 class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;class QVBoxLayout;
 namespace luma {
 class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;class CaptionPreparationDialog;
-class PerformanceOverlay;
+class PerformanceOverlay;class LanPlaybackDialog;
 struct PerformanceInput;
 class MainWindow:public QMainWindow {
     Q_OBJECT
@@ -22,6 +23,7 @@ public:
     explicit MainWindow(QWidget *parent=nullptr);
     ~MainWindow()override;
     void openSource(const QString &source);
+    void startLanDiscovery();
     void enableAutomaticSubtitles(const QString &language);
     bool loadCaptionFile(const QString &path);
     bool loadPreparedCaptionProject(const QString &path);
@@ -37,6 +39,7 @@ private:
     QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr,*npuStatus_=nullptr;
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
     QPushButton *pipButton_=nullptr,*volumeButton_=nullptr;
+    LanPlaybackDialog *lanPlaybackDialog_=nullptr;
     QList<QWidget *> controlsHiddenInPip_;
     QRect windowedGeometry_;
     bool windowedMaximized_=false;
@@ -84,6 +87,8 @@ private:
     DiscInfo discInfo_,driveInfo_;
     QString source_,model_,discPath_;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
+    bool lanDiscSharing_=false,lanDiscAwaitingPause_=false,lanDiscResume_=false,lanSourceChanging_=false;
+    QDeadlineTimer lanDiscPauseDeadline_;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;
     int lastUnmutedVolume_=70;
@@ -103,6 +108,15 @@ private:
     void selectAudio(int id);
     void selectTitle(int id);
     void buildUi();
+    LanPlaybackDialog *lanPlaybackDialog();
+    void showLanPlayback();
+    bool lanSourceAvailable() const;
+    void updateLanPlaybackAvailability();
+    void startLanShare();
+    void advanceLanDiscShare();
+    bool sendLanMedia();
+    void finishLanShare(bool cleanupConfirmed);
+    bool stopLanShareForSourceChange();
     void buildDeveloperTools(QVBoxLayout *layout);
     void buildDeveloperVideoTools(QVBoxLayout *layout);
     void buildAudioSettings(QVBoxLayout *layout);
@@ -113,7 +127,7 @@ private:
     void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
-    void openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);
+    bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0);
     qint64 discTargetDurationMs_=0;
     void bindEngine(PlaybackEngine *engine);
     void recoverVideoOutput(PlaybackEngine *engine,const QString &message);

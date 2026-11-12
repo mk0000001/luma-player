@@ -2,8 +2,8 @@
 
 ## 한국어
 
-- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 현재 준비 대상은 `0.1.0-alpha.10`, 공개 예정 태그는 `v0.1.0-alpha.10`입니다.
-- **배포한 버전**마다 SemVer의 annotated Git 태그, GitHub Release, 소스 스냅샷, Windows 포터블 ZIP, SHA-256, `docs/releases/`의 변경·검증 기록을 보관합니다. 모든 임시 컴파일을 릴리스로 만들지는 않습니다.
+- `VERSION`을 실행 파일·진단·패키지·릴리스 버전의 기준으로 사용합니다. 0.2 첫 베타의 태그는 `v0.2.0-beta.1`입니다. Android APK는 대응하는 Windows 버전과 함께 공개합니다.
+- **배포한 버전**마다 SemVer의 annotated Git 태그, GitHub Release, 소스 스냅샷, Windows 설치 EXE 또는 포터블 ZIP, SHA-256, `docs/releases/`의 변경·검증 기록을 보관합니다. 모든 임시 컴파일을 릴리스로 만들지는 않습니다.
 - 공개 태그를 이동하거나 이미 공개한 바이너리를 교체하지 않습니다. 수정은 새 버전으로 공개하고 이전 자료를 보존합니다.
 - 릴리스 워크플로는 기존 annotated 태그를 지정해 수동 실행하며 초안만 만듭니다. 공개 배포는 실제 포터블 실행 검증 뒤 진행합니다. 태그를 푸는 것만으로 미검증 바이너리를 자동 공개하지 않습니다.
 - 수동 워크플로의 `include_cuda` 입력은 기본 `true`입니다. 패키징 스크립트의 `-IncludeCuda`는 `windows-x64-cuda` ZIP에 음성 인식·번역 CUDA를 함께 넣습니다. 스크립트에서 이 옵션을 생략한 `windows-x64` 코어도 유지하며, 두 구성의 파일명·manifest·체크섬을 구분합니다. 번역 모델 가중치는 기본 ZIP에서 분리합니다.
@@ -17,9 +17,9 @@
 
 ## English
 
-`VERSION` controls the executable, diagnostics, package and release version. The next target is `0.1.0-alpha.10`, with intended release tag `v0.1.0-alpha.10`.
+`VERSION` controls the executable, diagnostics, package and release version. The first 0.2 beta uses the tag `v0.2.0-beta.1`. Publish the Android APK with its corresponding Windows version.
 
-Every **distributed version**, rather than every scratch compilation, receives an annotated SemVer tag, GitHub Release, source snapshot, Windows portable ZIP, SHA-256 and a release/validation record. Never move published tags or replace published binaries; corrections require a new version while preserving history.
+Every **distributed version** receives an annotated SemVer tag, GitHub Release, source snapshot, Windows installer or portable ZIP, SHA-256 and a release/validation record. Preserve published tags and binaries. Publish corrections under a new version.
 
 The release workflow is manually dispatched against an existing annotated tag and creates a draft. Publish only after testing the extracted portable package. Pushing a tag alone does not automatically expose unverified binaries.
 

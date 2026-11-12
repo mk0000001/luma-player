@@ -1,4 +1,4 @@
-param([string]$Version,[string]$OutputDirectory='dist',[string]$BuildDirectory='build',[switch]$IncludeTranslationModel,[switch]$IncludeCuda,[switch]$AllowDirtySource)
+param([string]$Version,[string]$OutputDirectory='dist',[string]$BuildDirectory='build',[switch]$IncludeTranslationModel,[switch]$IncludeCuda,[switch]$AllowDirtySource,[switch]$StageOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'package-support.ps1')
@@ -33,6 +33,10 @@ Assert-LumaPackageSourceUnchanged -ProjectRoot $projectRoot -Source $source
 $manifestFiles=@(Get-LumaPackageManifestFiles -Directory $package)
 $manifest=New-LumaPackageManifest -Version $Version -Source $source -Files $manifestFiles -IncludeCuda:$IncludeCuda -IncludeTranslationModel:$IncludeTranslationModel
 [IO.File]::WriteAllText((Join-Path $package 'manifest.json'),($manifest | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($false))
+if($StageOnly){
+    Write-Output $package
+    return
+}
 $zip=$paths.Archive
 if((Test-Path -LiteralPath $zip) -or (Test-Path -LiteralPath $paths.Checksum)) { throw 'Archive or checksum appeared during packaging; existing outputs were preserved.' }
 $temporaryZip="$zip.$([guid]::NewGuid().ToString('N')).tmp.zip"

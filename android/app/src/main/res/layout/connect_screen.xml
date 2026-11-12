@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/connect_screen"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/connect_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:focusableInTouchMode="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="24dp"
+        android:paddingVertical="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/luma_mark" />
+
+            <TextView
+                style="@style/LumaSectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/app_name" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/LumaTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:accessibilityHeading="true"
+            android:text="@string/connect_title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:text="@string/connect_help"
+            android:textColor="@color/luma_muted"
+            android:textSize="16sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="23dp"
+            android:background="@drawable/form_card"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/LumaSectionTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:accessibilityHeading="true"
+                    android:text="@string/pc_list_title" />
+
+                <Button
+                    android:id="@+id/refresh_button"
+                    style="@style/LumaTextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/discovery_refresh" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/discovery_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
+                android:paddingVertical="8dp"
+                android:textColor="@color/luma_muted"
+                android:textSize="14sp" />
+
+            <LinearLayout
+                android:id="@+id/pc_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/form_card"
+            android:orientation="vertical"
+            android:padding="18dp">
+
+            <TextView
+                style="@style/LumaSectionTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:labelFor="@+id/address"
+                android:text="@string/address_label" />
+
+            <EditText
+                android:id="@id/address"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/form_field"
+                android:hint="@string/address_hint"
+                android:imeOptions="actionGo|flagNoPersonalizedLearning"
+                android:importantForAutofill="no"
+                android:inputType="textUri|textNoSuggestions"
+                android:maxLines="1"
+                android:minHeight="52dp"
+                android:paddingHorizontal="14dp"
+                android:saveEnabled="false"
+                android:textColor="@color/luma_text"
+                android:textColorHint="@color/luma_muted"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/connect_button"
+                style="@style/LumaPrimaryButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/connect_action" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/connection_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:accessibilityLiveRegion="polite"
+            android:textColor="@color/luma_muted"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/device_info"
+            style="@style/LumaTextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="start"
+            android:layout_marginTop="10dp"
+            android:text="@string/capability_action" />
+    </LinearLayout>
+</ScrollView>

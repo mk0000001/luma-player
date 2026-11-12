@@ -2,6 +2,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QCryptographicHash>
 #include <QDialog>
 #include <QLabel>
 #include <QTimer>
@@ -23,6 +24,16 @@
 #include <QScrollBar>
 #include <QDir>
 #include <QFileInfo>
+#include <QHostAddress>
+#include <QNetworkAccessManager>
+#include <QNetworkProxy>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QRandomGenerator>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslError>
+#include <QSslKey>
 #include <QUrl>
 #include <QElapsedTimer>
 #include <QJsonArray>
@@ -34,6 +45,7 @@
 #include <optional>
 #include <algorithm>
 #include "ui/main_window.h"
+#include "ui/lan_playback_dialog.h"
 #include "ui/performance_overlay.h"
 #include "ui/video_surface.h"
 #include "core/resume_history.h"
@@ -77,6 +89,31 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void mobilePlaybackSettingsAllowNoOpenSource(){
+        luma::MainWindow window;
+        auto *share=window.findChild<QPushButton*>("openLanPlayback");
+        QVERIFY(share);
+        QVERIFY(share->isEnabled());
+        share->click();
+        auto *dialog=window.findChild<QDialog*>("lanPlaybackDialog");
+        QVERIFY(dialog);
+        auto *start=dialog->findChild<QPushButton*>("lanStart");
+        QVERIFY(start);
+        QVERIFY(!start->isEnabled());
+        dialog->reject();
+    }
+    void mobilePlaybackOnlySelectsPrivateSubnetsAndEscapesCues(){
+        QCOMPARE(luma::lanPrivateSubnet(QHostAddress("192.168.9.22"),24),QString("192.168.9.0/24"));
+        QCOMPARE(luma::lanPrivateSubnet(QHostAddress("172.31.9.22"),16),QString("172.31.0.0/16"));
+        QVERIFY(luma::lanPrivateSubnet(QHostAddress("8.8.8.8"),24).isEmpty());
+        QVERIFY(luma::lanPrivateSubnet(QHostAddress("100.64.1.1"),24).isEmpty());
+        QVERIFY(luma::lanPrivateSubnet(QHostAddress("127.0.0.1"),8).isEmpty());
+        QVERIFY(luma::lanPrivateSubnet(QHostAddress("::1"),24).isEmpty());
+        QVERIFY(luma::lanPrivateSubnet(QHostAddress("10.0.0.1"),0).isEmpty());
+        QVERIFY(luma::lanLocalFileSupported("https://192.168.1.1/sample.mp4")==false);
+        const auto track=luma::lanCaptionTrack({{1000,2750,"A < B\n\n한글 & 독음"},{0,0,"skip"}});
+        QCOMPARE(track,QString("WEBVTT\n\n00:00:01.000 --> 00:00:02.750\nA &lt; B\n한글 &amp; 독음\n\n"));
+    }
     void hdrAndAudioAreAvailableWithoutDeveloperMode(){
         luma::MainWindow window;
         auto *hdr=window.findChild<QComboBox*>("hdrOutputMode");
@@ -151,6 +188,128 @@ private slots:
         QVERIFY2(seek->value()>7100 && seek->value()<7900,qPrintable(QString("seek value %1 / %2, width %3").arg(seek->value()).arg(seek->maximum()).arg(seek->width())));
     }
 #ifdef Q_OS_WIN
+    void mobilePlaybackUsesAuthenticatedLocalHost(){
+        const auto source=qEnvironmentVariable("LUMA_UI_LAN_SOURCE");
+        const auto address=qEnvironmentVariable("LUMA_UI_LAN_ADDRESS");
+        if(QGuiApplication::platformName()!="windows" || source.isEmpty() || address.isEmpty())
+            QSKIP("Requires the staged LAN host, native playback and a selected private adapter");
+        const bool disc=source.endsWith(".json",Qt::CaseInsensitive);
+        QSettings().setValue("playback/volume",0);
+        luma::MainWindow window;
+        window.show();
+        if(disc)QVERIFY(window.loadPreparedCaptionProject(source));
+        else window.openSource(source);
+        auto *share=window.findChild<QPushButton*>("openLanPlayback");
+        QVERIFY(share);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>100,30000);
+        if(disc)QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("preparedCaptionsApplied").toBool(),20000);
+        window.startLanDiscovery();
+        share->click();
+        auto *dialog=window.findChild<QDialog*>("lanPlaybackDialog");
+        QVERIFY(dialog);
+        const auto close=qScopeGuard([dialog]{dialog->reject();});
+        auto *endpoint=dialog->findChild<QLabel*>("lanPlaybackAddress");
+        auto *status=dialog->findChild<QLabel*>("lanPlaybackStatus");
+        auto *start=dialog->findChild<QPushButton*>("lanStart");
+        auto *stop=dialog->findChild<QPushButton*>("lanStop");
+        QVERIFY(endpoint && status && start && stop);
+        QTRY_VERIFY_WITH_TIMEOUT(endpoint->text().contains(address),12000);
+        QVERIFY(!start->isEnabled());
+
+        QNetworkAccessManager manager;
+        manager.setProxy(QNetworkProxy::NoProxy);
+        QByteArray peerKey;
+        connect(&manager,&QNetworkAccessManager::sslErrors,&manager,[&](QNetworkReply *reply,const QList<QSslError> &errors){
+            const auto key=reply->sslConfiguration().peerCertificate().publicKey().toDer();
+            if(key.isEmpty())return;
+            if(peerKey.isEmpty() && reply->url().path()=="/v1/pair/identity")peerKey=key;
+            if(key==peerKey)reply->ignoreSslErrors(errors);
+        });
+        const auto request=[&](const QString &path,const QByteArray &token=QByteArray{}){
+            QNetworkRequest value(QUrl("https://"+address+":48762"+path));
+            value.setTransferTimeout(10000);
+            if(!token.isEmpty())value.setRawHeader("Authorization","Bearer "+token);
+            return value;
+        };
+        const auto post=[&](const QString &path,const QJsonObject &body){
+            auto value=request(path);
+            value.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
+            return manager.post(value,QJsonDocument(body).toJson(QJsonDocument::Compact));
+        };
+        auto *identity=manager.get(request("/v1/pair/identity"));
+        QTRY_VERIFY_WITH_TIMEOUT(identity->isFinished(),12000);
+        QVERIFY2(identity->error()==QNetworkReply::NoError,qPrintable(identity->errorString()));
+        QVERIFY(!peerKey.isEmpty());
+        auto *rejected=manager.get(request("/v1/session"));
+        QTRY_VERIFY_WITH_TIMEOUT(rejected->isFinished(),12000);
+        QCOMPARE(rejected->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),401);
+
+        const auto base64Url=[](const QByteArray &bytes){
+            return bytes.toBase64(QByteArray::Base64UrlEncoding|QByteArray::OmitTrailingEquals);
+        };
+        const auto nonce=[&](int size){
+            QByteArray bytes(size,Qt::Uninitialized);
+            for(auto &byte:bytes)byte=static_cast<char>(QRandomGenerator::system()->bounded(256));
+            return base64Url(bytes);
+        };
+        const auto sha=[](const QByteArray &bytes){return QCryptographicHash::hash(bytes,QCryptographicHash::Sha256);};
+        const auto input=base64Url(sha(peerKey))+'\n'+nonce(16)+'\n'+nonce(32);
+        const auto fields=input.split('\n');
+        auto *attempt=post("/v1/pair/start",{{"deviceId",QString::fromLatin1(fields[1])},{"device","LumaPlayer QA"},
+            {"commitment",QString::fromLatin1(base64Url(sha("luma-pair-commit-v1\n"+input)))},{"remember",false}});
+        QTRY_VERIFY_WITH_TIMEOUT(attempt->isFinished(),12000);
+        QVERIFY2(attempt->error()==QNetworkReply::NoError,qPrintable(attempt->errorString()));
+        const auto challenge=QJsonDocument::fromJson(attempt->readAll()).object();
+        const auto attemptId=challenge.value("id").toString();
+        const auto serverNonce=challenge.value("serverNonce").toString().toLatin1();
+        QVERIFY(!attemptId.isEmpty() && serverNonce.size()==43);
+        auto *reveal=post("/v1/pair/reveal",{{"id",attemptId},{"clientNonce",QString::fromLatin1(fields[2])}});
+        QTRY_VERIFY_WITH_TIMEOUT(reveal->isFinished(),12000);
+        QVERIFY2(reveal->error()==QNetworkReply::NoError,qPrintable(reveal->errorString()));
+        QDialog *approval=nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((approval=window.findChild<QDialog*>("lanPairRequest")),5000);
+        auto *code=approval->findChild<QLabel*>("lanPairingCode");
+        auto *approve=approval->findChild<QPushButton*>("lanPairAllowOnce");
+        QVERIFY(code && approve);
+        const auto codeDigest=sha("luma-pair-code-v1\n"+input+'\n'+serverNonce);
+        QCOMPARE(code->text(),QString("%1").arg(qFromBigEndian<quint32>(codeDigest.constData())%1000000,6,10,QChar('0')));
+        approve->click();
+        QTRY_VERIFY2_WITH_TIMEOUT(dialog->property("sharing").toBool(),qPrintable(status->text()),15000);
+        auto *poll=post("/v1/pair/poll",{{"id",attemptId}});
+        QTRY_VERIFY_WITH_TIMEOUT(poll->isFinished(),12000);
+        const auto approvalReply=QJsonDocument::fromJson(poll->readAll()).object();
+        QCOMPARE(approvalReply.value("state").toString(),QString("approved"));
+        const auto token=approvalReply.value("token").toString().toLatin1();
+        QCOMPARE(token.size(),22);
+        QVERIFY(approvalReply.value("rememberToken").toString().isEmpty());
+        auto *session=manager.get(request("/v1/session",token));
+        QTRY_VERIFY_WITH_TIMEOUT(session->isFinished(),12000);
+        QVERIFY2(session->error()==QNetworkReply::NoError,qPrintable(session->errorString()));
+        const auto metadata=QJsonDocument::fromJson(session->readAll()).object();
+        QCOMPARE(metadata.value("sourceKind").toString(),disc?QString("bluray"):QString("file"));
+        QCOMPARE(metadata.value("seekable").toBool(),!disc);
+        auto media=request("/v1/media",token);
+        if(!disc)media.setRawHeader("Range","bytes=0-95");
+        auto *stream=manager.get(media);
+        stream->setReadBufferSize(64*1024);
+        QTRY_VERIFY_WITH_TIMEOUT(stream->bytesAvailable()>=4 || stream->isFinished(),15000);
+        if(disc){
+            QCOMPARE(stream->read(4).toHex(),QByteArray("1a45dfa3"));
+            QVERIFY(!metadata.value("subtitles").toArray().isEmpty());
+        }else{
+            QTRY_VERIFY(stream->isFinished());
+            QCOMPARE(stream->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),206);
+            QFile expected(source);
+            QVERIFY(expected.open(QIODevice::ReadOnly));
+            QCOMPARE(stream->readAll(),expected.read(96));
+        }
+        stream->abort();
+        stop->click();
+        QTRY_VERIFY_WITH_TIMEOUT(!stop->isEnabled() && !dialog->property("sharing").toBool(),8000);
+        auto *expired=manager.get(request("/v1/session",token));
+        QTRY_VERIFY_WITH_TIMEOUT(expired->isFinished(),12000);
+        QCOMPARE(expired->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),401);
+    }
     void hdrFollowsDisplayAndSupportsDeveloperForce(){
         const auto hdrMedia=qEnvironmentVariable("LUMA_UI_TEST_HDR_MEDIA");
         const auto sdrMedia=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");

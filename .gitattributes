@@ -2,3 +2,4 @@
 *.png binary
 *.ico binary
 LICENSES/** -text -whitespace
+android/licenses/** -text -whitespace

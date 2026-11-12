@@ -184,7 +184,10 @@ void MainWindow::buildUi(){
     auto *open=button("파일 열기","openMediaButton");open->setToolTip("미디어 열기 · Ctrl+O");top->addWidget(open);discButton_=button("Blu-ray 재생","primary");top->addWidget(discButton_);outer->addWidget(header_);
     auto *body=new QHBoxLayout;body->setSpacing(0);body->setContentsMargins(0,0,0,0);outer->addLayout(body,1);
     sidebar_=new QWidget;sidebar_->setObjectName("sidebar");sidebar_->setFixedWidth(174);auto *nav=new QVBoxLayout(sidebar_);nav->setContentsMargins(17,25,17,20);nav->setSpacing(14);
-    nav->addWidget(label("YOUR COLLECTION","section"));auto *files=button("로컬 미디어");nav->addWidget(files);resumeButton_=button("이어서 보기","resumePlayback");resumeButton_->setEnabled(false);nav->addWidget(resumeButton_);connect(resumeButton_,&QPushButton::clicked,this,&MainWindow::resumeLatest);nav->addSpacing(22);nav->addWidget(label("연결된 디스크","section"));
+    nav->addWidget(label("YOUR COLLECTION","section"));auto *files=button("로컬 미디어");nav->addWidget(files);resumeButton_=button("이어서 보기","resumePlayback");resumeButton_->setEnabled(false);nav->addWidget(resumeButton_);connect(resumeButton_,&QPushButton::clicked,this,&MainWindow::resumeLatest);
+    auto *lanPlayback=button("휴대폰에서 보기","openLanPlayback");lanPlayback->setToolTip("같은 네트워크의 Android 연결과 공유를 관리합니다.");nav->addWidget(lanPlayback);
+    connect(lanPlayback,&QPushButton::clicked,this,&MainWindow::showLanPlayback);
+    nav->addSpacing(22);nav->addWidget(label("연결된 디스크","section"));
     discLabel_=label("디스크 확인 중…");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
     auto *rescan=button("새로 확인","subtle");nav->addWidget(rescan);nav->addStretch();nav->addWidget(label("MADE FOR\nYOUR SCREEN","section"));body->addWidget(sidebar_);
     auto *center=new QWidget;auto *centerLayout=new QVBoxLayout(center);centerLayout->setContentsMargins(0,0,0,0);centerLayout->setSpacing(0);
@@ -217,7 +220,7 @@ void MainWindow::buildUi(){
     auto *remote=new QGridLayout;remote->setSpacing(6);
     const QList<QPair<PlayerIcon,QPoint>> keys={{PlayerIcon::Up,{1,0}},{PlayerIcon::Left,{0,1}},{PlayerIcon::Confirm,{1,1}},{PlayerIcon::Right,{2,1}},{PlayerIcon::Down,{1,2}}};
     const QList<DiscAction> actions={DiscAction::Up,DiscAction::Left,DiscAction::Activate,DiscAction::Right,DiscAction::Down};const QStringList names={"위","왼쪽","확인","오른쪽","아래"};
-    for(int i=0;i<keys.size();++i){auto *control=new IconButton(keys[i].first,"디스크 "+names[i]);control->setFixedSize(54,34);remote->addWidget(control,keys[i].second.y(),keys[i].second.x());connect(control,&QPushButton::clicked,this,[this,action=actions[i]]{if(active_==discEngine_.get())active_->navigate(discActionCode(action));});}
+    for(int i=0;i<keys.size();++i){auto *control=new IconButton(keys[i].first,"디스크 "+names[i]);control->setFixedSize(54,34);remote->addWidget(control,keys[i].second.y(),keys[i].second.x());connect(control,&QPushButton::clicked,this,[this,action=actions[i]]{if(!lanDiscSharing_ && active_==discEngine_.get())active_->navigate(discActionCode(action));});}
     discLayout->addLayout(remote);
     choice(discLayout,"타이틀",titles_);titles_->setObjectName("discTitles");choice(discLayout,"오디오",audio_);audio_->setObjectName("audioTracks");choice(discLayout,"디스크 자막",subs_);subs_->setObjectName("subtitleTracks");auto *external=button("자막 파일 추가","subtle");external->setToolTip("UTF-8 SRT 원문을 보존하며 독음·번역을 별도로 표시합니다.");discLayout->addWidget(external);discLayout->addWidget(label("챕터","section"));chapters_=new QListWidget;chapters_->setMinimumHeight(120);discLayout->addWidget(chapters_,1);tabs->addTab(scrollPanel(discTab),"디스크");
     auto *aiTab=new QWidget;auto *aiLayout=new QVBoxLayout(aiTab);aiLayout->setContentsMargins(17,18,17,18);aiLayout->setSpacing(10);aiLayout->addWidget(label("LOCAL CAPTIONS","section"));
@@ -294,7 +297,7 @@ void MainWindow::buildUi(){
     captionMenu->addAction("번역 용어집",this,&MainWindow::editTranslationGlossary);
     auto *remoteMenu=new QMenu(remoteButton);remoteButton->setMenu(remoteMenu);auto *remoteHint=remoteMenu->addAction("디스크 조작: 마우스 / Ctrl+방향키 / Ctrl+Enter");remoteHint->setEnabled(false);remoteMenu->addSeparator();
     remoteMenu->addAction("메인 메뉴",topMenu,&QPushButton::click);remoteMenu->addAction("팝업 메뉴",popup,&QPushButton::click);remoteMenu->addSeparator();
-    for(int i=0;i<actions.size();++i)remoteMenu->addAction(names[i],this,[this,action=actions[i]]{if(active_==discEngine_.get())active_->navigate(discActionCode(action));});
+    for(int i=0;i<actions.size();++i)remoteMenu->addAction(names[i],this,[this,action=actions[i]]{if(!lanDiscSharing_ && active_==discEngine_.get())active_->navigate(discActionCode(action));});
     connect(themeButton_,&QPushButton::clicked,this,[this]{setPlayerDarkTheme(!playerUsesDarkTheme());applyTheme();});
     connect(open,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"미디어 열기",{},"미디어 (*.mkv *.mp4 *.webm *.mov *.avi *.m2ts *.ts *.flac *.alac *.m4a *.mp3 *.wav);;모든 파일 (*)");if(!path.isEmpty())openSource(path);});connect(files,&QPushButton::clicked,open,&QPushButton::click);
     connect(rescan,&QPushButton::clicked,this,&MainWindow::discoverDisc);connect(discButton_,&QPushButton::clicked,this,[this]{if(discPath_.isEmpty())discoverDisc();if(!discPath_.isEmpty())openSource(discPath_);else status_->setText("연결된 Blu-ray를 찾지 못했습니다.");});
@@ -307,7 +310,7 @@ void MainWindow::buildUi(){
     connect(rate_,&QComboBox::activated,this,[this]{if(active_)active_->setRate(rate_->currentData().toDouble());});connect(full,&QPushButton::clicked,this,&MainWindow::toggleFullScreen);
     connect(pip,&QPushButton::clicked,this,&MainWindow::togglePictureInPicture);
     connect(topMenu,&QPushButton::clicked,this,[this]{if(active_==discEngine_.get()){selectTitle(0);surface_->setFocus();}});
-    connect(popup,&QPushButton::clicked,this,[this]{if(active_==discEngine_.get()){active_->navigate(discActionCode(DiscAction::Popup));surface_->setFocus();}});
+    connect(popup,&QPushButton::clicked,this,[this]{if(!lanDiscSharing_ && active_==discEngine_.get()){active_->navigate(discActionCode(DiscAction::Popup));surface_->setFocus();}});
     connect(titles_,&QComboBox::activated,this,[this]{selectTitle(titles_->currentData().toInt());});
     connect(audio_,&QComboBox::activated,this,[this]{selectAudio(audio_->currentData().toInt());});
     connect(subs_,&QComboBox::activated,this,[this]{if(active_){subtitleFileLoader_->cancel();aiEnabled_->setChecked(false);externalCues_.clear();presentationDirty_=true;rebuildManagedCaptions();active_->setSubtitle(subs_->currentData().toInt());}});

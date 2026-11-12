@@ -1,0 +1,91 @@
+plugins {
+    id 'com.android.application' version '8.13.2'
+}
+
+def lumaBuildRoot = providers.gradleProperty('lumaBuildRoot')
+if (lumaBuildRoot.isPresent()) {
+    layout.buildDirectory.set(file("${lumaBuildRoot.get()}/app"))
+}
+
+android {
+    namespace = 'io.github.mk0000001.lumaplayer'
+    compileSdk = 36
+    buildToolsVersion = '36.0.0'
+
+    defaultConfig {
+        applicationId = 'io.github.mk0000001.lumaplayer'
+        minSdk = 28
+        targetSdk = 36
+        versionCode = 20001
+        versionName = '0.2.0-beta.1'
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+}
+
+def licenseAssets = layout.buildDirectory.dir('generated/license-assets')
+def bundleLicenseNotices = tasks.register('bundleLicenseNotices', Sync) {
+    from(rootProject.file('../LICENSE')) { rename { 'GPL-3.0.txt' } }
+    from(rootProject.file('THIRD_PARTY_NOTICES.md'))
+    from(rootProject.file('licenses'))
+    from(rootProject.file('../LICENSES/NotoSansCJK-OFL.txt'))
+    into(licenseAssets.map { it.dir('licenses') })
+}
+android.sourceSets.main.assets.srcDir(licenseAssets)
+
+def sourceLock = rootProject.file('../dependencies.lock.json')
+def noto = new groovy.json.JsonSlurper().parse(sourceLock).fonts.find { it.file == 'NotoSansCJKkr-Regular.otf' }
+def localNoto = rootProject.file("../.deps/fonts/${noto.file}")
+def fontResources = layout.buildDirectory.dir('generated/noto-res')
+def stageNotoFont = tasks.register('stageNotoFont') {
+    inputs.file(sourceLock)
+    if (localNoto.isFile()) {
+        inputs.file(localNoto)
+    }
+    outputs.file(fontResources.map { it.file('font/noto_sans_cjk_kr.otf') })
+    doLast {
+        byte[] data
+        if (localNoto.isFile()) {
+            data = localNoto.bytes
+        } else {
+            def connection = URI.create(noto.url).toURL().openConnection()
+            connection.connectTimeout = 15000
+            connection.readTimeout = 30000
+            data = connection.inputStream.withCloseable { it.readNBytes(20_000_000) }
+        }
+        def actual = java.security.MessageDigest.getInstance('SHA-256').digest(data).encodeHex().toString()
+        if (actual != noto.sha256) {
+            throw new GradleException('Noto Sans CJK KR font SHA-256 does not match dependencies.lock.json')
+        }
+        def output = fontResources.get().file('font/noto_sans_cjk_kr.otf').asFile
+        output.parentFile.mkdirs()
+        output.bytes = data
+    }
+}
+android.sourceSets.main.res.srcDir(fontResources)
+tasks.named('preBuild') { dependsOn(bundleLicenseNotices, stageNotoFont) }
+
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+dependencies {
+    def media3Version = '1.11.1'
+    implementation "androidx.media3:media3-exoplayer:$media3Version"
+    implementation "androidx.media3:media3-ui:$media3Version"
+    implementation "androidx.media3:media3-datasource-okhttp:$media3Version"
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    compileOnly 'androidx.annotation:annotation:1.6.0'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
+}

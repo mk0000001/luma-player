@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="luma_background">#111111</color>
+    <color name="luma_surface">#202020</color>
+    <color name="luma_border">#464646</color>
+    <color name="luma_text">#FAFAFA</color>
+    <color name="luma_muted">#C8C8C8</color>
+    <color name="luma_accent">#82BEFF</color>
+    <color name="luma_button_text">#101820</color>
+    <color name="luma_error">#FFB4AB</color>
+</resources>

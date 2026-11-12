@@ -18,3 +18,8 @@
 KEYDB.cfg
 *.key
 *.pem
+*.jks
+*.keystore
+*.p12
+*.dpapi
+*.apk

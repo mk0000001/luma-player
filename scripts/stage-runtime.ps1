@@ -27,6 +27,7 @@ Copy-Item -LiteralPath (Join-Path $ffmpeg 'bin\ffmpeg.exe'),(Join-Path $ffmpeg '
 foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error-0.dll') {
     Copy-Item -LiteralPath (Join-Path $vlc $name) -Destination (Join-Path $runtime 'tools' $name) -Force
 }
+& (Join-Path $PSScriptRoot 'build-mobile-host.ps1') -Destination (Join-Path $runtime 'tools')
 $model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
 if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
 $highQualityModel=$dependencyLock.highQualityModel

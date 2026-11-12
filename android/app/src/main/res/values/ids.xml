@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="pc_item" type="id" />
+    <item name="pc_name" type="id" />
+    <item name="pc_address" type="id" />
+    <item name="forget_pc_button" type="id" />
+</resources>

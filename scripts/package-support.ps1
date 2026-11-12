@@ -49,7 +49,7 @@ function Test-LumaPackagePrivateFile {
     if($name -match '^(KEYDB\.cfg|HostKeyCertificate\.txt|ProcessingDeviceKeysSimple\.txt)$') { return $true }
     if($name -match '\.npu-profile\.json$') { return $true }
     $privateExtensions=@(
-        '.key','.pem','.der','.crt','.cer','.pfx','.p12','.p7b','.p7c',
+        '.key','.pem','.der','.crt','.cer','.pfx','.p12','.p7b','.p7c','.jks','.keystore','.dpapi',
         '.srt','.vtt','.ass','.ssa','.sup','.sub','.idx','.smi','.sami','.ttml','.dfxp','.sbv','.lrc',
         '.wav','.wave','.pcm','.flac','.alac','.aac','.m4a','.mp3','.ogg','.opus','.wma','.aif','.aiff','.dsf','.dff','.ac3','.eac3','.dts','.dtshd','.mlp','.mka',
         '.m2ts','.mts','.m2t','.ts','.mp4','.mkv','.mov','.avi','.webm','.wmv','.mpg','.mpeg','.vob','.evo','.m4v',

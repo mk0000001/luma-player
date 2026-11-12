@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <include layout="@layout/connect_screen" />
+
+    <include layout="@layout/pair_screen" />
+
+    <LinearLayout
+        android:id="@+id/playback_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/playback_header"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/luma_surface"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="5dp"
+            android:paddingVertical="5dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/session_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/luma_text"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/source_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/luma_muted"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/disconnect_button"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/disconnect_action"
+                android:textAllCaps="false"
+                android:textColor="@color/luma_accent" />
+        </LinearLayout>
+
+        <androidx.media3.ui.PlayerView
+            android:id="@+id/player_view"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="@android:color/black"
+            app:show_buffering="when_playing"
+            app:show_next_button="false"
+            app:show_previous_button="false"
+            app:show_subtitle_button="true"
+            app:surface_type="surface_view" />
+
+        <LinearLayout
+            android:id="@+id/playback_footer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="5dp">
+
+            <TextView
+                android:id="@+id/playback_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:accessibilityLiveRegion="polite"
+                android:paddingVertical="8dp"
+                android:textColor="@color/luma_muted"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/playback_info"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/playback_info_action"
+                android:textAllCaps="false"
+                android:textColor="@color/luma_accent" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>
