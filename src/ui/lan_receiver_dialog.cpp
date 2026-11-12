@@ -23,7 +23,13 @@
 #include <QSysInfo>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QtEndian>
 #include <algorithm>
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#endif
 
 namespace luma {
 namespace {
@@ -44,6 +50,28 @@ QLabel *plainLabel(const QString &text, QWidget *parent) {
 QByteArray messageLine(const QJsonObject &message) {
     return QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
 }
+
+bool selectedPrivateRoute(const QHostAddress &peer, const QHostAddress &local, int prefix, int interfaceIndex,
+    bool allowDefaultRoute = false) {
+    if (peer.isInSubnet(local, prefix))
+        return true;
+#ifdef Q_OS_WIN
+    if (interfaceIndex <= 0)
+        return false;
+    SOCKADDR_INET source{}, destination{}, bestSource{};
+    source.Ipv4.sin_family = destination.Ipv4.sin_family = AF_INET;
+    source.Ipv4.sin_addr.s_addr = qToBigEndian(local.toIPv4Address());
+    destination.Ipv4.sin_addr.s_addr = qToBigEndian(peer.toIPv4Address());
+    MIB_IPFORWARD_ROW2 route{};
+    return GetBestRoute2(nullptr, NET_IFINDEX(interfaceIndex), &source, &destination, 0, &route, &bestSource) == NO_ERROR &&
+        route.InterfaceIndex == NET_IFINDEX(interfaceIndex) &&
+        (allowDefaultRoute || route.DestinationPrefix.PrefixLength > 0);
+#else
+    Q_UNUSED(interfaceIndex);
+    Q_UNUSED(allowDefaultRoute);
+    return false;
+#endif
+}
 }
 
 LanReceiverDialog::LanReceiverDialog(QWidget *parent) : QDialog(parent) {
@@ -63,6 +91,19 @@ LanReceiverDialog::LanReceiverDialog(QWidget *parent) : QDialog(parent) {
     scan_->setObjectName("lanReceiverScan");
     networkRow->addWidget(scan_);
     layout->addLayout(networkRow);
+
+    auto *subnetRow = new QHBoxLayout;
+    subnet_ = new QLineEdit(this);
+    subnet_->setObjectName("lanReceiverSubnet");
+    subnet_->setAccessibleName("사설 대역 직접 검색");
+    subnet_->setPlaceholderText("사설 대역 직접 검색 · 예: 10.22.0.0/24");
+    subnet_->setMaxLength(18);
+    subnetRow->addWidget(subnet_, 1);
+    scanSubnet_ = new QPushButton("대역 검색", this);
+    scanSubnet_->setObjectName("lanReceiverScanSubnet");
+    scanSubnet_->setAutoDefault(false);
+    subnetRow->addWidget(scanSubnet_);
+    layout->addLayout(subnetRow);
 
     pcs_ = new QListWidget(this);
     pcs_->setObjectName("lanReceiverPcs");
@@ -117,6 +158,7 @@ LanReceiverDialog::LanReceiverDialog(QWidget *parent) : QDialog(parent) {
     discovery_.setProxy(QNetworkProxy::NoProxy);
     scanTimer_.setSingleShot(true);
     scanRetry_.setInterval(650);
+    scanSend_.setInterval(20);
     pairingTimer_.setSingleShot(true);
     shutdownTimer_.setSingleShot(true);
     receiver_.setStandardErrorFile(QProcess::nullDevice());
@@ -124,6 +166,12 @@ LanReceiverDialog::LanReceiverDialog(QWidget *parent) : QDialog(parent) {
         refreshInterfaces();
         startDiscovery();
     });
+    connect(scanSubnet_, &QPushButton::clicked, this, [this] {
+        refreshInterfaces();
+        startDiscovery(true);
+    });
+    connect(subnet_, &QLineEdit::returnPressed, scanSubnet_, &QPushButton::click);
+    connect(subnet_, &QLineEdit::textChanged, this, &LanReceiverDialog::updateControls);
     connect(interfaces_, &QComboBox::activated, this, [this] { startDiscovery(); });
     connect(&scanTimer_, &QTimer::timeout, this, [this] {
         stopDiscovery();
@@ -134,6 +182,7 @@ LanReceiverDialog::LanReceiverDialog(QWidget *parent) : QDialog(parent) {
         if (scanTimer_.isActive())
             discovery_.writeDatagram("LUMA-DISCOVER-1 " + nonce_, broadcast_, port);
     });
+    connect(&scanSend_, &QTimer::timeout, this, &LanReceiverDialog::sendSubnetBatch);
     connect(&discovery_, &QUdpSocket::readyRead, this, &LanReceiverDialog::readDiscovery);
     connect(pcs_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
         if (item)
@@ -189,47 +238,74 @@ void LanReceiverDialog::refreshInterfaces() {
         const auto address = adapter.address.toString();
         if (address == preferred)
             index = interfaces_->count();
-        interfaces_->addItem(adapter.name + " · " + address, QStringList{address, QString::number(adapter.prefixLength)});
+        interfaces_->addItem(adapter.name + " · " + address,
+            QStringList{address, QString::number(adapter.prefixLength), QString::number(adapter.interfaceIndex)});
     }
     interfaces_->setCurrentIndex(interfaces_->count() ? index : -1);
 }
 
-QString LanReceiverDialog::selectedEndpoint(const QString &input) const {
+QString LanReceiverDialog::selectedEndpoint(const QString &input, bool allowDefaultRoute) const {
     const auto selected = interfaces_->currentData().toStringList();
-    if (selected.size() != 2)
+    if (selected.size() != 3)
         return {};
     auto address = input.trimmed();
     const auto suffix = ':' + QString::number(port);
     if (address.endsWith(suffix))
         address.chop(suffix.size());
     const QHostAddress ip(address), local(selected[0]);
-    const auto subnet = QHostAddress::parseSubnet(lanPrivateSubnet(local, selected[1].toInt()));
-    if (ip.toString() != address || lanPrivateSubnet(ip, 32).isEmpty() || !ip.isInSubnet(subnet))
+    if (ip.toString() != address || lanPrivateSubnet(ip, 32).isEmpty() ||
+        !selectedPrivateRoute(ip, local, selected[1].toInt(), selected[2].toInt(), allowDefaultRoute))
         return {};
     return address + suffix;
 }
 
-void LanReceiverDialog::startDiscovery() {
+void LanReceiverDialog::startDiscovery(bool specificSubnet) {
     if (phase_ != Phase::Idle || receiver_.state() != QProcess::NotRunning)
         return;
     stopDiscovery();
     pcs_->clear();
     const auto selected = interfaces_->currentData().toStringList();
-    if (selected.size() != 2) {
+    if (selected.size() != 3) {
         status_->setText("연결된 사설 IPv4 주소가 없습니다.");
         updateControls();
         return;
     }
-    const QHostAddress local(selected[0]);
-    const int prefix = selected[1].toInt();
-    if (prefix < 1 || prefix > 30 || !discovery_.bind(local, 0, QUdpSocket::DontShareAddress)) {
+    scanLocal_ = QHostAddress(selected[0]);
+    scanPrefix_ = selected[1].toInt();
+    scanInterface_ = selected[2].toInt();
+    const auto enteredSubnet = specificSubnet ? lanPrivatePeerSubnet(subnet_->text()) : QString{};
+    if (specificSubnet && enteredSubnet.isEmpty()) {
+        status_->setText("사설 IPv4 네트워크 주소와 /24–/32를 입력하세요.");
+        subnet_->setFocus();
+        updateControls();
+        return;
+    }
+    if ((!specificSubnet && (scanPrefix_ < 1 || scanPrefix_ > 30)) ||
+        !discovery_.bind(scanLocal_, 0, QUdpSocket::DontShareAddress)) {
         status_->setText("자동 검색을 사용할 수 없습니다. PC 주소를 직접 입력하세요.");
         updateControls();
         return;
     }
-    const quint32 mask = ~quint32(0) << (32 - prefix);
-    broadcast_ = QHostAddress(local.toIPv4Address() | ~mask);
     nonce_ = QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').toLatin1();
+    if (specificSubnet) {
+        const auto [network, prefix] = QHostAddress::parseSubnet(enteredSubnet);
+        const quint32 count = quint32(1) << (32 - prefix);
+        const quint32 first = prefix < 31 ? 1 : 0;
+        const quint32 end = prefix < 31 ? count - 1 : count;
+        for (quint32 offset = first; offset < end; ++offset) {
+            const quint32 candidate = network.toIPv4Address() + offset;
+            if (candidate != scanLocal_.toIPv4Address())
+                scanCandidates_.append(candidate);
+        }
+        status_->setText("입력한 사설 대역에서 LumaPlayer PC를 검색하는 중…");
+        scanTimer_.start(scanMs);
+        scanSend_.start();
+        sendSubnetBatch();
+        updateControls();
+        return;
+    }
+    const quint32 mask = ~quint32(0) << (32 - scanPrefix_);
+    broadcast_ = QHostAddress(scanLocal_.toIPv4Address() | ~mask);
     if (lanPrivateSubnet(broadcast_, 32).isEmpty() ||
         discovery_.writeDatagram("LUMA-DISCOVER-1 " + nonce_, broadcast_, port) < 0) {
         stopDiscovery();
@@ -246,14 +322,42 @@ void LanReceiverDialog::startDiscovery() {
 void LanReceiverDialog::stopDiscovery() {
     scanTimer_.stop();
     scanRetry_.stop();
+    scanSend_.stop();
     discovery_.close();
     nonce_.clear();
+    scanCandidates_.clear();
+    scanSent_.clear();
+    scanCursor_ = 0;
+}
+
+void LanReceiverDialog::sendSubnetBatch() {
+    if (!scanTimer_.isActive() || !scanSend_.isActive())
+        return;
+    const auto request = "LUMA-DISCOVER-1 " + nonce_;
+    for (int sent = 0; sent < 4 && scanCursor_ < scanCandidates_.size(); ++sent) {
+        const auto candidate = scanCandidates_[scanCursor_++];
+        const QHostAddress peer(candidate);
+        if (selectedPrivateRoute(peer, scanLocal_, scanPrefix_, scanInterface_) &&
+            discovery_.writeDatagram(request, peer, port) == request.size())
+            scanSent_.insert(candidate);
+    }
+    if (scanCursor_ == scanCandidates_.size()) {
+        scanSend_.stop();
+        if (scanSent_.isEmpty()) {
+            stopDiscovery();
+            status_->setText("이 대역으로 연결되는 경로가 없습니다. VPN과 선택한 네트워크를 확인하세요.");
+        }
+    }
 }
 
 void LanReceiverDialog::readDiscovery() {
     for (int read = 0; read < 64 && discovery_.hasPendingDatagrams() && scanTimer_.isActive() && pcs_->count() < 32; ++read) {
         const auto packet = discovery_.receiveDatagram(maxDiscoveryBytes + 1);
-        const auto endpoint = selectedEndpoint(packet.senderAddress().toString());
+        const auto sender = packet.senderAddress();
+        if (scanCandidates_.isEmpty() ? !sender.isInSubnet(scanLocal_, scanPrefix_)
+                                     : !scanSent_.contains(sender.toIPv4Address()))
+            continue;
+        const auto endpoint = selectedEndpoint(sender.toString());
         if (endpoint.isEmpty() || endpoint == ownEndpoint_ || packet.data().size() > maxDiscoveryBytes)
             continue;
         const auto response = QJsonDocument::fromJson(packet.data()).object();
@@ -280,10 +384,10 @@ void LanReceiverDialog::readDiscovery() {
 void LanReceiverDialog::startConnection() {
     if (phase_ != Phase::Idle || receiver_.state() != QProcess::NotRunning)
         return;
-    const auto endpoint = selectedEndpoint(address_->text());
+    const auto endpoint = selectedEndpoint(address_->text(), true);
     if (endpoint.isEmpty() || endpoint == ownEndpoint_) {
         status_->setText(endpoint == ownEndpoint_ && !endpoint.isEmpty() ? "다른 PC의 공유 주소를 입력하세요."
-                                                                       : "선택한 네트워크와 같은 사설 IPv4 주소를 입력하세요.");
+                                                                       : "선택한 네트워크에서 접근할 수 있는 사설 IPv4 주소를 입력하세요.");
         address_->setFocus();
         return;
     }
@@ -305,6 +409,7 @@ void LanReceiverDialog::startConnection() {
     startedFresh_ = mode == "once" || freshEndpoint_ == endpoint_;
     configuration_ = messageLine(QJsonObject{
         {"mode", "receiver"}, {"endpoint", endpoint_},
+        {"localAddress", interfaces_->currentData().toStringList().value(0)},
         {"name", name.isEmpty() ? QString("LumaPlayer PC") : name},
         {"store", QDir(dataPath).absoluteFilePath("lan-receiver-pairings.dpapi")},
         {"remember", mode == "remember"}, {"fresh", startedFresh_}
@@ -438,6 +543,8 @@ void LanReceiverDialog::updateControls() {
     const bool comparing = phase_ == Phase::Comparing;
     interfaces_->setEnabled(idle);
     scan_->setEnabled(idle);
+    subnet_->setEnabled(idle);
+    scanSubnet_->setEnabled(idle && !subnet_->text().trimmed().isEmpty());
     pcs_->setEnabled(idle);
     address_->setEnabled(idle);
     approval_->setEnabled(idle);

@@ -108,3 +108,26 @@ func TestPeerRequiresRFC1918IPv4WithinSubnet(t *testing.T) {
 		})
 	}
 }
+
+func TestExplicitPeerSubnetIsBoundedAndDoesNotChangeLocalBinding(t *testing.T) {
+	cfg := fileConfig(t)
+	cfg.PeerSubnet = "172.31.20.0/24"
+	result, err := cfg.validate()
+	if err != nil || result.address.String() != cfg.Listen || result.subnet.String() != cfg.PeerSubnet {
+		t.Fatalf("valid private peer scope rejected: %v", err)
+	}
+	for _, value := range []string{"172.31.20.0/23", "172.31.20.1/24", "8.8.8.8/32", "100.64.1.0/24", "fd00::/24"} {
+		cfg.PeerSubnet = value
+		if _, err := cfg.validate(); err == nil {
+			t.Fatalf("accepted invalid peer scope %s", value)
+		}
+	}
+	cfg.PeerSubnet = "10.22.0.2/32"
+	if _, err := cfg.validate(); err != nil {
+		t.Fatalf("valid single VPN peer rejected: %v", err)
+	}
+	cfg.Subnet = "127.0.0.0/8"
+	if _, err := cfg.validate(); err == nil {
+		t.Fatal("explicit peer scope bypassed assigned local subnet validation")
+	}
+}

@@ -28,8 +28,8 @@
 
 namespace luma {
 namespace {
-constexpr qsizetype testerEventLimit=64;
-constexpr qsizetype testerReportByteLimit=32*1024;
+constexpr qsizetype testerEventLimit=256;
+constexpr qsizetype testerReportByteLimit=1024*1024;
 
 QString knownValue(const QString &value,std::initializer_list<const char *> allowed){
     for(const auto *item:allowed)if(value==item)return value;
@@ -124,6 +124,24 @@ QString videoDecoderId(const QString &value){
         "mpeg1video","mpeg2video","mpeg4","vc1","prores","ffv1","theora"});
 }
 
+QString audioCodecId(const QString &value){
+    const auto codec=value.trimmed().toLower();
+    if(codec=="a52")return "ac3";
+    if(codec.startsWith("pcm_") || codec=="lpcm")return "pcm";
+    return knownValue(codec,{"aac","ac3","eac3","truehd","mlp","dts","flac","mp3","mp2","opus","vorbis","alac","pcm"});
+}
+
+const char *playbackFailureReason(const QString &message,bool disc){
+    if(message.startsWith("AACS 설정 파일을 찾거나 열 수 없습니다."))return "aacs_config_unavailable";
+    if(message.startsWith("AACS 읽기 라이브러리를 불러오지 못했습니다."))return "aacs_runtime_unavailable";
+    if(message.startsWith("BD+ 읽기 라이브러리를 불러오지 못했습니다."))return "bdplus_runtime_unavailable";
+    if(message=="video output initialization failed")return "video_output_init_failed";
+    if(message=="audio output initialization failed")return "audio_output_init_failed";
+    if(message=="loading failed")return "loading_failed";
+    if(message=="재생 엔진이 파일 열기 요청을 거부했습니다.")return "file_open_rejected";
+    return disc?"libvlc":"libmpv";
+}
+
 QJsonObject installedWorkers(){
     const QDir runtime(QCoreApplication::applicationDirPath()+"/runtime");
 #ifdef Q_OS_WIN
@@ -153,10 +171,43 @@ QJsonObject lastAccelerationInstall(){
     if(backend.isEmpty() || result.isEmpty() || !codeValid)return {};
     return {{"backend",backend},{"result",result},{"exitCode",code}};
 }
+
+QByteArray serializeTesterReport(QJsonObject report){
+    auto bytes=QJsonDocument(report).toJson();
+    if(bytes.size()<=testerReportByteLimit)return bytes;
+    bytes=QJsonDocument(report).toJson(QJsonDocument::Compact);
+    if(bytes.size()<=testerReportByteLimit)return bytes;
+
+    auto performance=report.value("performance").toObject();
+    auto samples=performance.value("samples").toArray();
+    const auto total=samples.size();
+    while(!samples.isEmpty() && bytes.size()>testerReportByteLimit){
+        const auto discard=std::min<qsizetype>(16,samples.size());
+        for(qsizetype i=0;i<discard;++i)samples.removeFirst();
+        performance.insert("samples",samples);
+        performance.insert("omittedForSize",total-samples.size());
+        report.insert("performance",performance);
+        bytes=QJsonDocument(report).toJson(QJsonDocument::Compact);
+    }
+    return bytes;
+}
+}
+
+void MainWindow::setDeveloperDiagnosticCollection(bool enabled){
+    performance_->setDiagnosticCollection(enabled);
+    if(discEngine_)discEngine_->setPerformanceMetricsEnabled(enabled);
+    if(fileEngine_)fileEngine_->setPerformanceMetricsEnabled(enabled);
+    if(!enabled){
+        developerEvents_={};
+        droppedDeveloperEvents_=0;
+    }
 }
 
 void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const QString &device){
-    QJsonObject entry{{"elapsedMs",developerEventClock_.elapsed()},{"code",code},{"reason",reason}};
+    if(!developerApproved_)return;
+    const auto elapsed=performance_->elapsedMs();
+    if(elapsed<0)return;
+    QJsonObject entry{{"elapsedMs",elapsed},{"code",code},{"reason",reason}};
     const auto id=deviceId(device);
     if(!id.isEmpty())entry.insert("device",id);
     if(developerEvents_.size()==testerEventLimit){
@@ -167,9 +218,8 @@ void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const 
 }
 
 void MainWindow::connectDeveloperDiagnostics(){
-    developerEventClock_.start();
     connect(&job_,&SubtitleJob::progress,this,[this](const QString &message){
-        if(message.size()>128)return;
+        if(!developerApproved_ || message.size()>128)return;
         static const QRegularExpression fallback(R"(\A(GPU|NPU|CPU) 사용 불가 \(([^)]+)\) · 다음 장치로 전환 중…\z)");
         const auto match=fallback.match(message);
         if(match.hasMatch())recordDeveloperEvent("asr_fallback",asrFallbackReason(match.captured(2)),match.captured(1));
@@ -178,6 +228,7 @@ void MainWindow::connectDeveloperDiagnostics(){
         recordDeveloperEvent("asr_failed",asrFailureReason(message));
     });
     connect(&job_,&SubtitleJob::backendSelected,this,[this,last=QString{}](const QString &backend) mutable {
+        if(!developerApproved_){last.clear();return;}
         const auto kind=knownValue(backend,{"CPU","GPU","NPU"});
         if(kind.isEmpty())return;
         const auto device=deviceId(job_.selectedDevice());
@@ -187,7 +238,7 @@ void MainWindow::connectDeveloperDiagnostics(){
         recordDeveloperEvent("asr_backend_confirmed",kind=="GPU"?"gpu":kind=="NPU"?"npu":"cpu",device);
     });
     connect(translation_,&TranslationService::progress,this,[this](const QString &message){
-        if(message.size()>160)return;
+        if(!developerApproved_ || message.size()>160)return;
         const QString fallback=" 번역 사용 불가: ",missing=" 번역 실행기가 없습니다.";
         const auto separator=message.indexOf(fallback);
         if(separator>=0){
@@ -200,6 +251,7 @@ void MainWindow::connectDeveloperDiagnostics(){
         }
     });
     connect(translation_,&TranslationService::backendSelected,this,[this](const QString &backend){
+        if(!developerApproved_)return;
         const auto evidence=translationBackendEvidence(backend);
         if(!evidence.isEmpty())recordDeveloperEvent("translation_backend_confirmed",
             evidence.value("gpuOffloadVerified").toBool()?"gpu_offload":"backend_verified",evidence.value("device").toString());
@@ -222,15 +274,24 @@ void MainWindow::connectDeveloperPlaybackDiagnostics(PlaybackEngine *engine){
         recordDeveloperEvent("video_output_lost",reason);
     });
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,disc](const QString &message){
-        const auto *reason=message.startsWith("AACS 설정 파일을 찾거나 열 수 없습니다.")?"aacs_config_unavailable":
-                           message=="video output initialization failed"?"video_output_init_failed":
-                           message=="audio output initialization failed"?"audio_output_init_failed":
-                           message=="loading failed"?"loading_failed":disc?"libvlc":"libmpv";
-        recordDeveloperEvent("video_failed",reason);
+        recordDeveloperEvent("video_failed",playbackFailureReason(message,disc));
     });
-    connect(engine,&PlaybackEngine::logMessage,this,[this](const QString &message){
+    connect(engine,&PlaybackEngine::logMessage,this,[this,disc,opened=QString("Opening with ")+engine->name()](const QString &message){
+        if(!developerApproved_)return;
+        if(message==opened)
+            recordDeveloperEvent("video_opened",disc?"libvlc":"libmpv");
         if(message.startsWith("재생 엔진이 거부한 설정 · "))
             recordDeveloperEvent("video_option_rejected","runtime_rejected_override");
+    });
+    connect(engine,&PlaybackEngine::updated,this,[this,engine,last=QString{},generation=quint64{}]() mutable {
+        if(!developerApproved_ || engine!=active_){last.clear();return;}
+        if(generation!=sourceGeneration_){generation=sourceGeneration_;last.clear();}
+        const auto &state=engine->state();
+        if(state.videoCodec.isEmpty())return;
+        const auto decoder=hardwareDecoderId(state.hardwareDecoder);
+        if(decoder.isEmpty() || decoder==last)return;
+        last=decoder;
+        recordDeveloperEvent("video_decoder_active",decoder.toLatin1().constData());
     });
 }
 
@@ -273,16 +334,33 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
             codec=actualDecoder=="libdav1d"?QString("av1"):actualDecoder.endsWith("_mf")?actualDecoder.chopped(3):actualDecoder;
         QJsonObject playback{{"engine",active_==discEngine_.get()?"libvlc":"libmpv"},{"playing",state.playing},{"failed",state.failed},
             {"buffering",state.buffering || state.fileCacheHolding},
+            {"sourceKind",active_==discEngine_.get()?"bluray":lanRemotePlayback_?"lan":"file"},
+            {"timelineReady",state.timelineReady},
             {"requestedHardware",requested},{"requestedDecoder",videoDecoderId(state.videoDecoderRequest.section(" / ",1,1))},
             {"actualHardware",current},{"actualDecoder",actualDecoder},{"videoCodec",codec},
-            {"droppedFrames",state.droppedVideoFrames},{"overrideRejected",!state.videoOverrideStatus.isEmpty()}};
+            {"droppedFrames",state.droppedVideoFrames},{"lostAudioBuffers",state.lostAudioBuffers},
+            {"overrideRejected",!state.videoOverrideStatus.isEmpty()},{"forcedHdr",state.videoColorForced},
+            {"audioBitstreamRequested",state.audioBitstreamRequested},{"audioBitstreamActive",state.audioBitstreamActive},
+            {"audioSettingsWarning",!state.audioSettingsError.isEmpty()}};
         const auto runtime=engineVersion.match(state.runtimeVersion).captured(1);
         if(!runtime.isEmpty())playback.insert("engineVersion",runtime);
         if(std::isfinite(state.sourceFps) && state.sourceFps>0 && state.sourceFps<=1000)playback.insert("sourceFps",state.sourceFps);
+        const auto range=knownValue(state.sourceVideoRange,{"sdr","pq","hlg","unknown"});
+        if(!range.isEmpty())playback.insert("sourceVideoRange",range);
         const auto transfer=knownValue(state.transferFunction,{"pq","hlg","bt.1886","srgb","linear","gamma2.2","gamma2.4"});
         if(!transfer.isEmpty())playback.insert("inputTransfer",transfer);
+        const auto outputTransfer=knownValue(state.outputTransferFunction,{"pq","hlg","bt.1886","srgb","linear","gamma2.2","gamma2.4"});
+        if(!outputTransfer.isEmpty())playback.insert("outputTransfer",outputTransfer);
         const auto primaries=knownValue(state.colorPrimaries,{"bt.601-525","bt.601-625","bt.709","bt.2020","dci-p3","display-p3"});
         if(!primaries.isEmpty())playback.insert("inputPrimaries",primaries);
+        const auto outputPrimaries=knownValue(state.outputPrimaries,{"bt.601-525","bt.601-625","bt.709","bt.2020","dci-p3","display-p3"});
+        if(!outputPrimaries.isEmpty())playback.insert("outputPrimaries",outputPrimaries);
+        if(state.dolbyVisionProfile && *state.dolbyVisionProfile>=0 && *state.dolbyVisionProfile<=255)
+            playback.insert("dolbyVisionProfile",*state.dolbyVisionProfile);
+        const auto audioCodec=audioCodecId(state.audioCodec);
+        if(!audioCodec.isEmpty())playback.insert("audioCodec",audioCodec);
+        if(state.audioSampleRate>0 && state.audioSampleRate<=1000000)playback.insert("audioSampleRateHz",state.audioSampleRate);
+        if(state.audioChannels>0 && state.audioChannels<=64)playback.insert("audioChannels",state.audioChannels);
         const auto automatic=knownValue(requested,{"auto","auto-safe","auto-copy"});
         if(!requested.isEmpty() && !current.isEmpty() && automatic.isEmpty()){
             const auto family=[](const QString &decoder){return decoder.endsWith("-copy")?decoder.chopped(5):decoder;};
@@ -290,16 +368,19 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
         }
         video.insert("playback",playback);
     }
-    QJsonObject asr{{"requested",requestedAi(job_.preferences())}};
+    QJsonObject asr{{"requested",requestedAi(job_.preferences())},{"enabled",aiEnabled_->isChecked()},
+        {"busy",job_.busy()},{"failed",aiFailed_},{"retryCount",aiRetryCount_}};
     const auto asrBackend=knownValue(job_.selectedBackend(),{"CPU","GPU","NPU"}).toLower();
     if(!asrBackend.isEmpty())asr.insert("lastConfirmed",QJsonObject{{"backend",asrBackend},
         {"accelerator",job_.selectedAccelerator()},{"device",deviceId(job_.selectedDevice())},
         {"alignment",knownValue(job_.selectedAlignment(),{"dtw","segment","token"})}});
-    QJsonObject translation{{"requested",requestedAi(translation_->preferences())}};
+    QJsonObject translation{{"requested",requestedAi(translation_->preferences())},{"enabled",translationEnabled_->isChecked()},
+        {"busy",translation_->busy()},{"failed",translationFailed_}};
     const auto actualTranslation=translationBackendEvidence(translation_->selectedBackend());
     if(!actualTranslation.isEmpty())translation.insert("actual",actualTranslation);
-    QJsonObject report{{"schemaVersion",1},{"appVersion",LUMA_VERSION},{"os",os},{"graphicsAdapters",adapters},
+    QJsonObject report{{"schemaVersion",2},{"appVersion",LUMA_VERSION},{"qtVersion",qVersion()},{"os",os},{"graphicsAdapters",adapters},
         {"installedWorkers",installedWorkers()},{"video",video},{"asr",asr},{"translation",translation},
+        {"performance",performance_->diagnosticHistory()},
         {"events",developerEvents_},{"droppedEvents",droppedDeveloperEvents_}};
     const auto installer=lastAccelerationInstall();
     if(!installer.isEmpty())report.insert("lastAccelerationInstall",installer);
@@ -312,7 +393,11 @@ PerformanceInput MainWindow::performanceInput() const {
     input.recoveries = videoRecoveryCount_;
     input.captionWaiting = bufferHolding_;
     input.recognitionBackend = job_.selectedBackend();
-    input.translationBackend = translation_->selectedBackend();
+    input.recognitionRuntime = job_.selectedAccelerator();
+    if (translation_) {
+        input.translationBackend = translation_->selectedBackend();
+        input.translationRuntime = translationBackendEvidence(input.translationBackend).value("accelerator").toString();
+    }
     if (active_) {
         input.playback = active_->state();
         input.disc = active_ == discEngine_.get();
@@ -388,7 +473,7 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
     };
     auto *copy = addButton("진단 요약 복사", "copyDiagnostics");
     auto *exportTester = addButton("테스트 진단 JSON 저장", "exportTesterDiagnostics");
-    exportTester->setToolTip("GPU·드라이버, 디코더, AI 실행 상태를 JSON 파일로 저장합니다.");
+    exportTester->setToolTip("최근 5분 성능과 GPU·드라이버, 디코더, AI 실행 상태를 JSON 파일로 저장합니다.");
     auto *exportCsv = addButton("성능 기록 CSV 저장", "exportPerformance");
     auto *clear = addButton("성능 기록 초기화", "clearPerformance");
     auto *clearLog = addButton("재생 로그 지우기", "clearDeveloperLog");
@@ -413,12 +498,9 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
     connect(performanceEnabled_, &QCheckBox::toggled, this, [this](bool enabled) {
         const bool allowed = developerApproved_ && enabled;
         QSettings().setValue("developer/performanceEnabled", allowed);
-        if (discEngine_)
-            discEngine_->setPerformanceMetricsEnabled(allowed);
-        if (fileEngine_)
-            fileEngine_->setPerformanceMetricsEnabled(allowed);
         performance_->setMonitoring(allowed);
     });
+    setDeveloperDiagnosticCollection(developerApproved_);
     performanceEnabled_->setChecked(developerApproved_ && settings.value("developer/performanceEnabled", false).toBool());
 
     connect(copy, &QPushButton::clicked, this, [this, feedback] {
@@ -431,7 +513,7 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         if(!developerApproved_)return;
         const auto path=QFileDialog::getSaveFileName(this,"테스트 진단 저장","LumaPlayer-diagnostics.json","JSON (*.json)");
         if(path.isEmpty() || !developerApproved_)return;
-        const auto report=QJsonDocument(testerDiagnosticReport()).toJson();
+        const auto report=serializeTesterReport(testerDiagnosticReport());
         QSaveFile output(path);
         const bool saved=report.size()<=testerReportByteLimit && output.open(QIODevice::WriteOnly) &&
             output.write(report)==report.size() && output.commit();
@@ -441,7 +523,7 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         if (!developerApproved_)
             return;
         if (!performance_->hasSamples()) {
-            feedback->setText("성능 오버레이를 켜고 측정값을 수집하세요.");
+            feedback->setText("성능 측정값을 수집하고 있습니다. 잠시 후 다시 저장하세요.");
             return;
         }
         const auto history = performance_->csv();
@@ -463,7 +545,6 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
             log_->clear();
             developerEvents_={};
             droppedDeveloperEvents_=0;
-            developerEventClock_.restart();
         }
     });
     buildDeveloperVideoTools(layout);

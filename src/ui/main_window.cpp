@@ -102,7 +102,10 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         for(const auto &entry:devices){const auto device=entry.toObject();if(device.value("type").toString().compare("GPU",Qt::CaseInsensitive)!=0)continue;aiGpu_->addItem(device.value("name").toString()+" · "+device.value("backend").toString(),device.value("id").toString());}
         int index=aiGpu_->findData(selected);if(index<0 && !selected.isEmpty()){aiGpu_->addItem("저장된 GPU · "+selected,selected);index=aiGpu_->count()-1;}if(index>=0)aiGpu_->setCurrentIndex(index);
     });
-    connect(deviceProbe_,&AiDeviceProbe::failed,this,[this](const QString &message){appendLog("AI 기기 검색: "+message);aiGpu_->setToolTip(message);});
+    connect(deviceProbe_,&AiDeviceProbe::failed,this,[this](const QString &message){
+        recordDeveloperEvent("asr_device_probe_failed","device_enumeration_failed");
+        appendLog("AI 기기 검색: "+message);aiGpu_->setToolTip(message);
+    });
     auto *timer=new QTimer(this);timer->setInterval(500);connect(timer,&QTimer::timeout,this,[this]{scheduleSubtitles();scheduleTranslations();});timer->start();
     translationDeviceProbe_=new TranslationDeviceProbe({},this);
     connect(translationDeviceProbe_,&TranslationDeviceProbe::devicesReady,this,[this](const QJsonArray &devices){
@@ -110,14 +113,17 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         for(const auto &entry:devices){const auto device=entry.toObject();if(device.value("type").toString()!="gpu")continue;translationGpu_->addItem(device.value("backend").toString()+" · "+device.value("name").toString(),device.value("id").toString());}
         int index=translationGpu_->findData(saved);if(index<0 && !saved.isEmpty()){translationGpu_->addItem("저장된 GPU · "+saved,saved);index=translationGpu_->count()-1;}if(index>=0)translationGpu_->setCurrentIndex(index);
     });
-    connect(translationDeviceProbe_,&TranslationDeviceProbe::failed,this,[this](const QString &message){appendLog("번역 장치 확인: "+message);});
+    connect(translationDeviceProbe_,&TranslationDeviceProbe::failed,this,[this](const QString &message){
+        recordDeveloperEvent("translation_device_probe_failed","device_enumeration_failed");
+        appendLog("번역 장치 확인: "+message);
+    });
     QTimer::singleShot(0,this,[this]{
         discoverDisc();deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();
         if(auto *window=windowHandle())connect(window,&QWindow::screenChanged,this,&MainWindow::updateDisplayStatus,Qt::QueuedConnection);
     });
 }
 
-MainWindow::~MainWindow(){discProbeClosing_=true;discPlayPending_=false;stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
+MainWindow::~MainWindow(){discProbeClosing_=true;discPlayPending_=false;stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);setDeveloperDiagnosticCollection(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
 void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
 

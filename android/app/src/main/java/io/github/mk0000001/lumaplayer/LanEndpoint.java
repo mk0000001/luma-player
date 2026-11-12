@@ -2,6 +2,7 @@ package io.github.mk0000001.lumaplayer;
 
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import okhttp3.HttpUrl;
@@ -63,6 +64,15 @@ final class LanEndpoint {
 
     String address() {
         return host + ":" + port;
+    }
+
+    InetAddress inetAddress() {
+        try {
+            // The stored host is already a canonical numeric IPv4 literal.
+            return InetAddress.getByName(host);
+        } catch (UnknownHostException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     static boolean isPrivate(InetAddress address) {

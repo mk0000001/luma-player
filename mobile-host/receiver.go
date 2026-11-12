@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -79,6 +80,15 @@ func runReceiver(input *bufio.Reader, stdout io.Writer, raw initialConfig,
 	endpoint, err := receiverEndpoint(raw.Endpoint)
 	if err != nil || !validDeviceName(raw.Name) || !filepath.IsAbs(raw.Store) || !localVolume(raw.Store) {
 		return fail("error", errInvalidConfig.Error())
+	}
+	if raw.LocalAddress != "" {
+		local, err := netip.ParseAddr(raw.LocalAddress)
+		if err != nil || !local.Is4() || !local.IsPrivate() || !assignedIPv4(local, netip.Prefix{}) {
+			return fail("error", errInvalidLAN.Error())
+		}
+		if dial == nil {
+			dial = newReceiverDialer(local).DialContext
+		}
 	}
 
 	approval := receiverApproval{confirm: make(chan struct{}, 1)}

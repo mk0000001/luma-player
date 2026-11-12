@@ -9,6 +9,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import okhttp3.HttpUrl;
 import org.junit.Test;
 
@@ -91,6 +92,34 @@ public final class LanProtocolTest {
         assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("192.168.5.25"), local, 24));
         assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("192.0.2.3"), local, 1));
         assertFalse(LanDiscovery.samePrivateSubnet(InetAddress.getByName("fd00::1"), local, 24));
+    }
+
+    @Test
+    public void vpnDiscoveryLimitsTheCanonicalPrivateSubnetAndDestinations() {
+        VpnDiscoverySubnet subnet = VpnDiscoverySubnet.parse(" 10.8.3.0/24 ");
+        assertEquals(254, subnet.hostCount());
+        assertEquals("10.8.3.1", subnet.hostAt(0).getHostAddress());
+        assertEquals("10.8.3.254", subnet.hostAt(253).getHostAddress());
+        assertEquals(2, VpnDiscoverySubnet.parse("172.31.1.8/31").hostCount());
+        assertEquals("192.168.7.9", VpnDiscoverySubnet.parse("192.168.7.9/32").hostAt(0).getHostAddress());
+        for (String value : new String[]{"10.8.3.0/23", "10.8.3.1/24", "10.08.3.0/24", "10.8.3.0:48762/24",
+                "10.8.3.0/024", "192.0.2.0/24", "100.64.0.0/24", "fd00::/24"}) {
+            assertThrows(value, IllegalArgumentException.class, () -> VpnDiscoverySubnet.parse(value));
+        }
+    }
+
+    @Test
+    public void vpnDiscoveryRepliesMustComeFromTheRequestedHostAndPort() throws Exception {
+        String nonce = "00112233445566778899aabbccddeeff";
+        byte[] reply = ("{\"protocol\":\"luma-discovery-1\",\"nonce\":\"" + nonce
+                + "\",\"port\":48762,\"name\":\"Tunnel PC\"}").getBytes(StandardCharsets.UTF_8);
+        InetAddress target = InetAddress.getByName("10.8.3.12");
+        Set<InetAddress> queried = Set.of(target);
+        assertEquals("10.8.3.12:48762",
+                LanDiscovery.parseVpnReply(reply, nonce, target, 48762, queried).endpoint.address());
+        assertNull(LanDiscovery.parseVpnReply(reply, nonce, target, 80, queried));
+        assertNull(LanDiscovery.parseVpnReply(reply, "old", target, 48762, queried));
+        assertNull(LanDiscovery.parseVpnReply(reply, nonce, InetAddress.getByName("10.8.3.13"), 48762, queried));
     }
 
     @Test

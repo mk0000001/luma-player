@@ -12,6 +12,7 @@
 #include <QPainterPath>
 #include <QTextStream>
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
 
 namespace luma {
@@ -34,6 +35,40 @@ QJsonValue jsonValue(std::optional<double> value) {
 
 QJsonValue memoryMiB(std::optional<quint64> bytes) {
     return jsonValue(bytes ? std::optional<double>(double(*bytes) / mebibyte) : std::nullopt);
+}
+
+void insertMetric(QJsonObject &record,const char *key,std::optional<double> value,
+                  double minimum,double maximum,double scale=100.0) {
+    if(value && std::isfinite(*value) && *value>=minimum && *value<=maximum)
+        record.insert(key,std::round(*value*scale)/scale);
+}
+
+void insertMemory(QJsonObject &record,const char *key,std::optional<quint64> bytes) {
+    if(bytes)insertMetric(record,key,double(*bytes)/mebibyte,0,1024.0*1024*1024);
+}
+
+PlaybackState performancePlaybackState(const PlaybackState &source) {
+    PlaybackState state;
+    state.positionMs=source.positionMs;
+    state.currentTitle=source.currentTitle;
+    state.playing=source.playing;
+    state.buffering=source.buffering;
+    state.failed=source.failed;
+    state.fileCacheHolding=source.fileCacheHolding;
+    state.discStatisticsAvailable=source.discStatisticsAvailable;
+    state.discInputBytes=source.discInputBytes;
+    state.discDemuxBytes=source.discDemuxBytes;
+    state.displayedPictures=source.displayedPictures;
+    state.droppedVideoFrames=source.droppedVideoFrames;
+    state.lostAudioBuffers=source.lostAudioBuffers;
+    state.sourceFps=source.sourceFps;
+    state.filteredFps=source.filteredFps;
+    state.displayFps=source.displayFps;
+    state.cacheSeconds=source.cacheSeconds;
+    state.avSyncMs=source.avSyncMs;
+    state.hardwareDecoder=source.hardwareDecoder;
+    state.videoCodec=source.videoCodec;
+    return state;
 }
 
 QString networkRateText(std::optional<double> megabits, bool tight = false) {
@@ -93,7 +128,7 @@ PerformanceOverlay::PerformanceOverlay(QWidget *anchor, std::function<Performanc
     anchor->window()->installEventFilter(this);
     if (auto *surface = qobject_cast<VideoSurface *>(anchor))
         connect(surface, &VideoSurface::videoStackingChanged, this, &PerformanceOverlay::syncGeometry);
-    timer_.setInterval(1000);
+    timer_.setInterval(sampleIntervalMs);
     connect(&timer_, &QTimer::timeout, this, &PerformanceOverlay::requestSample);
 }
 
@@ -107,6 +142,21 @@ void PerformanceOverlay::setMonitoring(bool enabled) {
     if (monitoring_ == enabled)
         return;
     monitoring_ = enabled;
+    syncSampling();
+    syncGeometry();
+}
+
+void PerformanceOverlay::setDiagnosticCollection(bool enabled) {
+    if(diagnosticCollection_ == enabled)
+        return;
+    diagnosticCollection_ = enabled;
+    syncSampling();
+}
+
+void PerformanceOverlay::syncSampling() {
+    const bool enabled = monitoring_ || diagnosticCollection_;
+    if (timer_.isActive() == enabled)
+        return;
     ++generation_;
     if (enabled) {
         if (!worker_) {
@@ -115,14 +165,16 @@ void PerformanceOverlay::setMonitoring(bool enabled) {
             connect(&thread_, &QThread::finished, worker_, &QObject::deleteLater);
             thread_.start();
         }
-        history_.clear();
         clock_.start();
         timer_.start();
         requestSample();
     } else {
         timer_.stop();
+        history_.clear();
+        clock_.invalidate();
+        // Discard the counters on their owning thread once any in-flight read finishes.
+        QMetaObject::invokeMethod(worker_, [this] { reader_.reset(); }, Qt::QueuedConnection);
     }
-    syncGeometry();
 }
 
 void PerformanceOverlay::setView(View view) {
@@ -139,14 +191,22 @@ void PerformanceOverlay::setLeftAligned(bool left) {
 void PerformanceOverlay::clearHistory() {
     history_.clear();
     ++generation_;
-    clock_.start();
     update();
     requestSample();
 }
 
+qint64 PerformanceOverlay::elapsedMs() const {
+    return clock_.isValid() ? clock_.elapsed() : -1;
+}
+
+bool PerformanceOverlay::canSample() const {
+    return diagnosticCollection_ || (monitoring_ && isVisible());
+}
+
 void PerformanceOverlay::requestSample() {
-    syncGeometry();
-    if (!monitoring_ || !isVisible() || pending_)
+    if (monitoring_)
+        syncGeometry();
+    if (!worker_ || pending_ || !canSample())
         return;
     pending_ = true;
     const auto generation = generation_;
@@ -158,7 +218,7 @@ void PerformanceOverlay::requestSample() {
         const auto system = reader_->sample();
         QMetaObject::invokeMethod(this, [this, generation, system] {
             pending_ = false;
-            if (monitoring_ && isVisible() && generation == generation_)
+            if (generation == generation_ && canSample())
                 appendSample(system);
         }, Qt::QueuedConnection);
     }, Qt::QueuedConnection);
@@ -190,6 +250,8 @@ void PerformanceOverlay::appendSample(SystemMetrics system) {
     sample.elapsedMs = clock_.elapsed();
     sample.system = system;
     sample.input = input_();
+    if (auto &state = sample.input.playback)
+        *state = performancePlaybackState(*state);
     auto &values = sample.values;
     values[Cpu] = system.cpuPercent;
     values[Gpu] = system.gpuPercent;
@@ -227,12 +289,15 @@ void PerformanceOverlay::appendSample(SystemMetrics system) {
             values[Fps] = playback->filteredFps;
     }
 
-    if (history_.size() == historyLimit)
+    const auto limit = diagnosticCollection_ ? diagnosticHistoryLimit : overlayHistoryLimit;
+    while (!history_.isEmpty() && (history_.size() >= limit ||
+           sample.elapsedMs - history_.constFirst().elapsedMs > diagnosticRetentionMs))
         history_.removeFirst();
     history_.append(std::move(sample));
-    if (anchor_ && height() != contentLayout(anchor_->height()).height)
+    if (monitoring_ && anchor_ && height() != contentLayout(anchor_->height()).height)
         syncGeometry();
-    update();
+    if (isVisible())
+        update();
 }
 
 bool PerformanceOverlay::eventFilter(QObject *, QEvent *event) {
@@ -289,17 +354,21 @@ PerformanceOverlay::ContentLayout PerformanceOverlay::contentLayout(int anchorHe
     return {compact, chart, rowHeight, rows, baseHeight + rows * hardwareRowHeight};
 }
 
+QList<PerformanceOverlay::Sample>::const_iterator PerformanceOverlay::overlaySamplesBegin() const {
+    return history_.cend() - std::min(history_.size(), overlayHistoryLimit);
+}
+
 double PerformanceOverlay::graphMaximum(Metric metric) const {
     if (metric == NetworkRx || metric == NetworkTx) {
         double maximum = 0.01;
-        for (const auto &sample : history_)
-            maximum = std::max({maximum, sample.values[NetworkRx].value_or(0), sample.values[NetworkTx].value_or(0)});
+        for (auto it = overlaySamplesBegin(); it != history_.cend(); ++it)
+            maximum = std::max({maximum, it->values[NetworkRx].value_or(0), it->values[NetworkTx].value_or(0)});
         return maximum;
     }
     double maximum = metric <= Ram ? 100 : metric == Fps ? 30 : 1;
     if (metric > Ram) {
-        for (const auto &sample : history_)
-            maximum = std::max(maximum, sample.values[metric].value_or(0.0));
+        for (auto it = overlaySamplesBegin(); it != history_.cend(); ++it)
+            maximum = std::max(maximum, it->values[metric].value_or(0.0));
     }
     return maximum;
 }
@@ -313,9 +382,9 @@ void PerformanceOverlay::paintGraph(QPainter &painter, const QRectF &area, Metri
         QPainterPath path;
         bool connected = false;
         QPointF last;
-        for (const auto &sample : history_) {
-            const auto value = player ? sample.playerValues[metric] : sample.values[metric];
-            const auto age = now - sample.elapsedMs;
+        for (auto it = overlaySamplesBegin(); it != history_.cend(); ++it) {
+            const auto value = player ? it->playerValues[metric] : it->values[metric];
+            const auto age = now - it->elapsedMs;
             if (!value || age >= 90000) {
                 connected = false;
                 continue;
@@ -542,17 +611,107 @@ QJsonObject PerformanceOverlay::sampleJson(const Sample &sample) {
     return result;
 }
 
+QJsonObject PerformanceOverlay::diagnosticSample(const Sample &sample) {
+    const auto &system = sample.system;
+    QJsonObject result{
+        {"elapsedMs",sample.elapsedMs},
+        {"npuDetected",system.npuDetected},
+        {"playerIncludesChildProcesses",system.includesChildProcesses},
+        {"captionWaiting",sample.input.captionWaiting},
+        {"captionAheadMs",std::clamp<qint64>(sample.input.captionAheadMs,0,24*60*60*1000)},
+        {"videoRecoveries",sample.input.recoveries}
+    };
+    insertMetric(result,"cpuPercent",system.cpuPercent,0,100);
+    insertMetric(result,"playerCpuPercent",system.playerCpuPercent,0,100);
+    insertMetric(result,"gpuPercent",system.gpuPercent,0,100);
+    insertMetric(result,"playerGpuPercent",system.playerGpuPercent,0,100);
+    insertMetric(result,"gpuDecodePercent",system.gpuDecodePercent,0,100);
+    insertMetric(result,"playerGpuDecodePercent",system.playerGpuDecodePercent,0,100);
+    insertMetric(result,"npuPercent",system.npuPercent,0,100);
+    insertMetric(result,"playerNpuPercent",system.playerNpuPercent,0,100);
+    insertMetric(result,"ramPercent",sample.values[Ram],0,100);
+    insertMetric(result,"playerRamPercent",sample.playerValues[Ram],0,10000);
+    insertMemory(result,"ramUsedMiB",system.memoryUsed);
+    insertMemory(result,"ramTotalMiB",system.memoryTotal);
+    insertMemory(result,"playerResidentMiB",system.playerResident);
+    insertMetric(result,"networkRxBytesPerSecond",system.networkRxBytesPerSecond,0,1e12,1);
+    insertMetric(result,"networkTxBytesPerSecond",system.networkTxBytesPerSecond,0,1e12,1);
+    insertMetric(result,"npuTemperatureCelsius",system.npuTemperatureCelsius,-50,200,10);
+    insertMetric(result,"discInputMiBps",sample.inputMiBps,0,512);
+    insertMetric(result,"discDemuxMiBps",sample.demuxMiBps,0,512);
+    insertMetric(result,"presentedFps",sample.presentedFps,0,1000);
+
+    QJsonArray graphics;
+    for (const auto &adapter : system.graphicsAdapters) {
+        QJsonObject entry;
+        if (adapter.integrated)
+            entry.insert("integrated",*adapter.integrated);
+        insertMetric(entry,"temperatureCelsius",adapter.temperatureCelsius,-50,200,10);
+        insertMemory(entry,"dedicatedMemoryUsedMiB",adapter.dedicatedMemoryUsed);
+        insertMemory(entry,"dedicatedMemoryTotalMiB",adapter.dedicatedMemoryTotal);
+        graphics.append(entry);
+        if (graphics.size() == 16)
+            break;
+    }
+    if (!graphics.isEmpty())
+        result.insert("graphicsAdapters",graphics);
+    QJsonArray storage;
+    for (const auto &sensor : system.storageTemperatures) {
+        const auto value = sensor.temperatureCelsius;
+        if (std::isfinite(value) && value >= -50 && value <= 200)
+            storage.append(std::round(value*10)/10);
+        if (storage.size() == 32)
+            break;
+    }
+    if (!storage.isEmpty())
+        result.insert("storageTemperaturesCelsius",storage);
+
+    const auto insertRuntime=[&result](const char *key,const QString &value){
+        if (value=="vulkan" || value=="cuda" || value=="openvino" || value=="llama.cpp" ||
+            value=="whisper-cli" || value=="whisper-worker")
+            result.insert(key,value);
+    };
+    insertRuntime("asrRuntime",sample.input.recognitionRuntime);
+    insertRuntime("translationRuntime",sample.input.translationRuntime);
+    if (const auto &state = sample.input.playback) {
+        result.insert("engine",sample.input.disc?"libvlc":"libmpv");
+        result.insert("playing",state->playing);
+        result.insert("buffering",state->buffering || state->fileCacheHolding);
+        result.insert("failed",state->failed);
+        result.insert("droppedFrames",state->droppedVideoFrames);
+        result.insert("lostAudioBuffers",state->lostAudioBuffers);
+        insertMetric(result,"sourceFps",state->sourceFps,0.01,1000);
+        insertMetric(result,"filteredFps",state->filteredFps,0.01,1000);
+        insertMetric(result,"displayHz",state->displayFps,0.01,1000);
+        insertMetric(result,"fileCacheSeconds",state->cacheSeconds,0,24*60*60);
+        insertMetric(result,"avSyncMs",state->avSyncMs,-3600000,3600000);
+    }
+    return result;
+}
+
 bool PerformanceOverlay::hasSamples() const {
     return !history_.isEmpty();
 }
 
 QJsonObject PerformanceOverlay::summary() const {
     return {
-        {"enabled", monitoring_}, {"visible", isVisible()}, {"sampleCount", history_.size()},
+        {"enabled", monitoring_}, {"collecting", timer_.isActive()}, {"visible", isVisible()}, {"sampleCount", history_.size()},
         {"view", view_ == View::Text ? "text" : view_ == View::Graph ? "graph" : "both"},
         {"position", leftAligned_ ? "left" : "right"},
         {"latest", history_.isEmpty() ? QJsonObject{} : sampleJson(history_.constLast())}
     };
+}
+
+QJsonObject PerformanceOverlay::diagnosticHistory() const {
+    QJsonArray samples;
+    if (clock_.isValid()) {
+        const auto earliest = clock_.elapsed() - diagnosticRetentionMs;
+        for (const auto &sample : history_)
+            if (sample.elapsedMs >= earliest)
+                samples.append(diagnosticSample(sample));
+    }
+    return {{"sampleIntervalMs",sampleIntervalMs},{"retentionMs",diagnosticRetentionMs},
+        {"sampleLimit",diagnosticHistoryLimit},{"samples",samples}};
 }
 
 QByteArray PerformanceOverlay::csv() const {

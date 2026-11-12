@@ -36,6 +36,7 @@ var (
 type config struct {
 	Listen       string           `json:"listen"`
 	Subnet       string           `json:"subnet"`
+	PeerSubnet   string           `json:"peerSubnet,omitempty"`
 	SourceKind   string           `json:"sourceKind"`
 	Source       string           `json:"source"`
 	Playlist     string           `json:"playlist"`
@@ -66,12 +67,13 @@ type validatedConfig struct {
 
 type initialConfig struct {
 	config
-	Mode     string `json:"mode"`
-	Name     string `json:"name"`
-	Store    string `json:"store"`
-	Endpoint string `json:"endpoint"`
-	Remember bool   `json:"remember"`
-	Fresh    bool   `json:"fresh"`
+	Mode         string `json:"mode"`
+	Name         string `json:"name"`
+	Store        string `json:"store"`
+	Endpoint     string `json:"endpoint"`
+	LocalAddress string `json:"localAddress,omitempty"`
+	Remember     bool   `json:"remember"`
+	Fresh        bool   `json:"fresh"`
 }
 
 func readConfig(input *bufio.Reader) (initialConfig, error) {
@@ -107,7 +109,7 @@ func readBoundedLine(input *bufio.Reader) ([]byte, error) {
 }
 
 func (cfg config) validate() (validatedConfig, error) {
-	addr, subnet, err := validateLAN(cfg.Listen, cfg.Subnet)
+	addr, subnet, err := validateLAN(cfg.Listen, cfg.Subnet, cfg.PeerSubnet)
 	if err != nil {
 		return validatedConfig{}, err
 	}
@@ -160,17 +162,26 @@ func (cfg config) validate() (validatedConfig, error) {
 	return validatedConfig{config: cfg, address: addr, subnet: subnet, mimeType: mimeType}, nil
 }
 
-func validateLAN(listen, network string) (netip.AddrPort, netip.Prefix, error) {
+func validateLAN(listen, network, peerNetwork string) (netip.AddrPort, netip.Prefix, error) {
 	addr, addrErr := netip.ParseAddrPort(listen)
 	subnet, subnetErr := netip.ParsePrefix(network)
 	if addrErr != nil || subnetErr != nil || !allowedPeer(addr.Addr(), subnet) ||
-		subnet != subnet.Masked() || !assignedSubnet(addr.Addr(), subnet) {
+		subnet != subnet.Masked() || !assignedIPv4(addr.Addr(), subnet) {
 		return netip.AddrPort{}, netip.Prefix{}, errInvalidLAN
+	}
+	if peerNetwork != "" {
+		peers, err := netip.ParsePrefix(peerNetwork)
+		if err != nil || peers.Bits() < 24 || !peers.Addr().Is4() ||
+			!peers.Addr().IsPrivate() || peers != peers.Masked() || peers.String() != peerNetwork {
+			return netip.AddrPort{}, netip.Prefix{}, errInvalidLAN
+		}
+		subnet = peers
 	}
 	return addr, subnet, nil
 }
 
-func assignedSubnet(ip netip.Addr, subnet netip.Prefix) bool {
+// If a subnet is provided, the interface's actual prefix must match it.
+func assignedIPv4(ip netip.Addr, subnet netip.Prefix) bool {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return false
@@ -185,7 +196,7 @@ func assignedSubnet(ip netip.Addr, subnet netip.Prefix) bool {
 		}
 		for _, addr := range addrs {
 			prefix, err := netip.ParsePrefix(addr.String())
-			if err == nil && prefix.Addr() == ip && prefix.Masked() == subnet {
+			if err == nil && prefix.Addr() == ip && (!subnet.IsValid() || prefix.Masked() == subnet) {
 				return true
 			}
 		}

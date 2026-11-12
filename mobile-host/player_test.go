@@ -46,7 +46,7 @@ func startPlayerTestHost(t *testing.T, store string) playerTestHost {
 	go func() {
 		exitCode <- runWithServices(input, output, playerServices{
 			listen: func(validatedConfig) (net.Listener, error) { return net.Listen("tcp4", "127.0.0.1:0") },
-			discovery: func(netip.AddrPort, netip.Prefix, string) (io.Closer, error) {
+			discovery: func(netip.AddrPort, netip.Prefix, string, bool) (io.Closer, error) {
 				return io.NopCloser(bytes.NewReader(nil)), nil
 			},
 		})

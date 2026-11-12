@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -21,6 +23,20 @@ import (
 	"testing"
 	"time"
 )
+
+func TestReceiverRejectsUnassignedOrNonPrivateLocalBindings(t *testing.T) {
+	for _, local := range []string{"8.8.8.8", "127.0.0.1", "fd00::1", "0.0.0.0", "10.0.0.1:48762"} {
+		var output bytes.Buffer
+		cfg := initialConfig{Endpoint: "192.168.7.9:48762", LocalAddress: local,
+			Name: "Luma fixture", Store: filepath.Join(t.TempDir(), "receiver.dpapi")}
+		code := runReceiver(bufio.NewReader(strings.NewReader("")), &output, cfg, nil)
+		var status receiverStatus
+		if code != 1 || json.Unmarshal(output.Bytes(), &status) != nil ||
+			status.Status != "error" || status.Message != errInvalidLAN.Error() {
+			t.Fatalf("unexpected result for local binding %q: %d %s", local, code, output.String())
+		}
+	}
+}
 
 type receiverTestHost struct {
 	commands *json.Encoder

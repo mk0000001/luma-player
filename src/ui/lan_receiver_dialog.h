@@ -3,6 +3,7 @@
 #include "media/playback.h"
 #include <QDialog>
 #include <QProcess>
+#include <QSet>
 #include <QTimer>
 #include <QUdpSocket>
 
@@ -41,8 +42,9 @@ protected:
 private:
     enum class Phase { Idle, Connecting, Comparing, Confirmed, Waiting, Playback };
     void refreshInterfaces();
-    void startDiscovery();
+    void startDiscovery(bool specificSubnet = false);
     void stopDiscovery();
+    void sendSubnetBatch();
     void readDiscovery();
     void startConnection();
     void confirmPairing();
@@ -50,21 +52,25 @@ private:
     void handleReply(const QJsonObject &message);
     void endConnection(const QString &message);
     void updateControls();
-    QString selectedEndpoint(const QString &address) const;
+    QString selectedEndpoint(const QString &address, bool allowDefaultRoute = false) const;
 
     QProcess receiver_;
     QUdpSocket discovery_;
-    QTimer scanTimer_, scanRetry_, pairingTimer_, shutdownTimer_;
+    QTimer scanTimer_, scanRetry_, scanSend_, pairingTimer_, shutdownTimer_;
     QByteArray configuration_, reply_, nonce_;
-    QHostAddress broadcast_;
+    QHostAddress broadcast_, scanLocal_;
+    QList<quint32> scanCandidates_;
+    QSet<quint32> scanSent_;
+    qsizetype scanCursor_ = 0;
+    int scanPrefix_ = 0, scanInterface_ = 0;
     QString ownEndpoint_, endpoint_, freshEndpoint_;
     Phase phase_ = Phase::Idle;
     bool startedFresh_ = false;
     QComboBox *interfaces_, *approval_;
     QListWidget *pcs_;
-    QLineEdit *address_;
+    QLineEdit *address_, *subnet_;
     QLabel *status_, *code_;
-    QPushButton *scan_, *connect_, *confirm_, *disconnect_;
+    QPushButton *scan_, *scanSubnet_, *connect_, *confirm_, *disconnect_;
 };
 
 }

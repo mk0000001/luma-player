@@ -18,6 +18,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QNetworkInterface>
@@ -106,6 +107,13 @@ QString lanPrivateSubnet(const QHostAddress &address, int prefixLength) {
     return QHostAddress(ip & mask).toString() + '/' + QString::number(prefixLength);
 }
 
+QString lanPrivatePeerSubnet(const QString &value) {
+    const auto input = value.trimmed();
+    const auto [address, prefix] = QHostAddress::parseSubnet(input);
+    const auto canonical = prefix >= 24 ? lanPrivateSubnet(address, prefix) : QString{};
+    return canonical == input ? canonical : QString{};
+}
+
 QList<LanPrivateInterface> lanPrivateInterfaces() {
     QList<LanPrivateInterface> interfaces;
     QSet<QHostAddress> listed;
@@ -173,6 +181,12 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     interfaces_->setObjectName("lanPrivateInterface");
     interfaces_->setAccessibleName("PC 사설 IPv4 주소");
     layout->addWidget(interfaces_);
+    peerSubnet_ = new QLineEdit(this);
+    peerSubnet_->setObjectName("lanPeerSubnet");
+    peerSubnet_->setAccessibleName("VPN 연결 허용 범위");
+    peerSubnet_->setPlaceholderText("VPN 연결 허용 범위 · 예: 10.22.0.0/24 (선택)");
+    peerSubnet_->setMaxLength(18);
+    layout->addWidget(peerSubnet_);
 
     address_ = plainLabel({}, this);
     address_->setObjectName("lanPlaybackAddress");
@@ -341,6 +355,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
         updateControls();
     });
     connect(retry_, &QPushButton::clicked, this, &LanPlaybackDialog::restartDiscovery);
+    connect(peerSubnet_, &QLineEdit::returnPressed, retry_, &QPushButton::click);
     connect(forget_, &QPushButton::clicked, this, &LanPlaybackDialog::forgetDevices);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
     connect(this, &QDialog::rejected, this, [this] {
@@ -472,10 +487,10 @@ void LanPlaybackDialog::startDiscovery() {
         updateControls();
         return;
     }
-    startHost(selected[0], selected[1]);
+    startHost(selected[0], selected[1], appliedPeerSubnet_);
 }
 
-bool LanPlaybackDialog::startHost(const QString &address, const QString &subnet) {
+bool LanPlaybackDialog::startHost(const QString &address, const QString &subnet, const QString &peerSubnet) {
     if (shuttingDown_ || host_.state() != QProcess::NotRunning || address.isEmpty() || subnet.isEmpty())
         return false;
     const auto runtime = QApplication::applicationDirPath() + "/runtime";
@@ -495,8 +510,9 @@ bool LanPlaybackDialog::startHost(const QString &address, const QString &subnet)
     }
     const auto name = QSysInfo::machineHostName().simplified().left(63);
     endpoint_ = address + ':' + QString::number(port);
+    hostPeerSubnet_ = peerSubnet;
     startupConfiguration_ = messageLine(QJsonObject{
-        {"mode", "player"}, {"listen", endpoint_}, {"subnet", subnet},
+        {"mode", "player"}, {"listen", endpoint_}, {"subnet", subnet}, {"peerSubnet", peerSubnet},
         {"name", name.isEmpty() ? QString("LumaPlayer") : name},
         {"store", QDir(dataPath).absoluteFilePath("lan-pairings.dpapi")}
     });
@@ -517,6 +533,14 @@ void LanPlaybackDialog::restartDiscovery() {
     if (direct_)
         return;
 #endif
+    const auto entered = peerSubnet_->text().trimmed();
+    const auto peerSubnet = lanPrivatePeerSubnet(entered);
+    if (!entered.isEmpty() && peerSubnet.isEmpty()) {
+        status_->setText("VPN 연결 허용 범위에 사설 IPv4 네트워크 주소와 /24–/32를 입력하세요.");
+        peerSubnet_->setFocus();
+        return;
+    }
+    appliedPeerSubnet_ = peerSubnet;
     closeHost();
     startDiscovery();
 }
@@ -1098,7 +1122,11 @@ void LanPlaybackDialog::updateControls() {
     const auto options = deviceOptionValues();
     resetOptions_->setEnabled(!options.isEmpty());
     applyOptions_->setEnabled(options != savedOptions_);
-    address_->setText(ready_ ? "직접 연결 주소  " + endpoint_ : QString{});
+    peerSubnet_->setEnabled(interfaces_->isEnabled());
+    auto addressText = ready_ ? "직접 연결 주소  " + endpoint_ : QString{};
+    if (ready_ && !hostPeerSubnet_.isEmpty())
+        addressText += "  ·  VPN 허용 " + hostPeerSubnet_;
+    address_->setText(addressText);
     address_->setVisible(ready_);
 }
 

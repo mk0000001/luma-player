@@ -314,6 +314,7 @@ void MainWindow::buildUi(){
         developerApproved_=enabled;
         QSettings().setValue("ui/developerMode",enabled);QSettings().setValue("privacy/developerConsentVersion",enabled?privacyConsentVersion:0);
         if(!enabled){captureAllowed_->hide();captureAllowed_->setChecked(false);performanceEnabled_->setChecked(false);}
+        setDeveloperDiagnosticCollection(enabled);
         developerPanel->setVisible(enabled);codec_->setVisible(enabled);applyCapturePolicy();applyVideoOutputPreferences();
     });
     connect(captureAllowed_,&QCheckBox::toggled,this,[this](bool allowed){

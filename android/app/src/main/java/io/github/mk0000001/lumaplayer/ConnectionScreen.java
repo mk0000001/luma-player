@@ -1,5 +1,6 @@
 package io.github.mk0000001.lumaplayer;
 
+import android.app.AlertDialog;
 import android.graphics.Typeface;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -23,6 +24,7 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.SocketException;
 import java.security.GeneralSecurityException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -50,6 +52,7 @@ final class ConnectionScreen {
     private final LinearLayout pcList;
     private final Button refresh;
     private final Button nearbyButton;
+    private final Button vpnSearch;
     private final TextView pairName;
     private final TextView pairAddress;
     private final TextView pairStatus;
@@ -62,7 +65,9 @@ final class ConnectionScreen {
     private boolean playing;
     private LanDiscovery scan;
     private NearbyConnection nearby;
+    private AlertDialog vpnDialog;
     private List<LanDiscovery.Pc> discovered = Collections.emptyList();
+    private List<LanDiscovery.Pc> ordinaryDiscovered = Collections.emptyList();
     private LanDiscovery.Pc selected;
     private Network selectedNetwork;
     private boolean selectedNearby;
@@ -82,6 +87,7 @@ final class ConnectionScreen {
         pcList = activity.findViewById(R.id.pc_list);
         refresh = activity.findViewById(R.id.refresh_button);
         nearbyButton = activity.findViewById(R.id.nearby_pc_button);
+        vpnSearch = activity.findViewById(R.id.vpn_search_button);
         pairName = activity.findViewById(R.id.pair_pc_name);
         pairAddress = activity.findViewById(R.id.pair_pc_address);
         pairStatus = activity.findViewById(R.id.pair_status);
@@ -93,6 +99,7 @@ final class ConnectionScreen {
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
         nearbyButton.setOnClickListener(view -> showNearby());
+        vpnSearch.setOnClickListener(view -> showVpnSearch());
         activity.findViewById(R.id.connect_button).setOnClickListener(view -> selectAddress());
         activity.findViewById(R.id.pair_cancel_button).setOnClickListener(view -> showHome(0, false));
         startPairing.setOnClickListener(view -> startApproval());
@@ -118,6 +125,7 @@ final class ConnectionScreen {
     void stop() {
         foreground = false;
         stopDiscovery();
+        closeVpnSearch();
         if (nearby != null) {
             nearby.setForeground(false);
         }
@@ -133,6 +141,7 @@ final class ConnectionScreen {
     void close() {
         cancelAttempt();
         stopDiscovery();
+        closeVpnSearch();
         closeNearby();
         discoveryExecutor.shutdownNow();
     }
@@ -191,9 +200,17 @@ final class ConnectionScreen {
     }
 
     private void discover() {
+        discover(null);
+    }
+
+    private void discover(VpnDiscoverySubnet subnet) {
         stopDiscovery();
         nearbyButton.setVisibility(View.GONE);
-        discovered = Collections.emptyList();
+        boolean vpn = subnet != null;
+        if (!vpn) {
+            ordinaryDiscovered = Collections.emptyList();
+        }
+        discovered = ordinaryDiscovered;
         renderList();
         ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
         if (connectivity == null) {
@@ -204,12 +221,13 @@ final class ConnectionScreen {
         LanDiscovery current = new LanDiscovery();
         scan = current;
         refresh.setEnabled(false);
-        setStatus(discoveryStatus, R.string.discovery_searching, false);
+        vpnSearch.setEnabled(false);
+        setStatus(discoveryStatus, vpn ? R.string.vpn_discovery_searching : R.string.discovery_searching, false);
         discoveryStatus.setVisibility(View.VISIBLE);
         discoveryExecutor.execute(() -> {
             List<LanDiscovery.Pc> result;
             try {
-                result = current.find(connectivity);
+                result = vpn ? current.findVpn(connectivity, subnet) : current.find(connectivity);
             } catch (SecurityException e) {
                 result = Collections.emptyList();
             }
@@ -219,15 +237,74 @@ final class ConnectionScreen {
                     return;
                 }
                 scan = null;
-                discovered = found;
+                if (vpn) {
+                    Map<String, LanDiscovery.Pc> combined = new LinkedHashMap<>();
+                    for (LanDiscovery.Pc pc : ordinaryDiscovered) {
+                        combined.put(pc.endpoint.address(), pc);
+                    }
+                    for (LanDiscovery.Pc pc : found) {
+                        combined.putIfAbsent(pc.endpoint.address(), pc);
+                    }
+                    discovered = new ArrayList<>(combined.values());
+                } else {
+                    ordinaryDiscovered = found;
+                    discovered = found;
+                }
                 refresh.setEnabled(true);
+                vpnSearch.setEnabled(true);
                 renderList();
-                setStatus(discoveryStatus, R.string.discovery_empty, false);
+                setStatus(discoveryStatus, vpn ? R.string.vpn_discovery_empty : R.string.discovery_empty, false);
                 discoveryStatus.setVisibility(found.isEmpty() ? View.VISIBLE : View.GONE);
-                nearbyButton.setVisibility(found.isEmpty() && NearbyConnection.supported(activity)
+                nearbyButton.setVisibility(discovered.isEmpty() && NearbyConnection.supported(activity)
                         ? View.VISIBLE : View.GONE);
             });
         });
+    }
+
+    private void showVpnSearch() {
+        if (!foreground || vpnDialog != null || nearby != null) {
+            return;
+        }
+        ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
+        boolean activeVpn = false;
+        try {
+            activeVpn = connectivity != null && LanDiscovery.hasActiveVpn(connectivity);
+        } catch (SecurityException ignored) {
+            // Android can restrict network access for this application.
+        }
+        if (!activeVpn) {
+            setStatus(discoveryStatus, R.string.vpn_discovery_unavailable, true);
+            discoveryStatus.setVisibility(View.VISIBLE);
+            return;
+        }
+        View content = activity.getLayoutInflater().inflate(R.layout.vpn_discovery_dialog, null);
+        EditText subnet = content.findViewById(R.id.vpn_subnet);
+        AlertDialog dialog = new AlertDialog.Builder(activity).setTitle(R.string.vpn_discovery_action).setView(content)
+                .setPositiveButton(R.string.vpn_discovery_search, null)
+                .setNegativeButton(android.R.string.cancel, null).create();
+        vpnDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (vpnDialog == dialog) vpnDialog = null;
+        });
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            try {
+                VpnDiscoverySubnet range = VpnDiscoverySubnet.parse(subnet.getText().toString());
+                dialog.dismiss();
+                if (foreground) {
+                    discover(range);
+                }
+            } catch (IllegalArgumentException e) {
+                subnet.setError(activity.getString(R.string.vpn_discovery_invalid));
+            }
+        });
+    }
+
+    private void closeVpnSearch() {
+        if (vpnDialog != null) {
+            vpnDialog.dismiss();
+            vpnDialog = null;
+        }
     }
 
     private void showNearby() {
@@ -281,6 +358,7 @@ final class ConnectionScreen {
             scan = null;
         }
         refresh.setEnabled(true);
+        vpnSearch.setEnabled(true);
     }
 
     private void renderList() {
@@ -380,7 +458,7 @@ final class ConnectionScreen {
             try {
                 if (pc.network == null) {
                     route = LanDiscovery.routeFor(connectivity, pc.endpoint);
-                } else if (LanDiscovery.eligibleNetwork(connectivity, pc.network)) {
+                } else if (LanDiscovery.canUseDiscoveredRoute(connectivity, pc)) {
                     route = pc.network;
                 }
             } catch (SecurityException ignored) {

@@ -20,6 +20,7 @@ struct PerformanceInput {
     int recoveries = 0;
     bool disc = false, captionWaiting = false;
     QString recognitionBackend, translationBackend;
+    QString recognitionRuntime, translationRuntime;
 };
 
 class PerformanceOverlay : public QWidget {
@@ -29,10 +30,13 @@ public:
     ~PerformanceOverlay() override;
 
     void setMonitoring(bool enabled);
+    void setDiagnosticCollection(bool enabled);
     void setView(View view);
     void setLeftAligned(bool left);
     void clearHistory();
     QJsonObject summary() const;
+    QJsonObject diagnosticHistory() const;
+    qint64 elapsedMs() const;
     QByteArray csv() const;
     bool hasSamples() const;
 
@@ -59,8 +63,15 @@ private:
         PerformanceInput input;
         std::optional<double> inputMiBps, demuxMiBps, presentedFps;
     };
-    static constexpr qsizetype historyLimit = 90;
+    static constexpr int sampleIntervalMs = 1000;
+    static constexpr qsizetype overlayHistoryLimit = 90;
+    static constexpr qsizetype diagnosticHistoryLimit = 300;
+    static constexpr qint64 diagnosticRetentionMs = sampleIntervalMs * diagnosticHistoryLimit;
     static QJsonObject sampleJson(const Sample &sample);
+    static QJsonObject diagnosticSample(const Sample &sample);
+    void syncSampling();
+    bool canSample() const;
+    QList<Sample>::const_iterator overlaySamplesBegin() const;
     void requestSample();
     void appendSample(SystemMetrics system);
     std::optional<double> presentedRate(const Sample &sample) const;
@@ -78,7 +89,7 @@ private:
     QElapsedTimer clock_;
     QList<Sample> history_;
     quint64 generation_ = 0, workerGeneration_ = 0;
-    bool monitoring_ = false, pending_ = false, leftAligned_ = false;
+    bool monitoring_ = false, diagnosticCollection_ = false, pending_ = false, leftAligned_ = false;
     View view_ = View::Both;
 };
 

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="12dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/vpn_discovery_help"
+        android:textColor="@color/luma_muted" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:labelFor="@+id/vpn_subnet"
+        android:text="@string/vpn_discovery_subnet" />
+
+    <EditText
+        android:id="@id/vpn_subnet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/vpn_discovery_example"
+        android:imeOptions="flagNoPersonalizedLearning"
+        android:importantForAutofill="no"
+        android:inputType="textUri|textNoSuggestions"
+        android:maxLength="24"
+        android:maxLines="1"
+        android:saveEnabled="false" />
+</LinearLayout>

@@ -2,9 +2,13 @@
 
 ## 한국어
 
-### 0.2.0-beta.3
+### 0.2.3
 
+- Windows의 첫 실행과 설정에서 GPU·NPU를 감지해 NVIDIA CUDA, Vulkan, Intel OpenVINO 패키지를 추천하고 선택 설치할 수 있습니다. Radeon의 영상 가속과 로컬 자막 가속은 같은 Windows 빌드에 포함됩니다.
+- 테스트 진단에 시스템과 플레이어의 자원 사용량 이력, 디코더 및 AI 백엔드의 선택·실행·대체 정보를 추가했습니다.
+- 광학 드라이브가 디스크를 준비하는 동안 창을 계속 사용할 수 있게 했습니다. AACS 설정을 읽을 수 없는 경우 원인을 구체적으로 안내합니다.
 - Android의 하단 탐색바, 챕터 목록, 연속 탭 탐색과 전체화면 제스처를 추가했습니다. PC에서도 연결 기기의 화질, 화면 비율과 자막 싱크를 조절할 수 있습니다.
+- WireGuard 등으로 연결한 기기에서 사설 IP를 직접 입력하거나 지정한 사설 대역의 LumaPlayer PC를 검색할 수 있습니다.
 - Android의 기본 화질을 원본 HDR 우선으로 설정하고 최대 1080p SDR 균형과 최대 480p SDR 데이터 절약 프리셋을 추가했습니다. 호환 디코더가 있는 기기에서 AV1 원본을 재생합니다.
 - Android에 홈 화면으로 나갈 때 자동 PiP와 백그라운드 재생을 추가했습니다. 넓은 가로 창에는 영상과 챕터를 나란히 배치합니다.
 - Windows와 Android에 공유기 없이 연결하는 Wi‑Fi Direct 경로를 추가했습니다. 임시 Wi‑Fi 암호를 입력하고 양쪽에서 6자리 코드를 확인합니다.
@@ -138,9 +142,13 @@
 
 ## English
 
-### 0.2.0-beta.3
+### 0.2.3
 
+- Windows detects GPUs and NPUs at first launch and in Settings, then recommends NVIDIA CUDA, Vulkan, and Intel OpenVINO packages for optional installation. Radeon video and local caption acceleration are part of the same Windows build.
+- Tester diagnostics include resource history for the system and player, along with requested, active, and fallback decoder and AI backend information.
+- The window remains responsive while the optical drive prepares a disc. The player gives a specific error when it cannot read the AACS configuration.
 - Added an Android bottom seek bar, portrait chapters, repeated-tap seeking, and fullscreen gestures. The host PC can adjust streaming quality, screen fit, and subtitle timing for a connected receiver.
+- Devices connected through WireGuard or a similar VPN can enter a private IP directly or discover LumaPlayer hosts within an explicitly entered private subnet.
 - Android defaults to original quality with source HDR. Added Balanced up to 1080p SDR and Data Saver up to 480p SDR. Compatible devices can play the original AV1 stream.
 - Added automatic PiP on Home and background playback on Android. Wide landscape windows place the chapter list beside the video.
 - Added router-free Wi‑Fi Direct playback between Windows and Android. Enter the temporary Wi‑Fi password and compare the six-digit code on both devices.

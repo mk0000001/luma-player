@@ -113,6 +113,12 @@ private slots:
         QVERIFY(luma::lanPrivateSubnet(QHostAddress("127.0.0.1"),8).isEmpty());
         QVERIFY(luma::lanPrivateSubnet(QHostAddress("::1"),24).isEmpty());
         QVERIFY(luma::lanPrivateSubnet(QHostAddress("10.0.0.1"),0).isEmpty());
+        QCOMPARE(luma::lanPrivatePeerSubnet("10.22.0.0/24"),QString("10.22.0.0/24"));
+        QCOMPARE(luma::lanPrivatePeerSubnet("172.16.8.3/32"),QString("172.16.8.3/32"));
+        QVERIFY(luma::lanPrivatePeerSubnet("10.22.0.0/23").isEmpty());
+        QVERIFY(luma::lanPrivatePeerSubnet("10.22.0.1/24").isEmpty());
+        QVERIFY(luma::lanPrivatePeerSubnet("100.64.0.0/24").isEmpty());
+        QVERIFY(luma::lanPrivatePeerSubnet("203.0.113.1/32").isEmpty());
         QVERIFY(luma::lanLocalFileSupported("https://192.168.1.1/sample.mp4")==false);
         const auto track=luma::lanCaptionTrack({{1000,2750,"A < B\n\n한글 & 독음"},{0,0,"skip"}});
         QCOMPARE(track,QString("WEBVTT\n\n00:00:01.000 --> 00:00:02.750\nA &lt; B\n한글 &amp; 독음\n\n"));
@@ -212,21 +218,31 @@ private slots:
             QVERIFY(!opened);
         }
 
-        restorePerformancePreferences();
         luma::MainWindow window;
         // The test supplies events directly and does not need queued startup probes.
         QCoreApplication::removePostedEvents(&window,QEvent::MetaCall);
         auto *save=window.findChild<QPushButton*>("exportTesterDiagnostics");
         auto *job=window.findChild<luma::SubtitleJob*>();
         auto *translation=window.findChild<luma::TranslationService*>();
+        auto *overlay=dynamic_cast<luma::PerformanceOverlay*>(window.findChild<QWidget*>("performanceOverlay"));
+        auto *developer=window.findChild<QCheckBox*>("developerMode");
+        auto *enabled=window.findChild<QCheckBox*>("performanceEnabled");
         const auto engines=window.findChildren<luma::PlaybackEngine*>();
-        QVERIFY(save && job && translation && !engines.isEmpty());
+        QVERIFY(save && job && translation && overlay && developer && enabled && !engines.isEmpty());
+        QCOMPARE(overlay->summary().value("sampleCount").toInt(),0);
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        QVERIFY(!enabled->isChecked() && !overlay->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(overlay->summary().value("sampleCount").toInt()>=2,6000);
+        const auto before=overlay->summary().value("sampleCount").toInt();
+        enabled->setChecked(true);
+        enabled->setChecked(false);
+        QVERIFY(overlay->summary().value("sampleCount").toInt()>=before);
         const QString privateData="C:/Users/private-user/test-title.mkv secret-subtitle key=private-token";
         QSettings().setValue("ai/accelerationLastInstall",QVariantMap{{"backend","vulkan"},{"result","failed"},
             {"exitCode",27},{"message",privateData}});
         job->setPreferences({"gpu","Vulkan2"});
         translation->setPreferences({"gpu","Vulkan2"});
-        for(int i=0;i<70;++i)job->failed(privateData);
+        for(int i=0;i<270;++i)job->failed(privateData);
         job->progress("GPU 사용 불가 (가속 실행 확인 실패) · 다음 장치로 전환 중…");
         translation->backendSelected("GPU / Vulkan2 / "+privateData);
         translation->progress("Vulkan2 번역 사용 불가: 로컬 번역 추론 요청이 실패했습니다.");
@@ -247,11 +263,22 @@ private slots:
         QFile report(path);
         QVERIFY(report.open(QIODevice::ReadOnly));
         const auto bytes=report.readAll();
-        QVERIFY(bytes.size()<32768);
-        for(const auto forbidden:{"private-user","test-title.mkv","secret-subtitle","private-token","recentMessages","luid"})
+        QVERIFY(bytes.size()<=1024*1024);
+        for(const auto forbidden:{"private-user","test-title.mkv","secret-subtitle","private-token","recentMessages","luid","diskNumber","sensorIndex"})
             QVERIFY2(!bytes.contains(forbidden),forbidden);
         const auto json=QJsonDocument::fromJson(bytes).object();
-        QCOMPARE(json.value("schemaVersion").toInt(),1);
+        QCOMPARE(json.value("schemaVersion").toInt(),2);
+        const auto performance=json.value("performance").toObject();
+        QCOMPARE(performance.value("sampleIntervalMs").toInt(),1000);
+        QCOMPARE(performance.value("retentionMs").toInt(),300000);
+        const auto samples=performance.value("samples").toArray();
+        QVERIFY(samples.size()>=2 && samples.size()<=300);
+        const auto latest=samples.last().toObject();
+        QVERIFY(latest.value("elapsedMs").isDouble());
+#if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
+        QVERIFY(latest.value("ramTotalMiB").toDouble()>0);
+        QVERIFY(latest.value("playerResidentMiB").toDouble()>0);
+#endif
         QVERIFY(json.value("graphicsAdapters").isArray());
         for(const auto &value:json.value("graphicsAdapters").toArray()){
             const auto adapter=value.toObject();
@@ -269,7 +296,7 @@ private slots:
         QCOMPARE(json.value("asr").toObject().value("requested").toObject().value("device").toString(),QString("Vulkan2"));
         QCOMPARE(json.value("translation").toObject().value("requested").toObject().value("device").toString(),QString("Vulkan2"));
         const auto events=json.value("events").toArray();
-        QCOMPARE(events.size(),qsizetype(64));
+        QCOMPARE(events.size(),qsizetype(256));
         QVERIFY(json.value("droppedEvents").toInt()>0);
         const auto hasEvent=[&](const char *code,const char *reason,const char *device=nullptr){
             return std::any_of(events.begin(),events.end(),[&](const QJsonValue &entry){
@@ -283,6 +310,59 @@ private slots:
         QVERIFY(hasEvent("translation_fallback","inference_failed","Vulkan2"));
         QVERIFY(hasEvent("video_output_lost","dxgi_device_removed"));
         QVERIFY(hasEvent("video_failed","aacs_config_unavailable"));
+        developer->setChecked(false);
+        QCOMPARE(overlay->summary().value("sampleCount").toInt(),0);
+        QVERIFY(!overlay->summary().value("collecting").toBool());
+    }
+    void diagnosticResourceSamplesKeepRatesAndExcludePlaybackText(){
+        QWidget anchor;
+        int calls=0;
+        luma::PerformanceOverlay overlay(&anchor,[&]{
+            luma::PerformanceInput input;
+            luma::PlaybackState state;
+            input.sourceGeneration=1;
+            input.disc=true;
+            input.captionAheadMs=15000;
+            input.recognitionRuntime="vulkan";
+            input.translationRuntime="raw-untrusted-backend";
+            input.translationBackend="C:/Users/private-user/third-party.log";
+            state.playing=true;
+            state.discStatisticsAvailable=true;
+            state.currentTitle=3;
+            state.discInputBytes=1048576 * ++calls;
+            state.discDemuxBytes=524288 * calls;
+            state.sourceFps=23.976;
+            state.displayFps=59.94;
+            state.cacheSeconds=3.25;
+            state.avSyncMs=-2.5;
+            state.mediaTitle="private-title";
+            state.videoCodec="private-codec";
+            state.audioTracks.append({1,"private-track"});
+            input.playback=state;
+            return input;
+        });
+        overlay.setDiagnosticCollection(true);
+        QTRY_VERIFY_WITH_TIMEOUT(overlay.diagnosticHistory().value("samples").toArray().size()>=2,6000);
+        QVERIFY(!overlay.isVisible());
+        const auto history=overlay.diagnosticHistory();
+        const auto last=history.value("samples").toArray().last().toObject();
+        QCOMPARE(last.value("engine").toString(),QString("libvlc"));
+        QCOMPARE(last.value("asrRuntime").toString(),QString("vulkan"));
+        QCOMPARE(last.value("captionAheadMs").toInt(),15000);
+        QCOMPARE(last.value("sourceFps").toDouble(),23.98);
+        QCOMPARE(last.value("displayHz").toDouble(),59.94);
+        QCOMPARE(last.value("fileCacheSeconds").toDouble(),3.25);
+        QCOMPARE(last.value("avSyncMs").toDouble(),-2.5);
+        QVERIFY(last.value("discInputMiBps").toDouble()>0);
+        QVERIFY(last.value("discDemuxMiBps").toDouble()>0);
+        const auto encoded=QJsonDocument(history).toJson();
+        for(const auto forbidden:{"private-user","third-party.log","private-title","private-codec","private-track",
+            "raw-untrusted-backend","luid","diskNumber","sensorIndex","positionMs","currentTitle"})
+            QVERIFY2(!encoded.contains(forbidden),forbidden);
+        overlay.clearHistory();
+        QVERIFY(overlay.diagnosticHistory().value("samples").toArray().isEmpty());
+        overlay.setDiagnosticCollection(false);
+        QVERIFY(!overlay.summary().value("collecting").toBool());
     }
     void seekTrackClickCommitsPosition(){
         luma::MainWindow window;

@@ -76,7 +76,7 @@ DiscProbeResult probeConnectedDisc(){
 void MainWindow::bindEngine(PlaybackEngine *engine){
     engine->setVideoOverrides(videoOutputPreferences());
     engine->setAudioOutputOptions(audioOutputPreferences());
-    engine->setPerformanceMetricsEnabled(developerApproved_ && performanceEnabled_->isChecked());
+    engine->setPerformanceMetricsEnabled(developerApproved_);
     connectDeveloperPlaybackDiagnostics(engine);
     connect(engine,&PlaybackEngine::updated,this,[this,engine]{if(engine==active_)refresh();});connect(engine,&PlaybackEngine::logMessage,this,&MainWindow::appendLog);
     connect(engine,&PlaybackEngine::errorOccurred,this,[this,engine](const QString &message){

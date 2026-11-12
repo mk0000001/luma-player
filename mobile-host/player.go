@@ -20,7 +20,7 @@ import (
 
 type playerServices struct {
 	listen       func(validatedConfig) (net.Listener, error)
-	discovery    func(netip.AddrPort, netip.Prefix, string) (io.Closer, error)
+	discovery    func(netip.AddrPort, netip.Prefix, string, bool) (io.Closer, error)
 	receiverDial func(context.Context, string, string) (net.Conn, error)
 }
 
@@ -91,7 +91,7 @@ func runPlayer(input *bufio.Reader, stdout io.Writer, raw initialConfig, service
 		_ = output.write(playerStatus{Status: "error", Message: message})
 		return 1
 	}
-	address, subnet, err := validateLAN(raw.Listen, raw.Subnet)
+	address, subnet, err := validateLAN(raw.Listen, raw.Subnet, raw.PeerSubnet)
 	if err != nil || address.Port() != playerPort {
 		return fail(errInvalidLAN.Error())
 	}
@@ -120,7 +120,7 @@ func runPlayer(input *bufio.Reader, stdout io.Writer, raw initialConfig, service
 		return fail("could not listen on the selected LAN address")
 	}
 	defer listener.Close()
-	discovery, discoveryErr := services.discovery(address, subnet, raw.Name)
+	discovery, discoveryErr := services.discovery(address, subnet, raw.Name, raw.PeerSubnet != "")
 	if discoveryErr == nil {
 		defer discovery.Close()
 	}
@@ -234,7 +234,7 @@ func (p *player) shareMedia(binding config, media *config) error {
 		return errInvalidSource
 	}
 	request := *media
-	request.Listen, request.Subnet = binding.Listen, binding.Subnet
+	request.Listen, request.Subnet, request.PeerSubnet = binding.Listen, binding.Subnet, binding.PeerSubnet
 	cfg, err := request.validate()
 	if err != nil {
 		return err

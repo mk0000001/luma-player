@@ -28,9 +28,17 @@ type receiverPeer struct {
 	transport *http.Transport
 }
 
+func newReceiverDialer(local netip.Addr) *net.Dialer {
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	if local.IsValid() {
+		dialer.LocalAddr = net.TCPAddrFromAddrPort(netip.AddrPortFrom(local, 0))
+	}
+	return dialer
+}
+
 func newReceiverPeer(address netip.AddrPort, pin string, dial func(context.Context, string, string) (net.Conn, error)) *receiverPeer {
 	if dial == nil {
-		dial = (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+		dial = newReceiverDialer(netip.Addr{}).DialContext
 	}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _ string, requested string) (net.Conn, error) {

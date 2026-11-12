@@ -89,7 +89,7 @@ CPU·GPU·NPU·RAM은 **시스템 전체 / 플레이어** 순으로 비교합니
 
 **진단 요약 복사**는 재생 상태와 최근 수치의 JSON을 복사합니다. **성능 기록 CSV 저장**은 최근 샘플을 저장하고, **성능 기록 초기화**와 **재생 로그 지우기**는 각 화면의 기록을 비웁니다. JSON과 CSV에는 파일 경로, 자막 본문, 재생 로그가 들어가지 않습니다.
 
-가속 문제를 재현한 뒤 앱을 닫기 전에 **설정 → 개발자 모드 → 테스트 진단 JSON 저장**을 누르세요. 보고서에는 GPU 하드웨어 ID와 드라이버 버전, 선택한 설정, 실제 디코더와 AI 장치, 가속 라이브러리 설치 결과와 최근 오류 코드가 들어갑니다. 미디어 경로, 원본 로그, 자막과 네트워크 주소는 제외합니다. 테스트 담당자가 검토한 JSON 파일을 직접 공유할 수 있습니다.
+가속 문제를 재현하기 전에 **설정 → 개발자 모드**를 켜고, 재현한 뒤 앱을 닫기 전에 **테스트 진단 JSON 저장**을 누르세요. 보고서에는 지원되는 시스템·플레이어 자원 사용량 이력, GPU 하드웨어 ID와 드라이버 버전, 선택한 설정, 실제 디코더와 AI 장치, 가속 라이브러리 설치 결과와 최근 오류 코드가 들어갑니다. 미디어 경로, 원본 로그, 자막과 네트워크 주소는 제외합니다. 테스트 담당자가 검토한 JSON 파일을 직접 공유할 수 있습니다.
 
 **설정 → 파일 HDR 출력**의 기본값은 자동입니다. Windows HDR이 활성화된 화면에서 파일 렌더러가 HDR 출력을 협상합니다. **끔 · SDR 출력**은 HDR 파일을 SDR로 톤 매핑합니다. 두 선택은 재생 중에도 바꿀 수 있습니다. 화면을 옮기면 디스플레이 상태가 갱신됩니다.
 
@@ -206,7 +206,7 @@ CPU, GPU, NPU, and RAM show **system / player**. Solid graph lines show the syst
 
 **Copy diagnostics** copies a JSON snapshot of playback and current metrics. **Save performance CSV** saves recent samples. **Reset performance history** and **Clear playback log** clear their respective records. JSON and CSV omit file paths, subtitle text, and playback logs.
 
-After reproducing an acceleration issue, select **설정 → 개발자 모드 → 테스트 진단 JSON 저장** before closing the app. The report includes GPU hardware IDs and driver versions, selected settings, active decoders and AI devices, acceleration installation results, and recent error codes. It omits media paths, raw logs, caption text, and network addresses. The tester can review and share the saved JSON directly.
+Enable **설정 → 개발자 모드** before reproducing an acceleration issue, then select **테스트 진단 JSON 저장** before closing the app. The report includes available system and player resource history, GPU hardware IDs and driver versions, selected settings, active decoders and AI devices, acceleration installation results, and recent error codes. It omits media paths, raw logs, caption text, and network addresses. The tester can review and share the saved JSON directly.
 
 **Settings → File HDR output** defaults to Auto. The file renderer negotiates HDR when the Windows display has HDR active. **Off · SDR output** tone maps HDR files to SDR. Either option can be changed during playback. The display status follows the monitor as you move the window.
 

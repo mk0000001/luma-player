@@ -1,6 +1,5 @@
 #pragma once
 #include <QDeadlineTimer>
-#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QTemporaryDir>
 #include <QSet>
@@ -139,11 +138,11 @@ private:
     void updateDeveloperVideoStatus(const PlaybackState &state);
     PerformanceInput performanceInput() const;
     QJsonObject developerSnapshot() const;
+    void setDeveloperDiagnosticCollection(bool enabled);
     void connectDeveloperDiagnostics();
     void connectDeveloperPlaybackDiagnostics(PlaybackEngine *engine);
     void recordDeveloperEvent(const char *code,const char *reason,const QString &device={});
     QJsonObject testerDiagnosticReport() const;
-    QElapsedTimer developerEventClock_;
     QJsonArray developerEvents_;
     int droppedDeveloperEvents_=0;
     bool openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs=0,const LanReceiverPlayback *remote=nullptr,const DiscInfo *inspectedDisc=nullptr);

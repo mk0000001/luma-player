@@ -13,9 +13,9 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 - **새 버전을 확인하세요.** Windows 앱은 실행할 때 GitHub에서 업데이트를 확인합니다. 설정에서 수동으로 확인하거나 자동 알림을 끌 수 있습니다. [업데이트 안내](docs/UPDATES.md)
 - **내 화면에 맞춰 감상하세요.** 전체화면이나 항상 위에 뜨는 작은 화면(PiP)으로 볼 수 있습니다. 탐색 바를 클릭하거나 방향키로 장면을 이동하고, 다크·라이트 모드를 고를 수 있습니다.
 
-### Windows 베타 설치
+### Windows 설치
 
-릴리스에서 Windows x64 설치 EXE를 받아 실행하세요. CUDA 실행 라이브러리와 기본 Turbo 음성 인식 모델은 설치 파일에 들어 있습니다. 권장 설치를 선택하면 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [릴리스 다운로드](https://github.com/mk0000001/luma-player/releases) · [0.1.6 다운로드](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.6) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+릴리스에서 Windows x64 기본 설치 파일 또는 NVIDIA CUDA 포함 설치 파일을 받아 실행하세요. 기본 Turbo 음성 인식 모델이 포함되며, 첫 실행에서 GPU·NPU에 맞는 선택 가속 패키지를 확인할 수 있습니다. 권장 설치는 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 자동으로 내려받습니다. 추가 다운로드는 약 5.71 GB입니다. [릴리스 다운로드](https://github.com/mk0000001/luma-player/releases) · [설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -64,9 +64,9 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 - **Check for a new version.** The Windows app checks GitHub at launch. Check manually or turn off automatic notifications in settings. [Update guide](docs/UPDATES.md)
 - **Make it fit your screen.** Switch to fullscreen or always-on-top picture-in-picture. Click the seek track or use the arrow keys to jump, and choose dark or light mode.
 
-### Install the Windows beta
+### Install on Windows
 
-Run the Windows x64 setup EXE from the release. It includes the CUDA runtime libraries and default Turbo model. The recommended option downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Release downloads](https://github.com/mk0000001/luma-player/releases) · [0.1.6 download](https://github.com/mk0000001/luma-player/releases/tag/v0.1.0-beta.6) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
+Run the standard or NVIDIA CUDA-bundled Windows x64 installer from the release. Both include the default Turbo model and offer hardware-matched acceleration packages at first launch. The recommended installation downloads full-v3 Q5 and the Hy-MT2 Korean translation model, totaling about 5.71 GB. [Release downloads](https://github.com/mk0000001/luma-player/releases) · [Installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 

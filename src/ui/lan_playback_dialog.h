@@ -18,6 +18,7 @@ class QGroupBox;
 class QHideEvent;
 class QJsonArray;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QShowEvent;
 class QSpinBox;
@@ -42,6 +43,7 @@ struct LanPrivateInterface {
 };
 
 QString lanPrivateSubnet(const QHostAddress &address, int prefixLength);
+QString lanPrivatePeerSubnet(const QString &value);
 QList<LanPrivateInterface> lanPrivateInterfaces();
 QString lanCaptionTrack(const QVector<SubtitleCue> &cues);
 bool lanLocalFileSupported(const QString &source);
@@ -78,7 +80,7 @@ protected:
 private:
     enum class MediaState { Idle, Preparing, Starting, Sharing, Stopping };
     void refreshInterfaces();
-    bool startHost(const QString &address, const QString &subnet);
+    bool startHost(const QString &address, const QString &subnet, const QString &peerSubnet = {});
     void restartDiscovery();
     void closeHost();
     void stopSharing();
@@ -109,13 +111,14 @@ private:
     QProcess host_;
     QTimer watchdog_, deviceRefresh_;
     QByteArray startupConfiguration_, reply_;
-    QString endpoint_, pairingId_;
+    QString endpoint_, pairingId_, appliedPeerSubnet_, hostPeerSubnet_;
     QString optionsDeviceId_, pendingOptionsDeviceId_;
     QJsonObject optionsSnapshot_, savedOptions_;
     qint64 pendingOptionsRevision_ = 0;
     QPointer<QDialog> pairingDialog_;
     QComboBox *interfaces_, *audioMode_;
     QLabel *address_, *status_;
+    QLineEdit *peerSubnet_;
     QPushButton *start_, *stop_, *retry_, *forget_, *disconnectDevice_, *forgetDevice_;
     QTreeWidget *devices_;
     QGroupBox *deviceOptionsBox_;

@@ -58,10 +58,14 @@ type lanDiscovery struct {
 	done     chan struct{}
 }
 
-func startDiscovery(address netip.AddrPort, subnet netip.Prefix, name string) (io.Closer, error) {
+func startDiscovery(address netip.AddrPort, subnet netip.Prefix, name string, unicastOnly bool) (io.Closer, error) {
 	// Limited and directed broadcasts arrive on the wildcard UDP listener.
 	// A separate socket guarantees that the reply comes from the selected IP.
-	receiver, err := net.ListenUDP("udp4", &net.UDPAddr{Port: playerPort})
+	binding := &net.UDPAddr{Port: playerPort}
+	if unicastOnly {
+		binding.IP = net.IP(address.Addr().AsSlice())
+	}
+	receiver, err := net.ListenUDP("udp4", binding)
 	if err != nil {
 		return nil, err
 	}
