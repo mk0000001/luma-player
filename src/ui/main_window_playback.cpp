@@ -294,6 +294,7 @@ void MainWindow::clearDiscPlayRequest(){
 void MainWindow::openSource(const QString &source){openSourceImpl(source,false);}
 
 bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 preparedDiscDurationMs,const LanReceiverPlayback *remote,const DiscInfo *inspectedDisc){
+    shareSelectedLanFile_=false;
     const bool disc=!remote && (inspectedDisc || isDiscSource(source));
     const auto input=remote ? std::optional<QString>(QString{}) : normalizedPlaybackSource(source,disc);
     if(!input){status_->setText("지원하지 않는 미디어 주소입니다.");return false;}

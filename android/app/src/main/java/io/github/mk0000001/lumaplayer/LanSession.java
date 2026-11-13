@@ -17,6 +17,7 @@ final class LanSession {
     private static final long MAX_RESTARTABLE_DURATION_MS = 999_990_000;
 
     final String title;
+    final String mediaRevision;
     final String mimeType;
     final String sourceKind;
     final long durationMs;
@@ -26,14 +27,16 @@ final class LanSession {
     final boolean supportsCaptionOffset;
     final List<String> profiles;
     final List<Long> chaptersMs;
+    final List<String> chapterTitles;
     final String videoRange;
     final RemotePlaybackOptions options;
 
     private LanSession(String title, String mimeType, String sourceKind, long durationMs,
                        boolean seekable, List<Subtitle> subtitles, boolean restartable, boolean supportsCaptionOffset,
                        List<String> profiles, List<Long> chaptersMs, String videoRange,
-                       RemotePlaybackOptions options) {
+                       RemotePlaybackOptions options, String mediaRevision, List<String> chapterTitles) {
         this.title = title;
+        this.mediaRevision = mediaRevision;
         this.mimeType = mimeType;
         this.sourceKind = sourceKind;
         this.durationMs = durationMs;
@@ -43,6 +46,7 @@ final class LanSession {
         this.supportsCaptionOffset = supportsCaptionOffset;
         this.profiles = Collections.unmodifiableList(profiles);
         this.chaptersMs = Collections.unmodifiableList(chaptersMs);
+        this.chapterTitles = Collections.unmodifiableList(chapterTitles);
         this.videoRange = videoRange;
         this.options = options;
     }
@@ -83,13 +87,29 @@ final class LanSession {
             if (!Arrays.asList("sdr", "pq", "hlg", "unknown").contains(videoRange)) {
                 throw new JSONException("Invalid video range");
             }
+            var chapters = parseChapters(session, durationMs);
             return new LanSession(title, mimeType, sourceKind, durationMs, seekable,
                     parseSubtitles(session.getJSONArray("subtitles")), restartable, session.has("profiles"),
-                    profiles, parseChapters(session, durationMs), videoRange,
-                    session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null);
+                    profiles, chapters, videoRange,
+                    session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null,
+                    session.has("mediaRevision") ? string(session, "mediaRevision", 64) : "",
+                    parseChapterTitles(session, chapters.size()));
         } catch (JSONException | IllegalArgumentException e) {
             throw new IOException("Invalid LAN session metadata", e);
         }
+    }
+
+    private static List<String> parseChapterTitles(JSONObject session, int count) throws JSONException {
+        if (!session.has("chapterTitles")) return Collections.nCopies(count, "");
+        var labels = session.getJSONArray("chapterTitles");
+        if (labels.length() != count) throw new JSONException("Invalid chapter title count");
+        List<String> result = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            if (!(labels.get(i) instanceof String title) || title.length() > 160)
+                throw new JSONException("Invalid chapter title");
+            result.add(title);
+        }
+        return result;
     }
 
     private static boolean booleanField(JSONObject object, String name) throws JSONException {

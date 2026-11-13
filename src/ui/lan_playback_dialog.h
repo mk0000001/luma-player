@@ -3,6 +3,7 @@
 #include "core/subtitle.h"
 #include <QDialog>
 #include <QHostAddress>
+#include <QHash>
 #include <QJsonObject>
 #include <QPointer>
 #include <QProcess>
@@ -30,6 +31,7 @@ struct LanPlaybackMedia {
     QString source, title, playlist, subtitles;
     QString videoRange = "unknown";
     QVector<qint64> chaptersMs;
+    QStringList chapterTitles;
     qint64 durationMs = 0;
     int audioIndex = -1, audioTrackId = -1;
     bool disc = false;
@@ -67,10 +69,11 @@ public:
     bool stopSharingAndWait();
     bool releaseMediaForRemoteControl();
     void disarmRemoteStart();
+    QString remoteFilePath(const QString &id) const;
 
 signals:
     void shareRequested();
-    void remoteControlRequested(const QString &action);
+    void remoteControlRequested(const QString &action,const QString &fileId);
     void streamDiagnostic(const QString &reason,const QString &message);
     void receiveRequested();
     void shareStopped(bool cleanupConfirmed);
@@ -107,6 +110,8 @@ private:
     void finishShare(bool cleanupConfirmed);
     void setSharing(bool sharing);
     void updateControls();
+    void publishRemoteFiles();
+    QHash<QString,QString> remoteFiles_;
 #ifdef Q_OS_WIN
     void toggleDirect();
     void pollDirect();

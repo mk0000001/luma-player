@@ -274,6 +274,7 @@ struct PlaybackEngine::Impl {
     std::atomic<quint64> generation{0};
     std::atomic_bool stopping{false};
     std::atomic_int discBufferPercent{-1};
+    QHash<int,QString> discChapterNames;
     bool destroying=false;
     libvlc_instance_t *vlc=nullptr;
     libvlc_media_player_t *player=nullptr;
@@ -845,22 +846,30 @@ void PlaybackEngine::poll(){
         if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
         if (!d->state.timelineReady || chapters <= 0) {
             d->state.chapterOffsetsMs.clear();
+            d->discChapterNames.clear();
             d->chapterOffsetsCount = -1;
         } else if (d->libvlc_media_player_get_full_chapter_descriptions && d->libvlc_chapter_descriptions_release &&
                    (d->chapterOffsetsTitle != d->state.currentTitle || d->chapterOffsetsCount != chapters)) {
             d->state.chapterOffsetsMs.clear();
+            d->discChapterNames.clear();
             libvlc_chapter_description_t **descriptions = nullptr;
             const int descriptionCount = d->libvlc_media_player_get_full_chapter_descriptions(d->player, d->state.currentTitle, &descriptions);
             if (descriptionCount > 0 && descriptions) {
                 for (int i = 0; i < std::min(descriptionCount, 10000); ++i) {
                     if (descriptions[i] && descriptions[i]->i_time_offset >= 0)
                         d->state.chapterOffsetsMs.append(descriptions[i]->i_time_offset);
+                    if (descriptions[i] && descriptions[i]->psz_name) {
+                        const auto name=QString::fromUtf8(descriptions[i]->psz_name).simplified().left(160);
+                        if(!name.isEmpty()) d->discChapterNames.insert(i,name);
+                    }
                 }
                 d->libvlc_chapter_descriptions_release(descriptions, unsigned(descriptionCount));
                 d->chapterOffsetsTitle = d->state.currentTitle;
                 d->chapterOffsetsCount = chapters;
             }
         }
+        for(auto &chapter : d->state.chapters)
+            if(d->discChapterNames.contains(chapter.id)) chapter.label=d->discChapterNames.value(chapter.id);
         if (d->metadataTitle != d->state.currentTitle)
             d->state.sourceVideoRange = "unknown";
         if(d->media && d->state.playing && (d->state.videoCodec.isEmpty() || d->state.audioCodec.isEmpty() || d->metadataTitle!=d->state.currentTitle || d->metadataAudio!=d->state.currentAudio)){

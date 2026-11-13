@@ -16,6 +16,11 @@ import (
 const maxPairBody = 1024
 const remoteStartPath = "/v1/playback/start"
 const remoteControlPath = "/v1/player/control"
+const remoteFilesPath = "/v1/player/files"
+
+func validRemoteFileID(id string) bool {
+	return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == ""
+}
 
 func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	w := newResponseWriter(original, r)
@@ -35,6 +40,8 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 		p.serveRemoteStart(w, r, peer)
 	case remoteControlPath:
 		p.serveRemoteControl(w, r, peer)
+	case remoteFilesPath:
+		p.serveRemoteFiles(w, r, peer)
 	case pairIdentityPath:
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, "GET")
@@ -56,6 +63,33 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (p *player) serveRemoteFiles(w *responseWriter, r *http.Request, peer netip.Addr) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, "GET")
+		return
+	}
+	if rejectRequestBody(w, r) {
+		return
+	}
+	p.mu.Lock()
+	device := p.authorizeLocked(peer, requestBearer(r), false, p.now())
+	_, allowed := p.controlDevices[device]
+	files := p.remoteFiles
+	p.mu.Unlock()
+	if device == nil {
+		unauthorized(w)
+	} else if !allowed {
+		http.Error(w, "remote control is disabled", http.StatusForbidden)
+	} else {
+		if files == nil {
+			files = []remoteFile{}
+		}
+		writePairJSON(w, struct {
+			Files []remoteFile `json:"files"`
+		}{files})
+	}
+}
+
 func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer netip.Addr) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w, "POST")
@@ -63,6 +97,7 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 	}
 	var request struct {
 		Action string `json:"action"`
+		FileID string `json:"fileId"`
 	}
 	if !readPairJSON(w, r, &request) {
 		return
@@ -80,6 +115,18 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 		return
 	}
 	switch request.Action {
+	case "file-open":
+		found := false
+		for _, file := range p.remoteFiles {
+			if file.ID == request.FileID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.NotFound(w, r)
+			return
+		}
 	case "disc-open", "disc-menu", "disc-popup", "disc-up", "disc-down", "disc-left", "disc-right", "disc-confirm",
 		"play-pause", "previous-chapter", "next-chapter", "seek-back", "seek-forward", "volume-down", "volume-up",
 		"mute", "fullscreen", "picture-in-picture", "resume", "speed-next", "audio-next", "subtitle-next",
@@ -88,12 +135,16 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 		http.Error(w, "invalid control", http.StatusBadRequest)
 		return
 	}
+	if request.Action != "file-open" && request.FileID != "" {
+		http.Error(w, "invalid control parameter", http.StatusBadRequest)
+		return
+	}
 	if !p.lastControl.IsZero() && now.Sub(p.lastControl) < 125*time.Millisecond {
 		http.Error(w, "control rate exceeded", http.StatusTooManyRequests)
 		return
 	}
 	p.lastControl = now
-	p.announce(playerStatus{Status: "remoteControl", ID: p.remoteControl, Action: request.Action})
+	p.announce(playerStatus{Status: "remoteControl", ID: p.remoteControl, Action: request.Action, DeviceID: request.FileID})
 	w.WriteHeader(http.StatusAccepted)
 }
 

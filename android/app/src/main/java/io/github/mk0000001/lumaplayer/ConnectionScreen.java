@@ -792,6 +792,10 @@ final class ConnectionScreen {
 
     void showPcControls(LanClient media) {
         controller.show(action -> {
+            if ("file-picker".equals(action)) {
+                chooseRemoteFile(media);
+                return;
+            }
             if (activity.applyStreamingControl(media, action)) return;
             if (controlInFlight) return;
             controlInFlight = true;
@@ -810,6 +814,43 @@ final class ConnectionScreen {
                     if (foreground && result != 0) Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
                 });
             });
+        });
+    }
+
+    private void chooseRemoteFile(LanClient media) {
+        if (controlInFlight) return;
+        controlInFlight = true;
+        network.execute(() -> {
+            List<LanClient.RemoteFile> files;
+            try {
+                files = media.remoteFiles();
+            } catch (IOException error) {
+                files = null;
+            }
+            var entries = files;
+            activity.runOnUiThread(() -> {
+                controlInFlight = false;
+                if (!foreground || activity.isFinishing()) return;
+                if (entries == null || entries.isEmpty()) {
+                    Toast.makeText(activity, entries == null ? R.string.pc_control_permission : R.string.pc_files_empty,
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                var labels = entries.stream().map(LanClient.RemoteFile::name).toArray(String[]::new);
+                new AlertDialog.Builder(activity).setTitle(R.string.pc_files_title)
+                        .setItems(labels, (dialog, index) -> openRemoteFile(media, entries.get(index).id()))
+                        .setNegativeButton(android.R.string.cancel, null).show();
+            });
+        });
+    }
+
+    private void openRemoteFile(LanClient media, String id) {
+        network.execute(() -> {
+            try {
+                media.openRemoteFile(id);
+            } catch (IOException error) {
+                activity.runOnUiThread(() -> Toast.makeText(activity, R.string.pc_control_failed, Toast.LENGTH_SHORT).show());
+            }
         });
     }
 

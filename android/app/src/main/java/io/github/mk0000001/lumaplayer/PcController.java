@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -18,6 +19,7 @@ final class PcController {
     private final Activity activity;
     private final FrameLayout root;
     private final View canvas;
+    private final FrameLayout dock;
     private final LinearLayout panel;
     private final ScrollView scroll;
     private Consumer<String> send;
@@ -26,6 +28,7 @@ final class PcController {
         this.activity = activity;
         root = activity.findViewById(R.id.root);
         canvas = activity.findViewById(R.id.playback_canvas);
+        dock = activity.findViewById(R.id.playback_pc_dock);
         panel = new LinearLayout(activity);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(10), dp(6), dp(10), dp(10));
@@ -53,7 +56,9 @@ final class PcController {
         scroll.addView(controls);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
-        addRow(controls, command("Blu-ray", "Blu-ray 열기", "disc-open"),
+        addRow(controls, command("파일 선택", "PC 파일 선택", "file-picker"),
+                command("Blu-ray", "Blu-ray 열기", "disc-open"));
+        addRow(controls,
                 command("메인 메뉴", "디스크 메인 메뉴", "disc-menu"), command("팝업 메뉴", "디스크 팝업 메뉴", "disc-popup"));
         addRow(controls, null, command("↑", "위", "disc-up"), null);
         addRow(controls, command("←", "왼쪽", "disc-left"), command("확인", "선택한 메뉴 실행", "disc-confirm"),
@@ -90,12 +95,27 @@ final class PcController {
     boolean close() {
         if (panel.getVisibility() != View.VISIBLE) return false;
         panel.setVisibility(View.GONE);
+        dock.setVisibility(View.GONE);
         send = null;
         return true;
     }
 
     private void position() {
         if (panel.getVisibility() != View.VISIBLE || root.getWidth() == 0) return;
+        View details = activity.findViewById(R.id.playback_details);
+        if (details.isShown()) {
+            if (panel.getParent() != dock) {
+                ((FrameLayout) panel.getParent()).removeView(panel);
+                dock.addView(panel, new FrameLayout.LayoutParams(-1, dp(200)));
+            }
+            dock.setVisibility(View.VISIBLE);
+            return;
+        }
+        if (panel.getParent() != root) {
+            dock.removeView(panel);
+            dock.setVisibility(View.GONE);
+            root.addView(panel, new FrameLayout.LayoutParams(dp(280), -2, Gravity.TOP | Gravity.END));
+        }
         int top = dp(12);
         int end = dp(12);
         int availableWidth = root.getWidth() - root.getPaddingLeft() - root.getPaddingRight();
@@ -143,20 +163,24 @@ final class PcController {
     }
 
     private Button command(String label, String description, String action) {
-        return button(label, description, () -> {
+        Button control = button(label, description, () -> {
             if (send != null) send.accept(action);
         });
+        if (action.equals("disc-confirm") || action.equals("play-pause"))
+            control.setBackground(new RippleDrawable(ColorStateList.valueOf(0x55ffffff), background(0xff176ccc, 22), null));
+        return control;
     }
 
     private Button button(String label, String description, Runnable action) {
         Button button = new Button(activity);
+        button.setStateListAnimator(null);
         button.setText(label);
         button.setContentDescription(description);
         button.setAllCaps(false);
         button.setTextSize(12);
         button.setPadding(dp(4), 0, dp(4), 0);
         button.setTextColor(activity.getColor(R.color.luma_text));
-        button.setBackgroundTintList(ColorStateList.valueOf(0xff303a4b));
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x35ffffff), background(0xff29313d, 22), null));
         button.setOnClickListener(view -> action.run());
         return button;
     }

@@ -34,9 +34,20 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
     return lanPlaybackDialog_;
 }
 
-void MainWindow::applyLanRemoteControl(const QString &action) {
+void MainWindow::applyLanRemoteControl(const QString &action,const QString &fileId) {
     if (lanSourceChanging_ || lanRemotePlayback_)
         return;
+    if (action=="file-open") {
+        const auto path=lanPlaybackDialog_->remoteFilePath(fileId);
+        if(path.isEmpty())return;
+        if(lanPlaybackDialog_->isSharing()){
+            if(lanPlaybackDialog_->releaseMediaForRemoteControl())pendingLanFile_=fileId;
+        }else if(openSourceImpl(path,false)){
+            shareSelectedLanFile_=true;
+            updateLanPlaybackAvailability();
+        }
+        return;
+    }
     if (action == "disc-open") { if (!lanDiscSharing_) playConnectedDisc(); return; }
     if (action == "resume") { if (!lanDiscSharing_) resumeLatest(); return; }
     if (action == "fullscreen") { toggleFullScreen(); return; }
@@ -184,6 +195,11 @@ void MainWindow::updateLanPlaybackAvailability() {
     if (!lanPlaybackDialog_)
         return;
     lanPlaybackDialog_->setMediaAvailable(lanSourceAvailable(), active_ && active_ == discEngine_.get());
+    if(shareSelectedLanFile_ && active_ && (active_->state().failed || active_==discEngine_.get()))shareSelectedLanFile_=false;
+    if(shareSelectedLanFile_ && active_ && active_->state().timelineReady && lanPlaybackDialog_->canShare()){
+        shareSelectedLanFile_=false;
+        startLanShare();
+    }
     advanceLanDiscShare();
 }
 
@@ -231,6 +247,12 @@ bool MainWindow::sendLanMedia() {
     media.source = media.disc ? discInfo_.root : QFileInfo(source_).canonicalFilePath();
     media.durationMs = std::max<qint64>(0, state.durationMs);
     media.chaptersMs = state.chapterOffsetsMs;
+    if(media.chaptersMs.size()==state.chapters.size()){
+        for(const auto &chapter:state.chapters){
+            const auto fallback=QString("Chapter %1").arg(chapter.id+1);
+            media.chapterTitles.append(chapter.label==fallback?QString{}:chapter.label);
+        }
+    }
     media.videoRange = state.sourceVideoRange;
     if (media.disc) {
         media.playlist = matchDiscPlaylist(discInfo_, state.durationMs);
@@ -247,12 +269,17 @@ bool MainWindow::sendLanMedia() {
             ++ordinal;
         }
     }
-    if (!externalCues_.isEmpty())
-        media.subtitles = lanCaptionTrack(displayCues());
+    media.subtitles = lanCaptionTrack(displayCues());
     return lanPlaybackDialog_->shareMedia(media);
 }
 
 void MainWindow::finishLanShare(bool cleanupConfirmed) {
+    const auto file=std::exchange(pendingLanFile_,QString{});
+    if(cleanupConfirmed && !file.isEmpty()){
+        lanDiscSharing_=lanDiscAwaitingPause_=lanDiscResume_=false;
+        QTimer::singleShot(0,this,[this,file]{applyLanRemoteControl("file-open",file);});
+        return;
+    }
     if (!lanDiscSharing_)
         return;
     const bool resume = lanDiscResume_ && cleanupConfirmed;

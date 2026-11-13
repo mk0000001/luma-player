@@ -224,6 +224,34 @@ final class LanClient implements Closeable {
                 RequestBody.create("{\"action\":" + JSONObject.quote(action) + "}", JSON));
     }
 
+    record RemoteFile(String id, String name) {}
+
+    List<RemoteFile> remoteFiles() throws IOException {
+        try {
+            var files = LanJson.parseObject(readJson(LanEndpoint.PLAYER_FILES_PATH, null, 5, MAX_SESSION_BYTES))
+                    .getJSONArray("files");
+            if (files.length() > 32) throw new JSONException("Too many media files");
+            List<RemoteFile> result = new java.util.ArrayList<>(files.length());
+            for (int index = 0; index < files.length(); index++) {
+                var entry = files.getJSONObject(index);
+                var id = entry.getString("id");
+                var name = entry.getString("name");
+                if (!id.matches("[a-f0-9]{32}") || name.isEmpty() || name.length() > 240) {
+                    throw new JSONException("Invalid media file entry");
+                }
+                result.add(new RemoteFile(id, name));
+            }
+            return result;
+        } catch (JSONException e) {
+            throw new IOException("Invalid media file list", e);
+        }
+    }
+
+    void openRemoteFile(String id) throws IOException {
+        sendPlayerCommand(LanEndpoint.PLAYER_CONTROL_PATH,
+                RequestBody.create("{\"action\":\"file-open\",\"fileId\":" + JSONObject.quote(id) + "}", JSON));
+    }
+
     private void sendPlayerCommand(String path, RequestBody body) throws IOException {
         Request request = new Request.Builder().url(url(path)).post(body).build();
         Call call = metadataRequests.newCall(request);
@@ -390,7 +418,8 @@ final class LanClient implements Closeable {
                 case PAIRING -> "POST".equals(method) && (LanEndpoint.PAIR_START_PATH.equals(path)
                         || LanEndpoint.PAIR_REVEAL_PATH.equals(path) || LanEndpoint.PAIR_POLL_PATH.equals(path));
                 case REMEMBERED -> "POST".equals(method) && LanEndpoint.PAIR_LOGIN_PATH.equals(path);
-                case PLAYBACK -> ("GET".equals(method) && LanEndpoint.isMediaPath(path))
+                case PLAYBACK -> ("GET".equals(method) && (LanEndpoint.isMediaPath(path)
+                        || LanEndpoint.PLAYER_FILES_PATH.equals(path)))
                         || ("POST".equals(method) && (LanEndpoint.PLAYBACK_START_PATH.equals(path)
                                 || LanEndpoint.PLAYER_CONTROL_PATH.equals(path)));
             };

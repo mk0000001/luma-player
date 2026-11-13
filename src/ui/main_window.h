@@ -156,7 +156,9 @@ private:
     void discoverDisc();
     void discMediaChanged();
     void playConnectedDisc();
-    void applyLanRemoteControl(const QString &action);
+    void applyLanRemoteControl(const QString &action,const QString &fileId);
+    QString pendingLanFile_;
+    bool shareSelectedLanFile_=false;
     void applyAiPreferences(bool save);
     void applyTranslationPreferences(bool save);
     void clearDiscPlayRequest();

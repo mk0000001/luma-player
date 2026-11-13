@@ -34,21 +34,22 @@ var (
 )
 
 type config struct {
-	Listen       string           `json:"listen"`
-	Subnet       string           `json:"subnet"`
-	PeerSubnet   string           `json:"peerSubnet,omitempty"`
-	SourceKind   string           `json:"sourceKind"`
-	Source       string           `json:"source"`
-	Playlist     string           `json:"playlist"`
-	AudioIndex   int              `json:"audioIndex"`
-	AudioTrackID *int             `json:"audioTrackId,omitempty"`
-	AudioMode    string           `json:"audioMode"`
-	FFmpeg       string           `json:"ffmpeg"`
-	DurationMS   int64            `json:"durationMs"`
-	ChaptersMS   []int64          `json:"chaptersMs,omitempty"`
-	VideoRange   string           `json:"videoRange,omitempty"`
-	Title        string           `json:"title"`
-	Subtitles    []subtitleConfig `json:"subtitles"`
+	Listen        string           `json:"listen"`
+	Subnet        string           `json:"subnet"`
+	PeerSubnet    string           `json:"peerSubnet,omitempty"`
+	SourceKind    string           `json:"sourceKind"`
+	Source        string           `json:"source"`
+	Playlist      string           `json:"playlist"`
+	AudioIndex    int              `json:"audioIndex"`
+	AudioTrackID  *int             `json:"audioTrackId,omitempty"`
+	AudioMode     string           `json:"audioMode"`
+	FFmpeg        string           `json:"ffmpeg"`
+	DurationMS    int64            `json:"durationMs"`
+	ChaptersMS    []int64          `json:"chaptersMs,omitempty"`
+	ChapterTitles []string         `json:"chapterTitles,omitempty"`
+	VideoRange    string           `json:"videoRange,omitempty"`
+	Title         string           `json:"title"`
+	Subtitles     []subtitleConfig `json:"subtitles"`
 }
 
 type subtitleConfig struct {
@@ -124,7 +125,23 @@ func (cfg config) validate() (validatedConfig, error) {
 			return validatedConfig{}, errInvalidConfig
 		}
 	}
+	if len(cfg.ChapterTitles) != 0 && len(cfg.ChapterTitles) != len(cfg.ChaptersMS) {
+		return validatedConfig{}, errInvalidConfig
+	}
+	titleBytes := 0
+	for _, title := range cfg.ChapterTitles {
+		titleBytes += len(title)
+		if len(title) > 640 {
+			return validatedConfig{}, errInvalidConfig
+		}
+	}
+	if titleBytes > 16384 {
+		return validatedConfig{}, errInvalidConfig
+	}
 	cfg.ChaptersMS = slices.Compact(slices.Clone(cfg.ChaptersMS))
+	if len(cfg.ChapterTitles) != len(cfg.ChaptersMS) {
+		cfg.ChapterTitles = nil
+	}
 	if cfg.VideoRange == "" {
 		cfg.VideoRange = "unknown"
 	}

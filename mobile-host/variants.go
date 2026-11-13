@@ -47,7 +47,7 @@ func (s *mediaSession) serveVariant(w *responseWriter, r *http.Request, profile 
 		http.Error(w, "media start unavailable", http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
-	if ranges := r.Header.Values("Range"); len(ranges) > 1 || (len(ranges) == 1 && ranges[0] != "bytes=0-") {
+	if !validProgressiveRange(r) {
 		http.Error(w, "range unavailable", http.StatusRequestedRangeNotSatisfiable)
 		return
 	}
@@ -72,6 +72,11 @@ func (s *mediaSession) serveVariant(w *responseWriter, r *http.Request, profile 
 	s.serveProgressive(w, r.Context(), profile, start)
 }
 
+func validProgressiveRange(r *http.Request) bool {
+	ranges := r.Header.Values("Range")
+	return len(ranges) == 0 || (len(ranges) == 1 && ranges[0] == "bytes=0-")
+}
+
 func fileVariantDemuxer(mimeType string) string {
 	switch mimeType {
 	case "video/mp4", "video/quicktime":
@@ -88,6 +93,10 @@ func fileVariantDemuxer(mimeType string) string {
 }
 
 func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool) []string {
+	return variantArgumentsForSeek(cfg, profile, start, convertPCM, true)
+}
+
+func variantArgumentsForSeek(cfg validatedConfig, profile string, start int64, convertPCM, chapterSeek bool) []string {
 	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
 	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
 		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
@@ -95,13 +104,22 @@ func variantArguments(cfg validatedConfig, profile string, start int64, convertP
 		audioMap += "?"
 	}
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error"}
-	if start > 0 {
+	chapter := 1
+	if chapterSeek && cfg.SourceKind == "bluray" && start > 0 && len(cfg.ChaptersMS) > 1 && cfg.ChaptersMS[0] == 0 {
+		if index, found := slices.BinarySearch(cfg.ChaptersMS, start); found {
+			chapter = index + 1
+		}
+	}
+	if start > 0 && chapter == 1 {
 		args = append(args, "-ss", fmt.Sprintf("%d.%03d", start/1000, start%1000))
 	}
 	if cfg.SourceKind == "bluray" {
 		playlist, _ := strconv.Atoi(cfg.Playlist)
-		args = append(args, "-protocol_whitelist", "bluray", "-playlist", strconv.Itoa(playlist),
-			"-i", "bluray:"+filepath.ToSlash(cfg.Source))
+		args = append(args, "-protocol_whitelist", "bluray", "-playlist", strconv.Itoa(playlist))
+		if chapter > 1 {
+			args = append(args, "-chapter", strconv.Itoa(chapter))
+		}
+		args = append(args, "-i", "bluray:"+filepath.ToSlash(cfg.Source))
 	} else {
 		demuxer := fileVariantDemuxer(cfg.mimeType)
 		args = append(args, "-protocol_whitelist", "fd", "-f", demuxer)

@@ -134,6 +134,13 @@
                 android:textColor="@color/luma_accent" />
         </LinearLayout>
 
+        <FrameLayout
+            android:id="@+id/playback_pc_dock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="12dp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/portrait_chapters"
             android:layout_width="match_parent"

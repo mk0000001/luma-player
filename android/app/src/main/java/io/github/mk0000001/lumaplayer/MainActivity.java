@@ -42,12 +42,15 @@ import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.extractor.DefaultExtractorsFactory;
+import androidx.media3.extractor.Extractor;
+import androidx.media3.extractor.ExtractorsFactory;
 import androidx.media3.extractor.mkv.MatroskaExtractor;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
@@ -63,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 @UnstableApi
 public final class MainActivity extends Activity {
     private static final int CONTROLS_TIMEOUT_MS = 5000;
+    private static final int REWIND_BUFFER_MS = 15_000;
     private static final int NO_ORIENTATION_OVERRIDE = Integer.MIN_VALUE;
     private static final long DISPLAY_PICKER_TIMEOUT_MS = 120_000L;
     private final ScheduledThreadPoolExecutor connectionExecutor = new ScheduledThreadPoolExecutor(1);
@@ -99,6 +103,7 @@ public final class MainActivity extends Activity {
     private boolean returningToPortrait;
     private boolean displayPickerOpen, playAfterPicker, playedSinceLoad;
     private long streamBaseMs, bufferingSinceMs;
+    private long bufferedSeekTarget = -1, latestStreamPosition;
     private String streamProfile = "original";
     private int streamSubtitleDelayMs;
     private float unmutedVolume = 1f;
@@ -267,7 +272,11 @@ public final class MainActivity extends Activity {
                 return decoders;
             });
         }
-        ExoPlayer active = new ExoPlayer.Builder(getApplicationContext(), renderers).build();
+        ExoPlayer active = new ExoPlayer.Builder(getApplicationContext(), renderers)
+                .setLoadControl(new DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(20_000, 35_000, 1_000, 2_000)
+                        .setTargetBufferBytes(128 * 1024 * 1024)
+                        .setBackBuffer(REWIND_BUFFER_MS, true).build()).build();
         player = active;
         backgroundPlaybackReady = PlaybackService.attach(this, active, () -> {
             if (player == active) {
@@ -296,6 +305,24 @@ public final class MainActivity extends Activity {
             @Override
             public void onPlayerError(PlaybackException error) {
                 if (player == active) {
+                    if (bufferedSeekTarget >= 0) {
+                        long target = bufferedSeekTarget;
+                        bufferedSeekTarget = -1;
+                        playerView.post(() -> {
+                            if (player == active && active.getPlayerError() == error)
+                                loadStream(target, streamProfile, active.getPlayWhenReady());
+                        });
+                        return;
+                    }
+                    if (playbackSession != null && playbackSession.isBluRay() && playedSinceLoad
+                            && error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED) {
+                        long position = absolutePosition();
+                        playerView.post(() -> {
+                            if (player == active && active.getPlayerError() == error)
+                                loadStream(position, streamProfile, active.getPlayWhenReady());
+                        });
+                        return;
+                    }
                     if ("original".equals(streamProfile) && canUseCompatibleStream(error)) {
                         String compatible = navigation.lowerAutomaticProfile(streamProfile);
                         if (!compatible.equals(streamProfile)) {
@@ -349,7 +376,10 @@ public final class MainActivity extends Activity {
     }
 
     private long absolutePosition() {
-        return player == null ? 0 : toAbsolutePosition(player.getCurrentPosition());
+        if (player == null) return 0;
+        long relative = player.getCurrentPosition();
+        latestStreamPosition = Math.max(latestStreamPosition, relative);
+        return toAbsolutePosition(relative);
     }
 
     private long toAbsolutePosition(long relativeMs) {
@@ -373,8 +403,15 @@ public final class MainActivity extends Activity {
             return;
         }
         long target = Math.max(0, Math.min(positionMs, limit));
+        long relativeTarget = target - streamBaseMs;
         if ("original".equals(streamProfile) && playbackSession.seekable && player.isCurrentMediaItemSeekable()) {
             player.seekTo(target);
+        } else if (playbackSession.restartable && player.isCurrentMediaItemSeekable()
+                && player.getPlaybackState() == Player.STATE_READY
+                && relativeTarget >= Math.max(750, latestStreamPosition - REWIND_BUFFER_MS + 750)
+                && relativeTarget <= player.getBufferedPosition() - 750) {
+            bufferedSeekTarget = target;
+            player.seekTo(relativeTarget);
         } else if (playbackSession.restartable || playbackSession.seekable) {
             loadStream(target, streamProfile, player.getPlayWhenReady());
         }
@@ -442,11 +479,11 @@ public final class MainActivity extends Activity {
             previousRequests.close();
         }
         mediaRequests = client.mediaRequests();
-        DefaultExtractorsFactory extractors = new DefaultExtractorsFactory();
         boolean progressive = session.isBluRay() || variant;
-        if (progressive) {
-            extractors.setMatroskaExtractorFlags(MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES);
-        }
+        ExtractorsFactory extractors = progressive && session.restartable
+                ? () -> new Extractor[]{new BufferedMatroskaExtractor(session.durationMs - base)}
+                : new DefaultExtractorsFactory().setMatroskaExtractorFlags(
+                        progressive ? MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES : 0);
         DefaultMediaSourceFactory sources = new DefaultMediaSourceFactory(mediaRequests.dataSourceFactory(), extractors);
         if (progressive) {
             sources.setLoadErrorHandlingPolicy(new DefaultLoadErrorHandlingPolicy(0) {
@@ -462,6 +499,8 @@ public final class MainActivity extends Activity {
             });
         }
         streamBaseMs = base;
+        latestStreamPosition = 0;
+        bufferedSeekTarget = -1;
         streamProfile = profile;
         streamSubtitleDelayMs = navigation.subtitleDelayMs();
         playedSinceLoad = false;
@@ -499,6 +538,12 @@ public final class MainActivity extends Activity {
                 } else if (consecutiveFailures >= 2) {
                     disconnect(R.string.session_ended, true);
                 } else {
+                    if (received != null && !received.mediaRevision.equals(playbackSession.mediaRevision)) {
+                        client = null;
+                        releasePlayback();
+                        openPlayback(active, received);
+                        return;
+                    }
                     if (received != null) {
                         navigation.applyRemoteOptions(received.options);
                     }
@@ -512,6 +557,7 @@ public final class MainActivity extends Activity {
         int state = source.getPlaybackState();
         int message = R.string.status_buffering;
         if (state == Player.STATE_READY) {
+            bufferedSeekTarget = -1;
             playedSinceLoad |= source.isPlaying();
             bufferingSinceMs = 0;
             message = source.isPlaying() ? R.string.status_playing : R.string.status_paused;

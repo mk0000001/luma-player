@@ -14,6 +14,23 @@ import (
 	"time"
 )
 
+func TestBlurayExactChapterUsesDiscIndex(t *testing.T) {
+	cfg := validatedConfig{config: config{SourceKind: "bluray", Playlist: "00001", ChaptersMS: []int64{0, 1500, 3000}}}
+	chapter := variantArguments(cfg, originalProfile, 3000, false)
+	index := slices.Index(chapter, "-chapter")
+	if index < 0 || chapter[index+1] != "3" || slices.Contains(chapter, "-ss") {
+		t.Fatalf("expected direct chapter 3: %v", chapter)
+	}
+	for _, args := range [][]string{
+		variantArguments(cfg, originalProfile, 3001, false),
+		variantArgumentsForSeek(cfg, originalProfile, 3000, false, false),
+	} {
+		if slices.Contains(args, "-chapter") || !slices.Contains(args, "-ss") {
+			t.Fatalf("expected timestamp seek: %v", args)
+		}
+	}
+}
+
 func variantTestFFmpeg(t *testing.T) string {
 	t.Helper()
 	if path := os.Getenv("LUMA_TEST_VARIANT_FFMPEG"); path != "" {

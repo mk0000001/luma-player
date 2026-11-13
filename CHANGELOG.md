@@ -2,13 +2,15 @@
 
 ## 한국어
 
-### 미출시
+### 0.2.8
 
 - 페어링한 갤럭시 탭에서 PC의 Blu-ray 메뉴를 조작하고 본편 공유를 시작할 수 있습니다. 재생 중에는 영상 위에 컨트롤러를 띄웁니다.
 - 갤탭에서 챕터를 바꾸면 이전 영상 요청을 종료하고 새 위치의 송출을 시작합니다. PC와 Android 재생바에 재생 버퍼를 표시합니다.
 - 설정 화면 위에서 마우스 휠을 돌리면 항목 값 대신 목록이 스크롤됩니다.
 - 개발자 모드에서 재생 이벤트와 성능 샘플을 같은 시간순으로 합친 JSON을 저장할 수 있습니다.
 - 자동 AI 가속에서 감지한 Radeon Vulkan 장치를 음성 인식과 번역에 선택합니다. 수동 장치 선택은 유지합니다.
+- 갤탭에서 PC가 지정한 파일을 고를 수 있고, 일반 재생 화면의 컨트롤러를 챕터 위에 배치합니다.
+- Blu-ray 챕터를 번호로 바로 열고, PC에 준비된 표시 자막을 갤탭으로 보냅니다.
 
 ### 0.2.7
 
@@ -178,13 +180,15 @@
 
 ## English
 
-### Unreleased
+### 0.2.8
 
 - Use a paired Galaxy Tab to navigate the PC's Blu-ray menu and start sharing the feature. The controller overlays the video during playback.
 - Changing chapters on Android closes the previous stream before requesting the new position. Desktop and Android playback bars display buffering information.
 - Scrolling in desktop settings scrolls the panel without changing the selected values.
 - Developer Mode exports playback events and performance samples in one chronological JSON log.
 - Automatic AI acceleration selects detected Radeon Vulkan devices for speech recognition and translation while preserving manual device selections.
+- Choose PC-approved files on the tablet. The controller sits above the chapter list in the regular playback layout.
+- Open Blu-ray chapters directly by number and share captions already prepared on the PC.
 
 ### 0.2.7
 

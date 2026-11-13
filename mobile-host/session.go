@@ -13,23 +13,26 @@ import (
 )
 
 const (
-	mediaReconnectWait = 3 * time.Second
-	responseWriteWait  = 12 * time.Second
+	mediaReconnectWait   = 3 * time.Second
+	responseWriteWait    = 12 * time.Second
+	progressiveWriteWait = 75 * time.Second
 )
 
 type sessionMetadata struct {
-	Version     int                `json:"version"`
-	Title       string             `json:"title"`
-	MIMEType    string             `json:"mimeType"`
-	SourceKind  string             `json:"sourceKind"`
-	DurationMS  int64              `json:"durationMs"`
-	Seekable    bool               `json:"seekable"`
-	Restartable bool               `json:"restartable"`
-	Profiles    []string           `json:"profiles"`
-	ChaptersMS  []int64            `json:"chaptersMs"`
-	VideoRange  string             `json:"videoRange"`
-	Options     *deviceOptions     `json:"options,omitempty"`
-	Subtitles   []subtitleMetadata `json:"subtitles"`
+	MediaRevision string             `json:"mediaRevision,omitempty"`
+	Version       int                `json:"version"`
+	Title         string             `json:"title"`
+	MIMEType      string             `json:"mimeType"`
+	SourceKind    string             `json:"sourceKind"`
+	DurationMS    int64              `json:"durationMs"`
+	Seekable      bool               `json:"seekable"`
+	Restartable   bool               `json:"restartable"`
+	Profiles      []string           `json:"profiles"`
+	ChaptersMS    []int64            `json:"chaptersMs"`
+	ChapterTitles []string           `json:"chapterTitles,omitempty"`
+	VideoRange    string             `json:"videoRange"`
+	Options       *deviceOptions     `json:"options,omitempty"`
+	Subtitles     []subtitleMetadata `json:"subtitles"`
 }
 
 type subtitleMetadata struct {
@@ -59,7 +62,8 @@ func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
 			Version: protocolVersion, Title: cfg.Title, MIMEType: cfg.mimeType,
 			SourceKind: cfg.SourceKind, DurationMS: cfg.DurationMS, Seekable: cfg.SourceKind == "file",
 			Profiles: []string{originalProfile}, ChaptersMS: append([]int64{}, cfg.ChaptersMS...), VideoRange: cfg.VideoRange,
-			Subtitles: make([]subtitleMetadata, 0, len(cfg.Subtitles)),
+			ChapterTitles: cfg.ChapterTitles,
+			Subtitles:     make([]subtitleMetadata, 0, len(cfg.Subtitles)),
 		},
 	}
 	for _, subtitle := range cfg.Subtitles {
@@ -201,6 +205,10 @@ func (s *mediaSession) acquireMedia(w *responseWriter, r *http.Request) bool {
 }
 
 func (s *mediaSession) serveMedia(w *responseWriter, r *http.Request) {
+	if s.file == nil && !validProgressiveRange(r) {
+		http.Error(w, "range unavailable", http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
 	if !s.acquireMedia(w, r) {
 		return
 	}
@@ -232,6 +240,7 @@ type responseWriter struct {
 	ctx         context.Context
 	onWrite     func()
 	flushWrites bool
+	writeWait   time.Duration
 }
 
 func (w *responseWriter) WriteHeader(status int) {
@@ -243,7 +252,11 @@ func (w *responseWriter) Write(data []byte) (int, error) {
 	if err := w.ctx.Err(); err != nil {
 		return 0, err
 	}
-	if err := w.controller.SetWriteDeadline(time.Now().Add(responseWriteWait)); err != nil {
+	wait := w.writeWait
+	if wait == 0 {
+		wait = responseWriteWait
+	}
+	if err := w.controller.SetWriteDeadline(time.Now().Add(wait)); err != nil {
 		return 0, err
 	}
 	if err := w.ctx.Err(); err != nil {

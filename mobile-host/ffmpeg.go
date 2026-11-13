@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"time"
 )
@@ -34,9 +35,12 @@ func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
 }
 
 func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, profile string, start int64) {
-	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, false), s.reportStream)
-	if outcome == remuxNeedsPCM && profile == originalProfile && ctx.Err() == nil {
-		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, true), s.reportStream)
+	args := variantArguments(s.config, profile, start, false)
+	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream)
+	pcm := outcome == remuxNeedsPCM && profile == originalProfile
+	if outcome != remuxStreamed && ctx.Err() == nil && (pcm || (outcome == remuxFailed && slices.Contains(args, "-chapter"))) {
+		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
+			variantArgumentsForSeek(s.config, profile, start, pcm, pcm), s.reportStream)
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
 		if s.reportStream != nil {
@@ -103,6 +107,7 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 	timer.Stop()
 
 	w.Header().Set("Content-Type", matroskaMIME)
+	w.writeWait = progressiveWriteWait
 	_, err = w.Write(prefix)
 	if err == nil {
 		err = w.controller.Flush()

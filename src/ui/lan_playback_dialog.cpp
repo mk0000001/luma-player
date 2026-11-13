@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QGridLayout>
 #include <QHash>
 #include <QGroupBox>
@@ -257,6 +258,24 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
         remoteControlGrant_ = enabled ? QUuid::createUuid().toString(QUuid::Id128) : QString{};
         if (ready_)
             writeMessage(QJsonObject{{"command", "allowRemoteControl"}, {"grant", remoteControlGrant_}});
+    });
+    auto *remoteFiles = new QPushButton("갤탭에서 고를 파일 지정", this);
+    remoteFiles->setObjectName("lanChooseRemoteFiles");
+    layout->addWidget(remoteFiles, 0, Qt::AlignLeft);
+    connect(remoteFiles, &QPushButton::clicked, this, [this, remoteFiles] {
+        QFileDialog picker(this,"갤탭에서 고를 미디어",{},
+            "미디어 (*.mkv *.mp4 *.m4v *.webm *.mov *.m2ts *.ts)");
+        picker.setFileMode(QFileDialog::ExistingFiles);
+        if (picker.exec()!=QDialog::Accepted) return;
+        remoteFiles_.clear();
+        for (const auto &path : picker.selectedFiles()) {
+            if (remoteFiles_.size()>=32) break;
+            const auto file=QFileInfo(path).canonicalFilePath();
+            if (lanLocalFileSupported(file) && !remoteFiles_.values().contains(file))
+                remoteFiles_.insert(QUuid::createUuid().toString(QUuid::Id128),file);
+        }
+        remoteFiles->setText(QString("갤탭에서 고를 파일 지정 (%1)").arg(remoteFiles_.size()));
+        publishRemoteFiles();
     });
 #ifdef Q_OS_WIN
     directButton_ = new QPushButton("공유기 없이 휴대폰 연결", this);
@@ -712,6 +731,20 @@ void LanPlaybackDialog::disarmRemoteControl() {
     remoteControl_->setChecked(false);
 }
 
+QString LanPlaybackDialog::remoteFilePath(const QString &id) const {
+    const auto path=remoteFiles_.value(id);
+    return lanLocalFileSupported(path) && QFileInfo(path).canonicalFilePath()==path ? path : QString{};
+}
+
+void LanPlaybackDialog::publishRemoteFiles() {
+    if (!ready_) return;
+    QJsonArray files;
+    const auto ids=remoteFiles_.keys();
+    for (const auto &id : ids)
+        files.append(QJsonObject{{"id",id},{"name",QFileInfo(remoteFiles_.value(id)).fileName().left(240)}});
+    writeMessage(QJsonObject{{"command","setRemoteFiles"},{"files",files}});
+}
+
 void LanPlaybackDialog::setMediaAvailable(bool available, bool disc) {
     if (!available)
         disarmRemoteStart();
@@ -764,9 +797,19 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
     std::sort(chapterOffsets.begin(), chapterOffsets.end());
     const auto lastChapter = std::unique(chapterOffsets.begin(), chapterOffsets.end());
     QJsonArray chapters;
+    QJsonArray chapterTitles;
+    qsizetype chapterTitleBytes=0;
+    const bool aligned=chapterOffsets==media.chaptersMs && lastChapter==chapterOffsets.end() &&
+        media.chapterTitles.size()==chapterOffsets.size();
     for (auto chapter = chapterOffsets.cbegin(); chapter != lastChapter && chapters.size() < maxChapters; ++chapter) {
-        if (*chapter >= 0 && *chapter < media.durationMs)
+        if (*chapter >= 0 && *chapter < media.durationMs) {
             chapters.append(*chapter);
+            if(aligned){
+                auto title=media.chapterTitles.at(chapter-chapterOffsets.cbegin()).simplified().left(160);
+                chapterTitleBytes+=title.toUtf8().size();
+                chapterTitles.append(chapterTitleBytes<=16384?title:QString{});
+            }
+        }
     }
     QJsonArray subtitles;
     if (!media.subtitles.isEmpty())
@@ -780,6 +823,7 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
     };
     if (!chapters.isEmpty())
         configuration.insert("chaptersMs", chapters);
+    if (!chapterTitles.isEmpty()) configuration.insert("chapterTitles",chapterTitles);
     if (!writeMessage(QJsonObject{{"command", "share"}, {"media", configuration}})) {
         protocolError();
         return false;
@@ -1013,6 +1057,7 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             message.value("address").toString() == endpoint_) {
             watchdog_.stop();
             ready_ = true;
+            publishRemoteFiles();
             status_->setText("기기 연결을 기다리는 중입니다.");
             updateControls();
             requestDevices();
@@ -1055,7 +1100,7 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             emit streamDiagnostic(reason,"LAN 영상 요청 · "+found.value());
     } else if (event == "remoteControl") {
         if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
-            emit remoteControlRequested(message.value("action").toString());
+            emit remoteControlRequested(message.value("action").toString(),message.value("deviceId").toString());
     } else if (event == "devices" && message.value("devices").isArray()) {
         updateDevices(message.value("devices").toArray());
     } else if (event == "sharing" && (mediaState_ == MediaState::Starting || mediaState_ == MediaState::Stopping)) {

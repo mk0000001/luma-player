@@ -146,8 +146,10 @@ final class RemotePlaybackControls {
         List<String> chapterRows = new ArrayList<>();
         if (session != null) {
             for (int index = 0; index < session.chaptersMs.size(); ++index) {
-                chapterRows.add(activity.getString(R.string.chapter_row, index + 1,
-                        timeLabel(session.chaptersMs.get(index))));
+                String name = session.chapterTitles.get(index);
+                String time = timeLabel(session.chaptersMs.get(index));
+                chapterRows.add(name.isEmpty() ? activity.getString(R.string.chapter_row, index + 1, time)
+                        : activity.getString(R.string.named_chapter_row, name, time));
             }
         }
         chapterList.setAdapter(new ArrayAdapter<>(activity, R.layout.playback_chapter_item, chapterRows));

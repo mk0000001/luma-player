@@ -48,6 +48,12 @@ type playerCommand struct {
 	Decision string         `json:"decision"`
 	Options  *deviceOptions `json:"options"`
 	Grant    string         `json:"grant"`
+	Files    []remoteFile   `json:"files"`
+}
+
+type remoteFile struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type statusWriter struct {
@@ -81,6 +87,7 @@ type player struct {
 	remoteControl   string
 	controlDevices  map[*activeDevice]struct{}
 	lastControl     time.Time
+	remoteFiles     []remoteFile
 }
 
 func newPlayer(name, pin string, remembered map[string]rememberedDevice,
@@ -196,6 +203,19 @@ func readPlayerCommands(ctx context.Context, input *bufio.Reader, lines chan<- c
 func (p *player) handleCommand(binding config, command playerCommand) {
 	var err error
 	switch command.Command {
+	case "setRemoteFiles":
+		files := make([]remoteFile, 0, min(32, len(command.Files)))
+		for _, file := range command.Files {
+			if len(files) == 32 {
+				break
+			}
+			if validRemoteFileID(file.ID) && file.Name != "" && len(file.Name) <= 1024 {
+				files = append(files, file)
+			}
+		}
+		p.mu.Lock()
+		p.remoteFiles = files
+		p.mu.Unlock()
 	case "allowRemoteStart", "allowRemoteControl":
 		if command.Grant != "" && (len(command.Grant) != 32 || strings.Trim(command.Grant, "0123456789abcdef") != "") {
 			break
@@ -280,6 +300,7 @@ func (p *player) shareMedia(binding config, media *config) error {
 		return errors.New("could not open the selected media")
 	}
 	session.configureVariants()
+	session.meta.MediaRevision = revision
 	session.reportStream = func(reason string) {
 		p.announce(playerStatus{Status: "streamDiagnostic", Action: reason})
 	}
