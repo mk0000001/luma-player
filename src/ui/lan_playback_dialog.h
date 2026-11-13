@@ -80,6 +80,7 @@ protected:
 private:
     enum class MediaState { Idle, Preparing, Starting, Sharing, Stopping };
     void refreshInterfaces();
+    void maintainDiscovery();
     bool startHost(const QString &address, const QString &subnet, const QString &peerSubnet = {});
     void restartDiscovery();
     void closeHost();
@@ -109,9 +110,10 @@ private:
 #endif
 
     QProcess host_;
-    QTimer watchdog_, deviceRefresh_;
+    QTimer watchdog_, deviceRefresh_, discoveryRefresh_;
     QByteArray startupConfiguration_, reply_;
     QString endpoint_, pairingId_, appliedPeerSubnet_, hostPeerSubnet_;
+    QString hostAddress_, hostSubnet_, preferredDiscoveryAddress_;
     QString optionsDeviceId_, pendingOptionsDeviceId_;
     QJsonObject optionsSnapshot_, savedOptions_;
     qint64 pendingOptionsRevision_ = 0;

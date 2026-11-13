@@ -44,6 +44,7 @@ namespace luma {
 namespace {
 constexpr int port = 48762;
 constexpr int startupWaitMs = 10000;
+constexpr int discoveryRefreshMs = 5000;
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
@@ -410,12 +411,15 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
                 status_->setText("모바일 송출이 비정상 종료되었습니다.");
         }
     });
+    discoveryRefresh_.setInterval(discoveryRefreshMs);
+    connect(&discoveryRefresh_, &QTimer::timeout, this, &LanPlaybackDialog::maintainDiscovery);
     refreshInterfaces();
     updateControls();
 }
 
 LanPlaybackDialog::~LanPlaybackDialog() {
     shuttingDown_ = true;
+    discoveryRefresh_.stop();
     deviceRefresh_.stop();
 #ifdef Q_OS_WIN
     directPoll_.stop();
@@ -478,13 +482,56 @@ void LanPlaybackDialog::refreshInterfaces() {
 }
 
 void LanPlaybackDialog::startDiscovery() {
-    if (shuttingDown_ || host_.state() != QProcess::NotRunning)
+    if (shuttingDown_ || closingHost_)
+        return;
+    if (!discoveryRefresh_.isActive())
+        discoveryRefresh_.start();
+    maintainDiscovery();
+}
+
+void LanPlaybackDialog::maintainDiscovery() {
+    if (shuttingDown_ || closingHost_ || forgetting_ || mediaState_ != MediaState::Idle || pairingDialog_)
         return;
 #ifdef Q_OS_WIN
     if (direct_)
         return;
 #endif
+    if (host_.state() != QProcess::NotRunning) {
+        if (!ready_)
+            return;
+        auto adapters = lanPrivateInterfaces();
+#ifdef Q_OS_WIN
+        if (retiredDirectBinding_) {
+            adapters.removeIf([this](const LanPrivateInterface &adapter) {
+                return quint32(adapter.interfaceIndex) == retiredDirectBinding_->interfaceIndex &&
+                    adapter.address.toIPv4Address() == retiredDirectBinding_->address;
+            });
+        }
+#endif
+        const auto valid = std::any_of(adapters.cbegin(), adapters.cend(), [this](const LanPrivateInterface &adapter) {
+            return adapter.address.toString() == hostAddress_ &&
+                lanPrivateSubnet(adapter.address, adapter.prefixLength) == hostSubnet_;
+        });
+        auto preferred = std::find_if(adapters.cbegin(), adapters.cend(), [this](const LanPrivateInterface &adapter) {
+            return adapter.address.toString() == preferredDiscoveryAddress_;
+        });
+        if (preferred == adapters.cend())
+            preferred = adapters.cbegin();
+        if (valid && (hasActiveDevice_ || preferred == adapters.cend() || preferred->address.toString() == hostAddress_))
+            return;
+        closeHost();
+        if (host_.state() != QProcess::NotRunning)
+            return;
+    }
     refreshInterfaces();
+    int preferredIndex = 0;
+    for (int index = 0; index < interfaces_->count(); ++index)
+        if (interfaces_->itemData(index).toStringList().value(0) == preferredDiscoveryAddress_) {
+            preferredIndex = index;
+            break;
+        }
+    if (interfaces_->count() != 0)
+        interfaces_->setCurrentIndex(preferredIndex);
     const auto selected = interfaces_->currentData().toStringList();
     if (selected.size() != 2) {
         status_->setText("연결된 사설 IPv4 주소가 없습니다.");
@@ -514,6 +561,8 @@ bool LanPlaybackDialog::startHost(const QString &address, const QString &subnet,
     }
     const auto name = QSysInfo::machineHostName().simplified().left(63);
     endpoint_ = address + ':' + QString::number(port);
+    hostAddress_ = address;
+    hostSubnet_ = subnet;
     hostPeerSubnet_ = peerSubnet;
     startupConfiguration_ = messageLine(QJsonObject{
         {"mode", "player"}, {"listen", endpoint_}, {"subnet", subnet}, {"peerSubnet", peerSubnet},
@@ -545,6 +594,7 @@ void LanPlaybackDialog::restartDiscovery() {
         return;
     }
     appliedPeerSubnet_ = peerSubnet;
+    preferredDiscoveryAddress_ = interfaces_->currentData().toStringList().value(0);
     closeHost();
     startDiscovery();
 }

@@ -30,6 +30,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -40,6 +41,7 @@ import org.json.JSONException;
 
 @UnstableApi
 final class ConnectionScreen {
+    private static final long DISCOVERY_REFRESH_MS = 5000;
     private final MainActivity activity;
     private final ScheduledExecutorService network;
     private final ExecutorService discoveryExecutor = Executors.newSingleThreadExecutor();
@@ -61,10 +63,12 @@ final class ConnectionScreen {
     private final Button startPairing;
     private final Button confirmCode;
     private final Button startPlayback;
+    private final Runnable refreshDiscovery = this::refreshOrdinaryDiscovery;
     private int mediaRequestGeneration;
 
     private boolean foreground;
     private boolean playing;
+    private boolean showingVpnResults;
     private LanDiscovery scan;
     private NearbyConnection nearby;
     private AlertDialog vpnDialog;
@@ -207,14 +211,16 @@ final class ConnectionScreen {
     }
 
     private void discover(VpnDiscoverySubnet subnet) {
+        discover(subnet, false);
+    }
+
+    private void discover(VpnDiscoverySubnet subnet, boolean backgroundRefresh) {
         stopDiscovery();
-        nearbyButton.setVisibility(View.GONE);
         boolean vpn = subnet != null;
-        if (!vpn) {
-            ordinaryDiscovered = Collections.emptyList();
+        showingVpnResults = vpn;
+        if (!backgroundRefresh) {
+            nearbyButton.setVisibility(View.GONE);
         }
-        discovered = ordinaryDiscovered;
-        renderList();
         ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
         if (connectivity == null) {
             setStatus(discoveryStatus, R.string.discovery_empty, false);
@@ -223,10 +229,12 @@ final class ConnectionScreen {
         }
         LanDiscovery current = new LanDiscovery();
         scan = current;
-        refresh.setEnabled(false);
-        vpnSearch.setEnabled(false);
-        setStatus(discoveryStatus, vpn ? R.string.vpn_discovery_searching : R.string.discovery_searching, false);
-        discoveryStatus.setVisibility(View.VISIBLE);
+        if (!backgroundRefresh) {
+            refresh.setEnabled(false);
+            vpnSearch.setEnabled(false);
+            setStatus(discoveryStatus, vpn ? R.string.vpn_discovery_searching : R.string.discovery_searching, false);
+            discoveryStatus.setVisibility(View.VISIBLE);
+        }
         discoveryExecutor.execute(() -> {
             List<LanDiscovery.Pc> result;
             try {
@@ -240,6 +248,7 @@ final class ConnectionScreen {
                     return;
                 }
                 scan = null;
+                List<LanDiscovery.Pc> previous = discovered;
                 if (vpn) {
                     Map<String, LanDiscovery.Pc> combined = new LinkedHashMap<>();
                     for (LanDiscovery.Pc pc : ordinaryDiscovered) {
@@ -255,13 +264,44 @@ final class ConnectionScreen {
                 }
                 refresh.setEnabled(true);
                 vpnSearch.setEnabled(true);
-                renderList();
+                if (!backgroundRefresh || !sameDiscoveredPcs(previous, discovered)) {
+                    renderList();
+                }
                 setStatus(discoveryStatus, vpn ? R.string.vpn_discovery_empty : R.string.discovery_empty, false);
                 discoveryStatus.setVisibility(found.isEmpty() ? View.VISIBLE : View.GONE);
                 nearbyButton.setVisibility(discovered.isEmpty() && NearbyConnection.supported(activity)
                         ? View.VISIBLE : View.GONE);
+                if (!vpn) {
+                    home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
+                }
             });
         });
+    }
+
+    private void refreshOrdinaryDiscovery() {
+        if (!foreground || showingVpnResults || home.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        if (nearby != null || vpnDialog != null || scan != null) {
+            home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
+            return;
+        }
+        discover(null, true);
+    }
+
+    private static boolean sameDiscoveredPcs(List<LanDiscovery.Pc> before, List<LanDiscovery.Pc> after) {
+        if (before.size() != after.size()) {
+            return false;
+        }
+        for (int i = 0; i < before.size(); i++) {
+            LanDiscovery.Pc oldPc = before.get(i);
+            LanDiscovery.Pc newPc = after.get(i);
+            if (!oldPc.endpoint.address().equals(newPc.endpoint.address())
+                    || !oldPc.name.equals(newPc.name) || !Objects.equals(oldPc.network, newPc.network)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void showVpnSearch() {
@@ -311,13 +351,17 @@ final class ConnectionScreen {
     }
 
     private void showNearby() {
-        if (!foreground || nearby != null || scan != null || !discovered.isEmpty()
+        if (!foreground || nearby != null || !discovered.isEmpty()
                 || !NearbyConnection.supported(activity)) {
             return;
         }
         ConnectivityManager connectivity = activity.getSystemService(ConnectivityManager.class);
         if (connectivity == null) {
             return;
+        }
+        if (scan != null) {
+            stopDiscovery();
+            home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
         }
         nearby = new NearbyConnection(activity, connectivity, discoveryExecutor, new NearbyConnection.Listener() {
             @Override
@@ -356,6 +400,7 @@ final class ConnectionScreen {
     }
 
     private void stopDiscovery() {
+        home.removeCallbacks(refreshDiscovery);
         if (scan != null) {
             scan.close();
             scan = null;
