@@ -15,6 +15,7 @@ import (
 
 const maxPairBody = 1024
 const remoteStartPath = "/v1/playback/start"
+const remoteControlPath = "/v1/player/control"
 
 func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	w := newResponseWriter(original, r)
@@ -32,6 +33,8 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case remoteStartPath:
 		p.serveRemoteStart(w, r, peer)
+	case remoteControlPath:
+		p.serveRemoteControl(w, r, peer)
 	case pairIdentityPath:
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, "GET")
@@ -51,6 +54,47 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	default:
 		p.servePlayerMedia(w, r, peer)
 	}
+}
+
+func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer netip.Addr) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		Action string `json:"action"`
+	}
+	if !readPairJSON(w, r, &request) {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := p.now()
+	device := p.authorizeLocked(peer, requestBearer(r), false, now)
+	if device == nil {
+		unauthorized(w)
+		return
+	}
+	if _, allowed := p.controlDevices[device]; p.remoteControl == "" || !allowed {
+		http.Error(w, "remote control is disabled", http.StatusForbidden)
+		return
+	}
+	switch request.Action {
+	case "disc-open", "disc-menu", "disc-popup", "disc-up", "disc-down", "disc-left", "disc-right", "disc-confirm",
+		"play-pause", "previous-chapter", "next-chapter", "seek-back", "seek-forward", "volume-down", "volume-up",
+		"mute", "fullscreen", "picture-in-picture", "resume", "speed-next", "audio-next", "subtitle-next",
+		"caption-ai", "caption-original", "caption-reading", "caption-translation":
+	default:
+		http.Error(w, "invalid control", http.StatusBadRequest)
+		return
+	}
+	if !p.lastControl.IsZero() && now.Sub(p.lastControl) < 125*time.Millisecond {
+		http.Error(w, "control rate exceeded", http.StatusTooManyRequests)
+		return
+	}
+	p.lastControl = now
+	p.announce(playerStatus{Status: "remoteControl", ID: p.remoteControl, Action: request.Action})
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (p *player) serveRemoteStart(w *responseWriter, r *http.Request, peer netip.Addr) {
@@ -79,7 +123,11 @@ func (p *player) requestRemoteStart(peer netip.Addr, token string) int {
 	if device == nil {
 		return http.StatusUnauthorized
 	}
-	if p.remoteStart == "" {
+	grant := p.remoteStart
+	if _, allowed := p.controlDevices[device]; grant == "" && allowed {
+		grant = p.remoteControl
+	}
+	if grant == "" {
 		return http.StatusForbidden
 	}
 	if p.media != nil && p.media.ctx.Err() == nil {
@@ -89,7 +137,7 @@ func (p *player) requestRemoteStart(peer netip.Addr, token string) int {
 		return http.StatusTooManyRequests
 	}
 	p.lastRemoteStart = now
-	p.announce(playerStatus{Status: "remoteStart", ID: p.remoteStart})
+	p.announce(playerStatus{Status: "remoteStart", ID: grant})
 	return http.StatusAccepted
 }
 

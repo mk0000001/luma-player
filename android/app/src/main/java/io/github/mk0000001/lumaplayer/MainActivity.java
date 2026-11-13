@@ -101,6 +101,7 @@ public final class MainActivity extends Activity {
     private long streamBaseMs, bufferingSinceMs;
     private String streamProfile = "original";
     private int streamSubtitleDelayMs;
+    private float unmutedVolume = 1f;
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -154,7 +155,10 @@ public final class MainActivity extends Activity {
 
             @Override
             public long bufferedPositionMs() {
-                return player == null ? 0 : toAbsolutePosition(player.getBufferedPosition());
+                if (player == null || player.getPlayerError() != null || player.getPlaybackState() == Player.STATE_IDLE) {
+                    return absolutePosition();
+                }
+                return toAbsolutePosition(player.getBufferedPosition());
             }
 
             @Override
@@ -197,6 +201,11 @@ public final class MainActivity extends Activity {
             public void showUsageNotice() {
                 MainActivity.this.showUsageNotice();
             }
+
+            @Override
+            public void showPcControls() {
+                if (client != null) connectionScreen.showPcControls(client);
+            }
         });
         gestures = new PlaybackGestures(playerView, findViewById(R.id.skip_feedback), new PlaybackGestures.Actions() {
             @Override public long positionMs() { return absolutePosition(); }
@@ -221,6 +230,9 @@ public final class MainActivity extends Activity {
         findViewById(R.id.device_info).setOnClickListener(view -> showPlaybackInfo());
         findViewById(R.id.usage_notice_button).setOnClickListener(view -> showUsageNotice());
         findViewById(R.id.playback_footer_settings).setOnClickListener(view -> navigation.showSettings());
+        findViewById(R.id.playback_pc_controls).setOnClickListener(view -> {
+            if (client != null) connectionScreen.showPcControls(client);
+        });
         playerView.setFullscreenButtonClickListener(this::setFullscreen);
         playerView.setControllerShowTimeoutMs(CONTROLS_TIMEOUT_MS);
         playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)
@@ -368,6 +380,29 @@ public final class MainActivity extends Activity {
         }
     }
 
+    boolean applyStreamingControl(LanClient media, String action) {
+        if (client != media || player == null || playbackSession == null || !playbackSession.isBluRay()) return false;
+        switch (action) {
+            case "play-pause" -> player.setPlayWhenReady(!player.getPlayWhenReady());
+            case "seek-back" -> seekPlayback(absolutePosition() - 10_000);
+            case "seek-forward" -> seekPlayback(absolutePosition() + 10_000);
+            case "previous-chapter" -> navigation.selectChapter(false);
+            case "next-chapter" -> navigation.selectChapter(true);
+            case "volume-down" -> player.setVolume(Math.max(0f, player.getVolume() - .05f));
+            case "volume-up" -> player.setVolume(Math.min(1f, player.getVolume() + .05f));
+            case "mute" -> {
+                if (player.getVolume() > 0f) {
+                    unmutedVolume = player.getVolume();
+                    player.setVolume(0f);
+                } else {
+                    player.setVolume(unmutedVolume);
+                }
+            }
+            default -> { return false; }
+        }
+        return true;
+    }
+
     private void updateStreamOptions() {
         if (player == null || playbackSession == null) {
             return;
@@ -403,6 +438,9 @@ public final class MainActivity extends Activity {
                 .setMediaMetadata(new MediaMetadata.Builder().setTitle(sessionTitle.getText()).build())
                 .setSubtitleConfigurations(subtitles).build();
         LanClient.RequestScope previousRequests = mediaRequests;
+        if (previousRequests != null) {
+            previousRequests.close();
+        }
         mediaRequests = client.mediaRequests();
         DefaultExtractorsFactory extractors = new DefaultExtractorsFactory();
         boolean progressive = session.isBluRay() || variant;
@@ -416,8 +454,8 @@ public final class MainActivity extends Activity {
                 public long getRetryDelayMsFor(LoadErrorInfo info) {
                     if (info.exception instanceof HttpDataSource.InvalidResponseCodeException response
                             && response.responseCode == 503 && response.headerFields.keySet().stream()
-                                    .anyMatch("Retry-After"::equalsIgnoreCase) && info.errorCount <= 3) {
-                        return 500L * info.errorCount;
+                                    .anyMatch("Retry-After"::equalsIgnoreCase) && info.errorCount <= 5) {
+                        return Math.min(2000L, 500L * info.errorCount);
                     }
                     return C.TIME_UNSET;
                 }
@@ -428,13 +466,7 @@ public final class MainActivity extends Activity {
         streamSubtitleDelayMs = navigation.subtitleDelayMs();
         playedSinceLoad = false;
         bufferingSinceMs = 0;
-        try {
-            player.setMediaSource(sources.createMediaSource(media), directFile ? start : 0);
-        } finally {
-            if (previousRequests != null) {
-                previousRequests.close();
-            }
-        }
+        player.setMediaSource(sources.createMediaSource(media), directFile ? start : 0);
         player.prepare();
         player.setPlayWhenReady(playing);
     }
@@ -443,21 +475,28 @@ public final class MainActivity extends Activity {
         sessionCheck = connectionExecutor.schedule(() -> {
             int failures = 0;
             LanSession currentSession = null;
+            boolean mediaUnshared = false;
             try {
                 currentSession = active.checkSession();
             } catch (LanClient.HttpException e) {
+                mediaUnshared = e.status == 409;
                 failures = e.status == 401 || e.status == 403 || e.status == 409 || e.status == 410
                         ? 2 : previousFailures + 1;
             } catch (IOException e) {
                 failures = previousFailures + 1;
             }
             int consecutiveFailures = failures;
+            boolean returnToControls = mediaUnshared;
             LanSession received = currentSession;
             runOnUiThread(() -> {
                 if (client != active || player == null) {
                     return;
                 }
-                if (consecutiveFailures >= 2) {
+                if (returnToControls) {
+                    client = null;
+                    releasePlayback();
+                    connectionScreen.returnToControls(active);
+                } else if (consecutiveFailures >= 2) {
                     disconnect(R.string.session_ended, true);
                 } else {
                     if (received != null) {
@@ -479,6 +518,7 @@ public final class MainActivity extends Activity {
         } else if (state == Player.STATE_ENDED) {
             message = R.string.status_ended;
         } else if (state == Player.STATE_BUFFERING && playedSinceLoad && source.getPlayWhenReady()
+                && playbackSession != null && !playbackSession.isBluRay()
                 && bufferingSinceMs == 0 && !navigation.lowerAutomaticProfile(streamProfile).equals(streamProfile)) {
             long started = SystemClock.elapsedRealtime();
             bufferingSinceMs = started;
@@ -512,6 +552,15 @@ public final class MainActivity extends Activity {
     }
 
     private void disconnect(int message, boolean error) {
+        if (client != null) {
+            client.close();
+            client = null;
+        }
+        releasePlayback();
+        connectionScreen.showHome(message, error);
+    }
+
+    private void releasePlayback() {
         lifecycleHandler.removeCallbacks(expireDisplayPicker);
         displayPickerOpen = playAfterPicker = false;
         gestures.cancel();
@@ -520,12 +569,13 @@ public final class MainActivity extends Activity {
             sessionCheck = null;
         }
         closeMediaRequests();
-        if (client != null) {
-            client.close();
-            client = null;
-        }
         if (player != null) {
             ExoPlayer previous = player;
+            var counters = previous.getVideoDecoderCounters();
+            if (counters != null) {
+                counters.ensureUpdated();
+                android.util.Log.i("LumaPlayback", "Presented video frames: " + counters.renderedOutputBufferCount);
+            }
             player = null;
             backgroundPlaybackReady = false;
             PlaybackService.detach(this, previous);
@@ -540,7 +590,6 @@ public final class MainActivity extends Activity {
         playerView.setKeepScreenOn(false);
         playbackScreen.setVisibility(View.GONE);
         setFullscreen(false);
-        connectionScreen.showHome(message, error);
     }
 
     void onNearbyNetworkLost() {
@@ -813,6 +862,7 @@ public final class MainActivity extends Activity {
         gestures.cancel();
         if (inPictureInPicture) {
             navigation.closeSettings();
+            connectionScreen.closePcControls();
         }
         playerView.setUseController(!inPictureInPicture);
         applyPlaybackLayout();
@@ -821,6 +871,7 @@ public final class MainActivity extends Activity {
     }
 
     private boolean handleBack() {
+        if (connectionScreen.closePcControls()) return true;
         if (navigation.handleSettingsBack()) {
             return true;
         }

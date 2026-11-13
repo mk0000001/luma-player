@@ -17,6 +17,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
@@ -25,6 +26,20 @@
 #include <cmath>
 
 namespace luma {
+namespace {
+QString preferredComputeDevice(QComboBox *choice, const QString &mode) {
+    const auto selected=choice->currentData().toString();
+    if(mode!="auto" || (!selected.isEmpty() && !choice->currentText().startsWith("저장된 GPU · ")))
+        return selected;
+    const QRegularExpression radeon(R"(\b(?:AMD|Radeon)\b)",QRegularExpression::CaseInsensitiveOption);
+    for(int index=1;index<choice->count();++index){
+        const auto device=choice->itemData(index).toString();
+        if(device.startsWith("Vulkan") && radeon.match(choice->itemText(index)).hasMatch())
+            return device;
+    }
+    return {};
+}
+}
 
 void MainWindow::editTranslationGlossary(){
     const auto discIdentity=active_==discEngine_.get()?resumeIdentity_:QString{};
@@ -55,8 +70,14 @@ void MainWindow::editTranslationGlossary(){
 }
 
 void MainWindow::updateAiPreferences(){
-    const AiPreferences preferences{aiMode_->currentData().toString(),aiGpu_->currentData().toString()};
-    QSettings().setValue("ai/mode",preferences.mode);QSettings().setValue("ai/gpu",preferences.gpuDevice);
+    applyAiPreferences(true);
+}
+
+void MainWindow::applyAiPreferences(bool save){
+    const auto mode=aiMode_->currentData().toString();
+    const AiPreferences preferences{mode,preferredComputeDevice(aiGpu_,mode)};
+    if(save){QSettings().setValue("ai/mode",mode);QSettings().setValue("ai/gpu",aiGpu_->currentData());}
+    if(!save && job_.preferences().mode==preferences.mode && job_.preferences().gpuDevice==preferences.gpuDevice)return;
     if(job_.preferences().mode!=preferences.mode || job_.preferences().gpuDevice!=preferences.gpuDevice){cancelSubtitleWork();job_.setPreferences(preferences);}
     aiGpu_->setEnabled(preferences.mode=="auto" || preferences.mode=="gpu");
     aiFailed_=false;translationFailed_=false;nextAiAttemptMs_=0;aiRetryCount_=0;
@@ -80,8 +101,14 @@ void MainWindow::updateNpuStatus(){
 }
 
 void MainWindow::updateTranslationPreferences(){
-    const AiPreferences preferences{translationMode_->currentData().toString(),translationGpu_->currentData().toString()};
-    QSettings().setValue("translation/mode",preferences.mode);QSettings().setValue("translation/gpu",preferences.gpuDevice);translationGpu_->setEnabled(preferences.mode=="auto" || preferences.mode=="gpu");
+    applyTranslationPreferences(true);
+}
+
+void MainWindow::applyTranslationPreferences(bool save){
+    const auto mode=translationMode_->currentData().toString();
+    const AiPreferences preferences{mode,preferredComputeDevice(translationGpu_,mode)};
+    if(save){QSettings().setValue("translation/mode",mode);QSettings().setValue("translation/gpu",translationGpu_->currentData());}
+    translationGpu_->setEnabled(mode=="auto" || mode=="gpu");
     if(translation_ && (translation_->preferences().mode!=preferences.mode || translation_->preferences().gpuDevice!=preferences.gpuDevice)){translation_->setPreferences(preferences);translationPending_.clear();translations_.clear();clearTranslationSkips();translationFailed_=false;rebuildManagedCaptions();}
 }
 

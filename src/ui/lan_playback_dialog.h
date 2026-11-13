@@ -65,10 +65,13 @@ public:
     void cancelDiscShare(const QString &message);
     bool shareMedia(const LanPlaybackMedia &media);
     bool stopSharingAndWait();
+    bool releaseMediaForRemoteControl();
     void disarmRemoteStart();
 
 signals:
     void shareRequested();
+    void remoteControlRequested(const QString &action);
+    void streamDiagnostic(const QString &reason,const QString &message);
     void receiveRequested();
     void shareStopped(bool cleanupConfirmed);
     void sharingChanged(bool sharing);
@@ -80,6 +83,7 @@ protected:
 private:
     enum class MediaState { Idle, Preparing, Starting, Sharing, Stopping };
     void refreshInterfaces();
+    void disarmRemoteControl();
     void maintainDiscovery();
     bool startHost(const QString &address, const QString &subnet, const QString &peerSubnet = {});
     void restartDiscovery();
@@ -127,7 +131,9 @@ private:
     QComboBox *deviceProfile_, *deviceHdr_, *deviceSkip_, *deviceFill_;
     QCheckBox *deviceSubtitleDelayEnabled_;
     QCheckBox *remoteStart_;
+    QCheckBox *remoteControl_;
     QString remoteStartGrant_;
+    QString remoteControlGrant_;
     QSpinBox *deviceSubtitleDelay_;
     QPushButton *applyOptions_, *resetOptions_;
     MediaState mediaState_ = MediaState::Idle;

@@ -45,8 +45,10 @@ private slots:
         QCOMPARE(devices.size(),1);
         const auto selected=devices[0].toObject().value("id").toString();
         const auto backends=translationBackends(root.path(),{"auto",selected});
-        QCOMPARE(backends.size(),4);QCOMPARE(backends[0].key,QString("npu"));
-        QCOMPARE(backends[1].device,QString("Vulkan1"));QCOMPARE(backends[2].device,QString("CUDA0"));QCOMPARE(backends[3].key,QString("cpu"));
+        QCOMPARE(backends.size(),5);QCOMPARE(backends[0].key,QString("npu"));
+        QCOMPARE(backends[1].device,QString("Vulkan1"));QVERIFY(!backends[1].vulkanCompatibility);
+        QCOMPARE(backends[2].device,QString("Vulkan1"));QVERIFY(backends[2].vulkanCompatibility);
+        QCOMPARE(backends[3].device,QString("CUDA0"));QCOMPARE(backends[4].key,QString("cpu"));
     }
     void cudaLaunchPinsOneExactDevice(){
         QTemporaryDir root;QVERIFY(root.isValid());const auto directory=QDir(root.path()).filePath("translation/cuda");

@@ -212,10 +212,19 @@ QByteArray serializeTesterReport(QJsonObject report){
 
     auto performance=report.value("performance").toObject();
     auto samples=performance.value("samples").toArray();
+    auto timeline=report.value("timeline").toArray();
     const auto total=samples.size();
     while(!samples.isEmpty() && bytes.size()>testerReportByteLimit){
         const auto discard=std::min<qsizetype>(16,samples.size());
         for(qsizetype i=0;i<discard;++i)samples.removeFirst();
+        qsizetype remaining=discard;
+        for(auto entry=timeline.begin();entry!=timeline.end() && remaining>0;){
+            if((*entry).toObject().value("kind")=="performance"){
+                entry=timeline.erase(entry);
+                --remaining;
+            }else ++entry;
+        }
+        report.insert("timeline",timeline);
         performance.insert("samples",samples);
         performance.insert("omittedForSize",total-samples.size());
         report.insert("performance",performance);
@@ -420,9 +429,25 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
     if(actualTranslation.value("accelerator")=="vulkan")
         actualTranslation.insert("vulkanProfile",translation_->selectedVulkanCompatibility()?"low-vram":"standard");
     if(!actualTranslation.isEmpty())translation.insert("actual",actualTranslation);
+    const auto history=performance_->diagnosticHistory();
+    QJsonArray timeline;
+    const auto samples=history.value("samples").toArray();
+    auto event=developerEvents_.cbegin();
+    for(const auto &sample:samples){
+        const auto elapsed=sample.toObject().value("elapsedMs").toInteger();
+        while(event!=developerEvents_.cend() && (*event).toObject().value("elapsedMs").toInteger()<=elapsed){
+            timeline.append(QJsonObject{{"kind","event"},{"record",*event}});
+            ++event;
+        }
+        timeline.append(QJsonObject{{"kind","performance"},{"record",sample}});
+    }
+    while(event!=developerEvents_.cend()){
+        timeline.append(QJsonObject{{"kind","event"},{"record",*event}});
+        ++event;
+    }
     QJsonObject report{{"schemaVersion",2},{"appVersion",LUMA_VERSION},{"qtVersion",qVersion()},{"os",os},{"graphicsAdapters",adapters},
         {"installedWorkers",installedWorkers()},{"video",video},{"asr",asr},{"translation",translation},
-        {"performance",performance_->diagnosticHistory()},
+        {"performance",history},{"timeline",timeline},
         {"events",developerEvents_},{"droppedEvents",droppedDeveloperEvents_}};
     const auto installer=lastAccelerationInstall();
     if(!installer.isEmpty())report.insert("lastAccelerationInstall",installer);
@@ -514,7 +539,7 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         return button;
     };
     auto *copy = addButton("진단 요약 복사", "copyDiagnostics");
-    auto *exportTester = addButton("테스트 진단 JSON 저장", "exportTesterDiagnostics");
+    auto *exportTester = addButton("통합 진단 로그 JSON 저장", "exportTesterDiagnostics");
     exportTester->setToolTip("최근 5분 성능과 GPU·드라이버, 디코더, AI 실행 상태를 JSON 파일로 저장합니다.");
     auto *exportCsv = addButton("성능 기록 CSV 저장", "exportPerformance");
     auto *clear = addButton("성능 기록 초기화", "clearPerformance");

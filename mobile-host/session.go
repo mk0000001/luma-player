@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	mediaReconnectWait = time.Second
+	mediaReconnectWait = 3 * time.Second
 	responseWriteWait  = 12 * time.Second
 )
 
@@ -48,6 +48,7 @@ type mediaSession struct {
 	file               *os.File
 	fileInfo           os.FileInfo
 	media              mediaGate
+	reportStream       func(string)
 }
 
 func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
@@ -189,6 +190,9 @@ func methodNotAllowed(w http.ResponseWriter, allow string) {
 
 func (s *mediaSession) acquireMedia(w *responseWriter, r *http.Request) bool {
 	if !s.media.acquire(r.Context()) {
+		if s.reportStream != nil && r.Context().Err() == nil {
+			s.reportStream("stream-busy")
+		}
 		w.Header().Set("Retry-After", "1")
 		http.Error(w, "media stream is busy", http.StatusServiceUnavailable)
 		return false

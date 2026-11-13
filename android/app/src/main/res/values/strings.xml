@@ -34,6 +34,11 @@
     <string name="pair_wait_media">연결되었습니다. PC에서 허용한 미디어를 여기에서 재생할 수 있습니다.</string>
     <string name="pair_wait_media_unsaved">이 PC를 기억하지 못했습니다. 이번 연결로 재생할 수 있습니다.</string>
     <string name="pair_playback_start">PC 미디어 재생 시작</string>
+    <string name="pc_controls">PC 플레이어 조작</string>
+    <string name="pc_controls_short">PC 조작</string>
+    <string name="pc_controls_close">PC 컨트롤러 닫기</string>
+    <string name="pc_control_permission">Windows 내부망 재생에서 PC 플레이어 조작을 허용하세요.</string>
+    <string name="pc_control_failed">PC에 조작 요청을 보내지 못했습니다.</string>
     <string name="pair_playback_permission">PC의 내부망 재생에서 현재 미디어의 기기 재생 시작을 허용하거나 PC에서 공유를 시작하세요.</string>
     <string name="pair_playback_pending">PC에 재생을 요청했습니다. 시작되지 않으면 PC에서 재생할 미디어를 확인하세요.</string>
     <string name="remember_not_saved">이 PC를 기억하지 못했습니다. 이번 연결에서 재생할 수 있습니다.</string>

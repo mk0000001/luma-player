@@ -450,7 +450,19 @@ void MainWindow::refresh(){
     const bool playing=wantsPlayback();static_cast<IconButton*>(play_)->setPlayerIcon(playing?PlayerIcon::Pause:PlayerIcon::Play);
     pipButton_->setEnabled(pictureInPicture_ || (!state.failed && state.timelineReady));
     play_->setAccessibleName(playing?"일시정지 · Space":"재생 · Space");clock_->setText(formatTime(state.positionMs)+" / "+formatTime(state.durationMs));
-    if(!seek_->isSliderDown()){QSignalBlocker guard(seek_);seek_->setValue(state.durationMs>0?int(state.positionMs*10000/state.durationMs):0);}
+    auto *timeline=static_cast<SeekSlider *>(seek_);
+    const auto toSlider=[&state](qint64 ms) {
+        return state.durationMs>0?int(std::clamp(ms,qint64(0),state.durationMs)*10000/state.durationMs):0;
+    };
+    if(!seek_->isSliderDown()){QSignalBlocker guard(seek_);seek_->setValue(toSlider(state.positionMs));}
+    const bool seeking=pendingSeek_>=0 || pendingChapter_!=-2 || pendingTitle_!=-2 || seek_->isSliderDown();
+    timeline->setBuffer(!seeking && state.bufferedUntilMs>state.positionMs?toSlider(state.bufferedUntilMs):-1,
+        !state.failed && state.buffering?state.discBufferPercent:-1);
+    if(state.discBufferPercent>=0 && state.buffering && !state.failed)
+        timeline->setToolTip(QString("Blu-ray 읽기 버퍼 · %1%").arg(state.discBufferPercent));
+    else if(!seeking && !state.failed && state.bufferedUntilMs>state.positionMs)
+        timeline->setToolTip(QString("영상 버퍼 · %1까지").arg(formatTime(state.bufferedUntilMs)));
+    else timeline->setToolTip("재생 위치");
     codec_->setText(QStringList{active_->name(),state.videoCodec,state.hardwareDecoder}.filter(QRegularExpression(".+")).join(" · "));
     if(active_==fileEngine_.get() && !state.motionStatus.isEmpty()){
         QString text=state.motionStatus;

@@ -43,6 +43,7 @@ import org.json.JSONException;
 final class ConnectionScreen {
     private static final long DISCOVERY_REFRESH_MS = 5000;
     private final MainActivity activity;
+    private final PcController controller;
     private final ScheduledExecutorService network;
     private final ExecutorService discoveryExecutor = Executors.newSingleThreadExecutor();
     private final RememberedPcStore remembered;
@@ -63,8 +64,11 @@ final class ConnectionScreen {
     private final Button startPairing;
     private final Button confirmCode;
     private final Button startPlayback;
+    private final Button pcControls;
     private final Runnable refreshDiscovery = this::refreshOrdinaryDiscovery;
     private int mediaRequestGeneration;
+    private boolean controlInFlight;
+    private LanClient waitingClient;
 
     private boolean foreground;
     private boolean playing;
@@ -84,6 +88,7 @@ final class ConnectionScreen {
     ConnectionScreen(MainActivity activity, ScheduledExecutorService network) {
         this.activity = activity;
         this.network = network;
+        controller = new PcController(activity);
         remembered = new RememberedPcStore(activity);
         home = activity.findViewById(R.id.connect_screen);
         pairScreen = activity.findViewById(R.id.pair_screen);
@@ -102,6 +107,7 @@ final class ConnectionScreen {
         startPairing = activity.findViewById(R.id.pair_start_button);
         confirmCode = activity.findViewById(R.id.pair_confirm_button);
         startPlayback = activity.findViewById(R.id.pair_playback_button);
+        pcControls = activity.findViewById(R.id.pair_pc_controls);
 
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
@@ -124,28 +130,42 @@ final class ConnectionScreen {
         foreground = true;
         if (nearby != null) {
             nearby.setForeground(true);
-        } else if (home.getVisibility() == View.VISIBLE) {
+        }
+        if (waitingClient != null) {
+            checkWaitingClient(waitingClient, 0);
+        } else if (nearby == null && home.getVisibility() == View.VISIBLE) {
             discover();
         }
     }
 
     void stop() {
         foreground = false;
+        controller.close();
         stopDiscovery();
         closeVpnSearch();
         if (nearby != null) {
             nearby.setForeground(false);
         }
         if (!awaitingNearbySystemUi()) {
-            cancelAttempt();
+            if (waitingClient != null) {
+                ++mediaRequestGeneration;
+                if (request != null) request.cancel(false);
+                request = null;
+            } else {
+                cancelAttempt();
+            }
             if (!playing) {
-                closeNearby();
+                if (waitingClient == null) closeNearby();
             }
             clearCode();
         }
     }
 
     void close() {
+        if (waitingClient != null) {
+            waitingClient.close();
+            waitingClient = null;
+        }
         cancelAttempt();
         stopDiscovery();
         closeVpnSearch();
@@ -164,6 +184,7 @@ final class ConnectionScreen {
     }
 
     boolean handleBack() {
+        if (controller.close()) return true;
         if (pairScreen.getVisibility() != View.VISIBLE) {
             return false;
         }
@@ -172,6 +193,11 @@ final class ConnectionScreen {
     }
 
     void showHome(int message, boolean error) {
+        controller.close();
+        if (waitingClient != null) {
+            waitingClient.close();
+            waitingClient = null;
+        }
         cancelAttempt();
         closeNearby();
         playing = false;
@@ -194,7 +220,9 @@ final class ConnectionScreen {
     }
 
     void hideForPlayback() {
+        controller.close();
         playing = true;
+        waitingClient = null;
         if (attempt != null) {
             attempt.detachClientForPlayback();
             attempt = null;
@@ -204,6 +232,52 @@ final class ConnectionScreen {
         pairScreen.setVisibility(View.GONE);
         clearCode();
         activity.protectPairingForm(false);
+    }
+
+    void returnToControls(LanClient media) {
+        playing = false;
+        waitingClient = media;
+        home.setVisibility(View.GONE);
+        pairScreen.setVisibility(View.VISIBLE);
+        pcControls.setVisibility(View.VISIBLE);
+        pcControls.setOnClickListener(view -> showPcControls(media));
+        startPlayback.setVisibility(View.VISIBLE);
+        startPlayback.setEnabled(true);
+        startPlayback.setOnClickListener(view -> network.execute(() -> {
+            try {
+                media.requestPlaybackStart();
+            } catch (IOException error) {
+                activity.runOnUiThread(() -> {
+                    if (waitingClient == media) setStatus(pairStatus, R.string.pair_playback_permission, true);
+                });
+            }
+        }));
+        setStatus(pairStatus, R.string.pair_wait_media, false);
+        checkWaitingClient(media, 0);
+    }
+
+    private void checkWaitingClient(LanClient media, long delayMs) {
+        if (!foreground || waitingClient != media) return;
+        int generation = ++mediaRequestGeneration;
+        request = network.schedule(() -> {
+            LanSession session = null;
+            boolean ended = false;
+            try {
+                session = media.checkSession();
+            } catch (LanClient.HttpException error) {
+                ended = error.status != 409;
+            } catch (IOException error) {
+                ended = true;
+            }
+            LanSession available = session;
+            boolean disconnected = ended;
+            activity.runOnUiThread(() -> {
+                if (waitingClient != media || generation != mediaRequestGeneration || !foreground) return;
+                if (available != null) activity.openPlayback(media, available);
+                else if (disconnected) showHome(R.string.session_ended, true);
+                else checkWaitingClient(media, 1500);
+            });
+        }, delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void discover() {
@@ -680,6 +754,8 @@ final class ConnectionScreen {
             return;
         }
         clearCode();
+        pcControls.setVisibility(View.VISIBLE);
+        pcControls.setOnClickListener(view -> showPcControls(media));
         activity.protectPairingForm(false);
         setStatus(pairStatus, R.string.connecting, false);
         startPlayback.setOnClickListener(view -> {
@@ -712,6 +788,33 @@ final class ConnectionScreen {
             }, 0, TimeUnit.MILLISECONDS);
         });
         requestSession(current, media, saveFailed, 0);
+    }
+
+    void showPcControls(LanClient media) {
+        controller.show(action -> {
+            if (activity.applyStreamingControl(media, action)) return;
+            if (controlInFlight) return;
+            controlInFlight = true;
+            network.execute(() -> {
+                int message = 0;
+                try {
+                    media.controlPlayer(action);
+                } catch (LanClient.HttpException error) {
+                    message = error.status == 403 || error.status == 404 ? R.string.pc_control_permission : R.string.pc_control_failed;
+                } catch (IOException error) {
+                    message = R.string.pc_control_failed;
+                }
+                int result = message;
+                activity.runOnUiThread(() -> {
+                    controlInFlight = false;
+                    if (foreground && result != 0) Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
+                });
+            });
+        });
+    }
+
+    boolean closePcControls() {
+        return controller.close();
     }
 
     private void requestSession(PairingConnection current, LanClient media, boolean saveFailed, long delayMs) {
@@ -771,6 +874,8 @@ final class ConnectionScreen {
     }
 
     private void cancelAttempt() {
+        pcControls.setVisibility(View.GONE);
+        pcControls.setOnClickListener(null);
         startPlayback.setVisibility(View.GONE);
         startPlayback.setOnClickListener(null);
         if (request != null) {

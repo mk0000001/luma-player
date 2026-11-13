@@ -104,6 +104,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         const auto selected=QSettings().value("ai/gpu").toString();QSignalBlocker guard(aiGpu_);aiGpu_->clear();aiGpu_->addItem("자동 GPU 선택",QString{});
         for(const auto &entry:devices){const auto device=entry.toObject();if(device.value("type").toString().compare("GPU",Qt::CaseInsensitive)!=0)continue;aiGpu_->addItem(device.value("name").toString()+" · "+device.value("backend").toString(),device.value("id").toString());}
         int index=aiGpu_->findData(selected);if(index<0 && !selected.isEmpty()){aiGpu_->addItem("저장된 GPU · "+selected,selected);index=aiGpu_->count()-1;}if(index>=0)aiGpu_->setCurrentIndex(index);
+        applyAiPreferences(false);
     });
     connect(deviceProbe_,&AiDeviceProbe::failed,this,[this](const QString &message){
         recordDeveloperEvent("asr_device_probe_failed","device_enumeration_failed");
@@ -115,6 +116,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         const auto saved=QSettings().value("translation/gpu").toString();QSignalBlocker blocked(translationGpu_);translationGpu_->clear();translationGpu_->addItem("자동 GPU 선택",QString{});
         for(const auto &entry:devices){const auto device=entry.toObject();if(device.value("type").toString()!="gpu")continue;translationGpu_->addItem(device.value("backend").toString()+" · "+device.value("name").toString(),device.value("id").toString());}
         int index=translationGpu_->findData(saved);if(index<0 && !saved.isEmpty()){translationGpu_->addItem("저장된 GPU · "+saved,saved);index=translationGpu_->count()-1;}if(index>=0)translationGpu_->setCurrentIndex(index);
+        applyTranslationPreferences(false);
     });
     connect(translationDeviceProbe_,&TranslationDeviceProbe::failed,this,[this](const QString &message){
         recordDeveloperEvent("translation_device_probe_failed","device_enumeration_failed");

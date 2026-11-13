@@ -11,11 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
 const (
-	ffmpegStartupTimeout = 30 * time.Second
+	ffmpegStartupTimeout = 60 * time.Second
 	maxMatroskaHeader    = 1024 * 1024
 )
 
@@ -25,6 +26,7 @@ const (
 	remuxFailed remuxOutcome = iota
 	remuxNeedsPCM
 	remuxStreamed
+	remuxStartupTimeout
 )
 
 func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
@@ -32,19 +34,30 @@ func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
 }
 
 func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, profile string, start int64) {
-	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, false))
+	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, false), s.reportStream)
 	if outcome == remuxNeedsPCM && profile == originalProfile && ctx.Err() == nil {
-		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, true))
+		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file, variantArguments(s.config, profile, start, true), s.reportStream)
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
+		if s.reportStream != nil {
+			reason := "startup-failed"
+			if outcome == remuxStartupTimeout {
+				reason = "startup-timeout"
+			}
+			s.reportStream(reason)
+		}
 		http.Error(w, "could not start the selected media stream", http.StatusServiceUnavailable)
 	}
 }
 
-func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string) remuxOutcome {
+func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string, report func(string)) remuxOutcome {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	timer := time.AfterFunc(ffmpegStartupTimeout, cancel)
+	var timedOut atomic.Bool
+	timer := time.AfterFunc(ffmpegStartupTimeout, func() {
+		timedOut.Store(true)
+		cancel()
+	})
 	defer timer.Stop()
 
 	command := exec.CommandContext(ctx, ffmpeg, args...)
@@ -78,6 +91,9 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 			cancel()
 		}
 		waitErr := command.Wait()
+		if timedOut.Load() {
+			return remuxStartupTimeout
+		}
 		if waitErr != nil && ctx.Err() == nil &&
 			bytes.Contains(diagnostics.data, []byte("No wav codec tag found for codec pcm_bluray")) {
 			return remuxNeedsPCM
@@ -92,7 +108,12 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 		err = w.controller.Flush()
 	}
 	if err == nil {
-		_, err = io.Copy(w, &idleMediaReader{source: stdout, onIdle: cancel})
+		_, err = io.Copy(w, &idleMediaReader{source: stdout, onIdle: func() {
+			cancel()
+			if report != nil && parent.Err() == nil {
+				report("stream-read-timeout")
+			}
+		}})
 	}
 	if err != nil {
 		cancel()

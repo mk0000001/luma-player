@@ -107,7 +107,7 @@ final class LanClient implements Closeable {
                 .retryOnConnectionFailure(false)
                 .cookieJar(CookieJar.NO_COOKIES)
                 .connectTimeout(8, TimeUnit.SECONDS)
-                .readTimeout(75, TimeUnit.SECONDS)
+                .readTimeout(135, TimeUnit.SECONDS)
                 .addInterceptor(chain -> {
                     Request request = chain.request();
                     if (closed.get()) {
@@ -216,8 +216,16 @@ final class LanClient implements Closeable {
     }
 
     void requestPlaybackStart() throws IOException {
-        Request request = new Request.Builder().url(url(LanEndpoint.PLAYBACK_START_PATH))
-                .post(RequestBody.create(new byte[0], null)).build();
+        sendPlayerCommand(LanEndpoint.PLAYBACK_START_PATH, RequestBody.create(new byte[0], null));
+    }
+
+    void controlPlayer(String action) throws IOException {
+        sendPlayerCommand(LanEndpoint.PLAYER_CONTROL_PATH,
+                RequestBody.create("{\"action\":" + JSONObject.quote(action) + "}", JSON));
+    }
+
+    private void sendPlayerCommand(String path, RequestBody body) throws IOException {
+        Request request = new Request.Builder().url(url(path)).post(body).build();
         Call call = metadataRequests.newCall(request);
         call.timeout().timeout(5, TimeUnit.SECONDS);
         try (Response response = call.execute()) {
@@ -383,7 +391,8 @@ final class LanClient implements Closeable {
                         || LanEndpoint.PAIR_REVEAL_PATH.equals(path) || LanEndpoint.PAIR_POLL_PATH.equals(path));
                 case REMEMBERED -> "POST".equals(method) && LanEndpoint.PAIR_LOGIN_PATH.equals(path);
                 case PLAYBACK -> ("GET".equals(method) && LanEndpoint.isMediaPath(path))
-                        || ("POST".equals(method) && LanEndpoint.PLAYBACK_START_PATH.equals(path));
+                        || ("POST".equals(method) && (LanEndpoint.PLAYBACK_START_PATH.equals(path)
+                                || LanEndpoint.PLAYER_CONTROL_PATH.equals(path)));
             };
         }
     }

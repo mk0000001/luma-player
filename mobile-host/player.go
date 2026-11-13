@@ -38,6 +38,7 @@ type playerStatus struct {
 	Title    string        `json:"title,omitempty"`
 	Message  string        `json:"message,omitempty"`
 	Devices  *[]deviceInfo `json:"devices,omitempty"`
+	Action   string        `json:"action,omitempty"`
 }
 
 type playerCommand struct {
@@ -77,6 +78,9 @@ type player struct {
 	optionsRevision int64
 	remoteStart     string
 	lastRemoteStart time.Time
+	remoteControl   string
+	controlDevices  map[*activeDevice]struct{}
+	lastControl     time.Time
 }
 
 func newPlayer(name, pin string, remembered map[string]rememberedDevice,
@@ -192,13 +196,26 @@ func readPlayerCommands(ctx context.Context, input *bufio.Reader, lines chan<- c
 func (p *player) handleCommand(binding config, command playerCommand) {
 	var err error
 	switch command.Command {
-	case "allowRemoteStart":
+	case "allowRemoteStart", "allowRemoteControl":
 		if command.Grant != "" && (len(command.Grant) != 32 || strings.Trim(command.Grant, "0123456789abcdef") != "") {
 			break
 		}
 		p.mu.Lock()
-		p.remoteStart = command.Grant
-		p.lastRemoteStart = time.Time{}
+		if command.Command == "allowRemoteControl" {
+			p.remoteControl = command.Grant
+			p.lastControl = time.Time{}
+			clear(p.controlDevices)
+			if command.Grant != "" {
+				p.expireDevices(p.now())
+				p.controlDevices = make(map[*activeDevice]struct{}, len(p.active))
+				for _, device := range p.active {
+					p.controlDevices[device] = struct{}{}
+				}
+			}
+		} else {
+			p.remoteStart = command.Grant
+			p.lastRemoteStart = time.Time{}
+		}
 		p.mu.Unlock()
 	case "share":
 		err = p.shareMedia(binding, command.Media)
@@ -207,6 +224,9 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		}
 	case "stop":
 		err = p.revokeAndStop("stop")
+	case "unshare":
+		p.stopMedia()
+		p.announce(playerStatus{Status: "unshared"})
 	case "decide":
 		var event playerStatus
 		event, err = p.decidePairing(command.ID, command.Decision)
@@ -260,6 +280,9 @@ func (p *player) shareMedia(binding config, media *config) error {
 		return errors.New("could not open the selected media")
 	}
 	session.configureVariants()
+	session.reportStream = func(reason string) {
+		p.announce(playerStatus{Status: "streamDiagnostic", Action: reason})
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.mu.Lock()
 	p.media = &sharedMedia{session: session, revision: revision, ctx: ctx, cancel: cancel}
@@ -282,6 +305,8 @@ func (p *player) revokeAndStop(command string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.remoteStart = ""
+	p.remoteControl = ""
+	clear(p.controlDevices)
 	if command == "forget" {
 		empty := make(map[string]rememberedDevice)
 		if err := p.persist(empty); err != nil {

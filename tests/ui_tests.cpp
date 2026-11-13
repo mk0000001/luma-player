@@ -53,6 +53,8 @@
 #include "ui/video_surface.h"
 #include "core/resume_history.h"
 #include "subtitles/translation_service.h"
+#include "subtitles/translation_devices.h"
+#include "subtitles/ai_devices.h"
 #include "subtitles/translation_support.h"
 #include "subtitles/subtitle_file.h"
 #ifdef Q_OS_WIN
@@ -282,6 +284,20 @@ private slots:
         QCOMPARE(performance.value("retentionMs").toInt(),300000);
         const auto samples=performance.value("samples").toArray();
         QVERIFY(samples.size()>=2 && samples.size()<=300);
+        const auto timeline=json.value("timeline").toArray();
+        const auto timelineEvents=json.value("events").toArray();
+        QCOMPARE(timeline.size(),samples.size()+timelineEvents.size());
+        qsizetype sampleIndex=0,eventIndex=0;
+        qint64 previous=-1;
+        for(const auto &value:timeline){
+            const auto item=value.toObject();
+            const auto record=item.value("record");
+            const auto elapsed=record.toObject().value("elapsedMs").toInteger(-1);
+            QVERIFY(elapsed>=0 && elapsed>=previous);
+            previous=elapsed;
+            if(item.value("kind")=="performance")QCOMPARE(record,samples.at(sampleIndex++));
+            else {QCOMPARE(item.value("kind").toString(),QString("event"));QCOMPARE(record,timelineEvents.at(eventIndex++));}
+        }
         const auto latest=samples.last().toObject();
         QVERIFY(latest.value("elapsedMs").isDouble());
 #if defined(Q_OS_WIN) || defined(Q_OS_LINUX)
@@ -732,6 +748,27 @@ private slots:
         QVERIFY(volume->isEnabled());
     }
 #ifdef Q_OS_WIN
+    void automaticAiChoosesDetectedRadeonWithoutOverwritingSavedChoices(){
+        luma::MainWindow window;
+        auto *asr=window.findChild<luma::AiDeviceProbe*>();
+        auto *translation=window.findChild<luma::TranslationDeviceProbe*>();
+        auto *job=window.findChild<luma::SubtitleJob*>();
+        auto *service=window.findChild<luma::TranslationService*>();
+        QVERIFY(asr && translation && job && service);
+        const auto gpu=[](const QString &id,const QString &name,const QString &type,const QString &backend){
+            return QJsonObject{{"id",id},{"name",name},{"type",type},{"backend",backend}};
+        };
+        const auto intel=gpu("Vulkan0","Intel Arc","gpu","Vulkan");
+        const auto radeon=gpu("Vulkan1","AMD Radeon RX fixture","gpu","Vulkan");
+        asr->devicesReady(QJsonArray{intel,radeon});
+        translation->devicesReady(QJsonArray{radeon,intel});
+        QCOMPARE(job->preferences().gpuDevice,QString("Vulkan1"));
+        QCOMPARE(service->preferences().gpuDevice,QString("Vulkan1"));
+        QVERIFY(QSettings().value("ai/gpu").toString().isEmpty());
+        QSettings().setValue("translation/gpu","Vulkan0");
+        translation->devicesReady(QJsonArray{radeon,intel});
+        QCOMPARE(service->preferences().gpuDevice,QString("Vulkan0"));
+    }
     void radeonProfileUsesIndependentVulkanDevices(){
         QSettings settings;
         luma::MainWindow window;

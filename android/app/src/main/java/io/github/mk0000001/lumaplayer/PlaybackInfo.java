@@ -59,6 +59,7 @@ final class PlaybackInfo implements AnalyticsListener {
     @Override
     public void onRenderedFirstFrame(EventTime time, Object output, long renderTimeMs) {
         firstVideoFrame = true;
+        android.util.Log.i("LumaPlayback", "Video frame rendered at stream position " + time.currentPlaybackPositionMs);
     }
 
     static CharSequence report(Activity activity, ExoPlayer player, PlaybackInfo playback) {

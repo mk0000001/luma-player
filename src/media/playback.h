@@ -32,6 +32,8 @@ struct AudioOutputOptions {
 };
 struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
+    qint64 bufferedUntilMs=-1;
+    int discBufferPercent=-1;
     bool playing=false, failed=false, navigationTitle=false, buffering=false;
     bool timelineReady=false,discMenus=true;
     bool lanSubtitleCueActive=false;

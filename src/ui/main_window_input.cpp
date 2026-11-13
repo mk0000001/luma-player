@@ -36,6 +36,13 @@
 namespace luma {
 
 bool MainWindow::eventFilter(QObject *object,QEvent *event){
+    if(event->type()==QEvent::Wheel && panel_){
+        if(auto *widget=qobject_cast<QWidget*>(object);widget && panel_->isAncestorOf(widget) &&
+           (qobject_cast<QComboBox*>(widget) || qobject_cast<QAbstractSpinBox*>(widget) || qobject_cast<QSlider*>(widget))){
+            event->ignore();
+            return true;
+        }
+    }
     if(event->type()!=QEvent::KeyPress || QApplication::activePopupWidget() || QApplication::activeModalWidget())return QMainWindow::eventFilter(object,event);
     auto *target=qobject_cast<QWidget*>(object);if(!target || qobject_cast<QDialog*>(target->window()))return QMainWindow::eventFilter(object,event);
     bool belongs=false;for(auto *owner=target;owner;owner=owner->parentWidget())if(owner==this){belongs=true;break;}if(!belongs)return false;

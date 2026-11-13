@@ -10,6 +10,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QGridLayout>
+#include <QHash>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -34,6 +35,7 @@
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <algorithm>
 #ifdef Q_OS_WIN
 #include <string>
@@ -53,6 +55,13 @@ constexpr qsizetype maxChapters = 512;
 constexpr int activeDeviceRole = Qt::UserRole + 1;
 constexpr int rememberedDeviceRole = Qt::UserRole + 2;
 constexpr int deviceOptionsRole = Qt::UserRole + 3;
+
+class DeviceDelaySpinBox final : public QSpinBox {
+public:
+    using QSpinBox::QSpinBox;
+protected:
+    void wheelEvent(QWheelEvent *event) override { event->ignore(); }
+};
 
 QByteArray messageLine(const QJsonObject &message) {
     return QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n';
@@ -241,6 +250,14 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
         if (ready_)
             writeMessage(QJsonObject{{"command", "allowRemoteStart"}, {"grant", remoteStartGrant_}});
     });
+    remoteControl_ = new QCheckBox("연결된 기기에서 PC 플레이어 조작 허용", this);
+    remoteControl_->setObjectName("lanRemoteControl");
+    layout->addWidget(remoteControl_);
+    connect(remoteControl_, &QCheckBox::toggled, this, [this](bool enabled) {
+        remoteControlGrant_ = enabled ? QUuid::createUuid().toString(QUuid::Id128) : QString{};
+        if (ready_)
+            writeMessage(QJsonObject{{"command", "allowRemoteControl"}, {"grant", remoteControlGrant_}});
+    });
 #ifdef Q_OS_WIN
     directButton_ = new QPushButton("공유기 없이 휴대폰 연결", this);
     directButton_->setObjectName("lanWindowsDirect");
@@ -306,7 +323,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     deviceFill_->addItem("화면 채우기", true);
     deviceSubtitleDelayEnabled_ = new QCheckBox("자막 지연 지정", deviceOptionsBox_);
     deviceSubtitleDelayEnabled_->setObjectName("lanDeviceSubtitleDelayEnabled");
-    deviceSubtitleDelay_ = new QSpinBox(deviceOptionsBox_);
+    deviceSubtitleDelay_ = new DeviceDelaySpinBox(deviceOptionsBox_);
     deviceSubtitleDelay_->setObjectName("lanDeviceSubtitleDelay");
     deviceSubtitleDelay_->setAccessibleName("자막 지연");
     deviceSubtitleDelay_->setRange(-5000, 5000);
@@ -383,6 +400,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     });
     connect(&host_, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
         disarmRemoteStart();
+        disarmRemoteControl();
         watchdog_.stop();
         const bool stoppedCleanly = exitStatus == QProcess::NormalExit && exitCode == 0;
         const bool mediaReleased = stoppedCleanly || mediaState_ == MediaState::Preparing;
@@ -673,6 +691,7 @@ void LanPlaybackDialog::stopDirect(const QString &message) {
 
 void LanPlaybackDialog::closeHost() {
     disarmRemoteStart();
+    disarmRemoteControl();
     if (host_.state() == QProcess::NotRunning)
         return;
     closingHost_ = true;
@@ -687,6 +706,10 @@ void LanPlaybackDialog::closeHost() {
 
 void LanPlaybackDialog::disarmRemoteStart() {
     remoteStart_->setChecked(false);
+}
+
+void LanPlaybackDialog::disarmRemoteControl() {
+    remoteControl_->setChecked(false);
 }
 
 void LanPlaybackDialog::setMediaAvailable(bool available, bool disc) {
@@ -771,6 +794,7 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
 
 void LanPlaybackDialog::stopSharing() {
     disarmRemoteStart();
+    disarmRemoteControl();
     if (mediaState_ == MediaState::Idle || mediaState_ == MediaState::Stopping)
         return;
     mediaState_ = MediaState::Stopping;
@@ -797,6 +821,16 @@ bool LanPlaybackDialog::stopSharingAndWait() {
     return mediaState_ == MediaState::Idle && cleanupConfirmed_;
 }
 
+bool LanPlaybackDialog::releaseMediaForRemoteControl() {
+    if (mediaState_ != MediaState::Sharing ||
+        !writeMessage(QJsonObject{{"command", "unshare"}}))
+        return false;
+    mediaState_ = MediaState::Stopping;
+    watchdog_.start(stopWaitMs);
+    updateControls();
+    return true;
+}
+
 void LanPlaybackDialog::forgetDevices() {
     if (!ready_ || forgetting_)
         return;
@@ -805,6 +839,7 @@ void LanPlaybackDialog::forgetDevices() {
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes || !ready_)
         return;
     disarmRemoteStart();
+    disarmRemoteControl();
     forgetting_ = true;
     if (mediaState_ != MediaState::Idle)
         mediaState_ = MediaState::Stopping;
@@ -858,6 +893,8 @@ void LanPlaybackDialog::updateDevices(const QJsonArray &devices) {
     }
     if (!awaitingOptions)
         pendingOptionsDeviceId_.clear();
+    if (!hasActiveDevice_)
+        disarmRemoteControl();
     if (!devices_->currentItem() && devices_->topLevelItemCount() > 0)
         devices_->setCurrentItem(devices_->topLevelItem(0));
     syncDeviceOptions();
@@ -874,6 +911,7 @@ void LanPlaybackDialog::manageDevice(bool forget) {
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     disarmRemoteStart();
+    disarmRemoteControl();
     if (ready_ && !forgetting_ && !writeMessage(QJsonObject{
             {"command", forget ? "forgetDevice" : "disconnectDevice"}, {"id", id}}))
         status_->setText("기기 연결을 변경할 수 없습니다.");
@@ -1001,8 +1039,23 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         updateControls();
         requestDevices();
     } else if (event == "remoteStart") {
-        if (!remoteStartGrant_.isEmpty() && message.value("id").toString() == remoteStartGrant_ && canShare())
+        const auto grant = message.value("id").toString();
+        if (!grant.isEmpty() && (grant == remoteStartGrant_ || grant == remoteControlGrant_) && canShare())
             emit shareRequested();
+    } else if (event == "streamDiagnostic") {
+        const auto reason = message.value("action").toString();
+        static const QHash<QString,QString> descriptions{
+            {"stream-busy","이전 송출 정리 대기 시간 초과"},
+            {"startup-timeout","첫 영상 데이터 대기 시간 초과"},
+            {"startup-failed","FFmpeg 시작 또는 영상 스트림 초기화 실패"},
+            {"stream-read-timeout","재생 중 영상 데이터 읽기 시간 초과"}
+        };
+        const auto found = descriptions.constFind(reason);
+        if (found != descriptions.cend())
+            emit streamDiagnostic(reason,"LAN 영상 요청 · "+found.value());
+    } else if (event == "remoteControl") {
+        if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
+            emit remoteControlRequested(message.value("action").toString());
     } else if (event == "devices" && message.value("devices").isArray()) {
         updateDevices(message.value("devices").toArray());
     } else if (event == "sharing" && (mediaState_ == MediaState::Starting || mediaState_ == MediaState::Stopping)) {
@@ -1013,6 +1066,9 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
             status_->setText("기기에 공유 중입니다. 이 창을 닫아도 공유가 계속됩니다.");
         }
         updateControls();
+    } else if (event == "unshared" && mediaState_ == MediaState::Stopping) {
+        status_->setText("기기 연결을 유지하고 모바일 공유를 중지했습니다.");
+        finishShare(true);
     } else if (event == "stopped") {
         const bool forgot = command == "forget" || forgetting_;
         forgetting_ = false;
@@ -1179,6 +1235,7 @@ void LanPlaybackDialog::updateControls() {
     audioMode_->setEnabled(idle && !forgetting_);
     start_->setEnabled(canShare());
     remoteStart_->setEnabled(ready_ && mediaAvailable_ && !forgetting_ && mediaState_ == MediaState::Idle);
+    remoteControl_->setEnabled(ready_ && hasActiveDevice_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     stop_->setEnabled(!idle && mediaState_ != MediaState::Stopping);
     forget_->setEnabled(ready_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     const auto *selected = devices_->currentItem();

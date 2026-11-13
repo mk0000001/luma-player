@@ -54,7 +54,7 @@
             android:orientation="vertical"
             android:paddingHorizontal="8dp">
 
-            <SeekBar
+            <io.github.mk0000001.lumaplayer.BufferedSeekBar
                 android:id="@+id/remote_seek"
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
@@ -62,7 +62,6 @@
                 android:max="10000"
                 android:progressBackgroundTint="#66FFFFFF"
                 android:progressTint="@color/luma_accent"
-                android:secondaryProgressTint="#A6FFFFFF"
                 android:thumbTint="@color/luma_accent" />
 
             <LinearLayout
@@ -84,6 +83,12 @@
                     android:id="@id/exo_subtitle"
                     style="@style/LumaPlaybackIcon"
                     android:contentDescription="@string/playback_captions" />
+
+                <ImageButton
+                    android:id="@+id/playback_pc_overlay"
+                    style="@style/LumaPlaybackIcon"
+                    android:contentDescription="@string/pc_controls"
+                    android:src="@drawable/ic_pc_controller" />
 
                 <ImageButton
                     android:id="@+id/playback_settings"

@@ -1,14 +1,20 @@
 #include "main_window.h"
 #include "lan_playback_dialog.h"
 #include "lan_receiver_dialog.h"
+#include "player_controls.h"
 #include "video_surface.h"
 
 #include <QFileInfo>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QHash>
 #include <QLabel>
 #include <QScopedValueRollback>
 #include <QSlider>
 #include <QTimer>
 #include <algorithm>
+#include <iterator>
+#include <utility>
 
 namespace luma {
 
@@ -16,11 +22,84 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
     if (!lanPlaybackDialog_) {
         lanPlaybackDialog_ = new LanPlaybackDialog(this);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareRequested, this, &MainWindow::startLanShare);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::remoteControlRequested, this, &MainWindow::applyLanRemoteControl);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::streamDiagnostic, this, [this](const QString &reason,const QString &message) {
+            appendLog(message);
+            recordDeveloperEvent("lan-stream",reason.toLatin1().constData());
+        });
         connect(lanPlaybackDialog_, &LanPlaybackDialog::receiveRequested, this, &MainWindow::showLanReceiver);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareStopped, this, &MainWindow::finishLanShare);
         updateLanPlaybackAvailability();
     }
     return lanPlaybackDialog_;
+}
+
+void MainWindow::applyLanRemoteControl(const QString &action) {
+    if (lanSourceChanging_ || lanRemotePlayback_)
+        return;
+    if (action == "disc-open") { if (!lanDiscSharing_) playConnectedDisc(); return; }
+    if (action == "resume") { if (!lanDiscSharing_) resumeLatest(); return; }
+    if (action == "fullscreen") { toggleFullScreen(); return; }
+    if (action == "picture-in-picture") { togglePictureInPicture(); return; }
+    if (action == "mute") { toggleMute(); return; }
+    const QHash<QString,QCheckBox *> captionChoices{
+        {"caption-ai",aiEnabled_}, {"caption-original",originalEnabled_},
+        {"caption-reading",readingEnabled_}, {"caption-translation",translationEnabled_}
+    };
+    if (auto *check = captionChoices.value(action)) {
+        if (check->isEnabled()) check->toggle();
+        return;
+    }
+    if (action == "speed-next") {
+        rate_->setCurrentIndex((rate_->currentIndex()+1)%rate_->count());
+        if (active_) active_->setRate(rate_->currentData().toDouble());
+        return;
+    }
+    if (action == "volume-up" || action == "volume-down") {
+        if (volume_->isEnabled())
+            volume_->setValue(std::clamp(volume_->value() + (action == "volume-up" ? 5 : -5), 0, 100));
+        return;
+    }
+    if (action == "disc-menu" && lanDiscSharing_ && !lanReturnToDiscMenu_) {
+        lanReturnToDiscMenu_ = lanPlaybackDialog_->releaseMediaForRemoteControl();
+        return;
+    }
+    if (!active_ || lanDiscSharing_)
+        return;
+    if (action == "audio-next") {
+        const auto &state = active_->state();
+        const auto found = std::find_if(state.audioTracks.cbegin(),state.audioTracks.cend(),
+            [&state](const MediaItem &track) { return track.id == state.currentAudio; });
+        if (!state.audioTracks.isEmpty()) {
+            auto next = found == state.audioTracks.cend() ? found : std::next(found);
+            if (next == state.audioTracks.cend()) next = state.audioTracks.cbegin();
+            selectAudio(next->id);
+        }
+        return;
+    }
+    if (action == "subtitle-next" && subs_->count() > 0) {
+        subs_->setCurrentIndex((subs_->currentIndex()+1)%subs_->count());
+        emit subs_->activated(subs_->currentIndex());
+        return;
+    }
+    if (action == "play-pause") { togglePlayback(); return; }
+    if (action == "seek-back" || action == "seek-forward") {
+        seekTo(active_->state().positionMs + (action == "seek-forward" ? 10000 : -10000));
+        return;
+    }
+    if (action == "previous-chapter" || action == "next-chapter") {
+        selectChapter(std::max(0, active_->state().currentChapter + (action == "next-chapter" ? 1 : -1)));
+        return;
+    }
+    if (active_ != discEngine_.get() || !active_->state().discMenus)
+        return;
+    if (action == "disc-menu") { selectTitle(0); return; }
+    static const QHash<QString, DiscAction> navigation{
+        {"disc-popup", DiscAction::Popup}, {"disc-up", DiscAction::Up}, {"disc-down", DiscAction::Down},
+        {"disc-left", DiscAction::Left}, {"disc-right", DiscAction::Right}, {"disc-confirm", DiscAction::Activate}
+    };
+    if (const auto found = navigation.constFind(action); found != navigation.cend())
+        active_->navigate(discActionCode(found.value()));
 }
 
 void MainWindow::startLanDiscovery() {
@@ -82,6 +161,7 @@ void MainWindow::finishLanReceive(const QString &message) {
     static_cast<VideoSurface *>(surface_)->setVideoActive(false);
     welcome_->show();
     seek_->setEnabled(true);
+    static_cast<SeekSlider *>(seek_)->setBuffer(-1);
     nowTitle_->setText("재생할 미디어를 선택하세요");
     status_->setText(message.isEmpty() ? "PC 연결을 종료했습니다." : message);
     applyCapturePolicy();
@@ -179,6 +259,12 @@ void MainWindow::finishLanShare(bool cleanupConfirmed) {
     lanDiscSharing_ = false;
     lanDiscAwaitingPause_ = false;
     lanDiscResume_ = false;
+    const bool returnToMenu = std::exchange(lanReturnToDiscMenu_,false);
+    if (cleanupConfirmed && returnToMenu && active_ == discEngine_.get() && active_ && !active_->state().failed) {
+        active_->setPaused(false);
+        selectTitle(0);
+        return;
+    }
     if (resume && active_ && active_ == discEngine_.get() && !active_->state().failed) {
         requestedPlaying_ = true;
         if (liveCaptioningActive())

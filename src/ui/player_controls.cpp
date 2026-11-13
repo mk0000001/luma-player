@@ -5,6 +5,8 @@
 #include <QPainterPath>
 #include <QProxyStyle>
 #include <QStyleOptionButton>
+#include <QStyleOptionSlider>
+#include <QWheelEvent>
 #include <algorithm>
 
 static void initializeLumaResources(){Q_INIT_RESOURCE(luma);}
@@ -66,6 +68,33 @@ SeekSlider::SeekSlider(QWidget *parent):QSlider(Qt::Horizontal,parent){
     seekStyle->setParent(this);
     setStyle(seekStyle);
 }
+void SeekSlider::setBuffer(int value,int fillingPercent){
+    if(bufferedValue_==value && fillingPercent_==fillingPercent)return;
+    bufferedValue_=value;
+    fillingPercent_=fillingPercent;
+    update();
+}
+void SeekSlider::paintEvent(QPaintEvent *event){
+    QSlider::paintEvent(event);
+    if(bufferedValue_<=sliderPosition() && fillingPercent_<0)return;
+    QStyleOptionSlider option;
+    initStyleOption(&option);
+    const auto groove=style()->subControlRect(QStyle::CC_Slider,&option,QStyle::SC_SliderGroove,this);
+    const auto handle=style()->subControlRect(QStyle::CC_Slider,&option,QStyle::SC_SliderHandle,this);
+    const int travel=std::max(0,groove.width()-handle.width());
+    const int start=handle.center().x();
+    const int direction=option.upsideDown?-1:1;
+    const int limit=option.upsideDown?groove.left():groove.right();
+    const int end=fillingPercent_>=0
+        ? start+direction*std::min(std::abs(limit-start),handle.width()/2+1+36*fillingPercent_/100)
+        : groove.left()+handle.width()/2+
+            QStyle::sliderPositionFromValue(minimum(),maximum(),bufferedValue_,travel,option.upsideDown);
+    if(start==end)return;
+    QPainter painter(this);
+    painter.setPen(QPen(palette().color(QPalette::Midlight),3,Qt::SolidLine,Qt::RoundCap));
+    const int first=start+direction*(handle.width()/2+1);
+    if((end-first)*direction>=0)painter.drawLine(first,groove.center().y(),end,groove.center().y());
+}
 BrandMark::BrandMark(QWidget *parent):QWidget(parent){setFixedSize(137,36);setAccessibleName("LumaPlayer");setAttribute(Qt::WA_TranslucentBackground);}
 void BrandMark::paintEvent(QPaintEvent *){
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);paintMark(p,QRectF(0,0,36,36));
@@ -81,6 +110,7 @@ void IconButton::paintEvent(QPaintEvent *event){
     p.setPen(QPen(color,1.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));p.setBrush(Qt::NoBrush);paintIcon(p,icon_);
 }
 ChoiceBox::ChoiceBox(QWidget *parent):QComboBox(parent){setCursor(Qt::PointingHandCursor);setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);setMinimumContentsLength(6);setMinimumHeight(38);}
+void ChoiceBox::wheelEvent(QWheelEvent *event){event->ignore();}
 QSize ChoiceBox::sizeHint()const{return QSize(std::max(80,QComboBox::sizeHint().width()),38);}
 QSize ChoiceBox::minimumSizeHint()const{return QSize(68,34);}
 void ChoiceBox::paintEvent(QPaintEvent *){

@@ -34,6 +34,7 @@ final class RemotePlaybackControls {
         void showWirelessDisplay();
         void showPlaybackInfo();
         void showUsageNotice();
+        void showPcControls();
     }
 
     private final Activity activity;
@@ -41,7 +42,7 @@ final class RemotePlaybackControls {
     private final SharedPreferences preferences;
     private final View panel;
     private final PlaybackSettingsPanel settings;
-    private final SeekBar seek;
+    private final BufferedSeekBar seek;
     private final TextView position;
     private final View previous;
     private final View next;
@@ -89,6 +90,7 @@ final class RemotePlaybackControls {
         back.setOnClickListener(view -> actions.seekTo(actions.positionMs() - skipSeconds * 1000L));
         forward.setOnClickListener(view -> actions.seekTo(actions.positionMs() + skipSeconds * 1000L));
         activity.findViewById(R.id.playback_settings).setOnClickListener(view -> showSettings());
+        activity.findViewById(R.id.playback_pc_overlay).setOnClickListener(view -> actions.showPcControls());
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar view, int progress, boolean fromUser) {
@@ -304,7 +306,7 @@ final class RemotePlaybackControls {
             }
             if (!scrubbing) {
                 seek.setProgress(timeBarValue(current));
-                seek.setSecondaryProgress(timeBarValue(actions.bufferedPositionMs()));
+                seek.setBufferedRange(timeBarValue(current), timeBarValue(Math.max(current, actions.bufferedPositionMs())));
                 showTime(current);
             }
         }
@@ -331,7 +333,7 @@ final class RemotePlaybackControls {
                 : String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60);
     }
 
-    private void selectChapter(boolean forwardDirection) {
+    void selectChapter(boolean forwardDirection) {
         if (session == null) {
             return;
         }
@@ -373,6 +375,7 @@ final class RemotePlaybackControls {
         settings.addRow(R.string.subtitle_delay_title, delay, this::showSubtitleDelay);
         settings.addRow(R.string.playback_audio_tracks, null, () -> openFromSettings(this::showAudioTracks));
         settings.addSection(R.string.settings_device);
+        settings.addRow(R.string.pc_controls, null, () -> openFromSettings(actions::showPcControls));
         settings.addRow(R.string.wireless_display, null, () -> openFromSettings(actions::showWirelessDisplay));
         settings.addRow(R.string.playback_info_action, null, () -> openFromSettings(actions::showPlaybackInfo));
         settings.addRow(R.string.usage_notice_title, null, () -> openFromSettings(actions::showUsageNotice));

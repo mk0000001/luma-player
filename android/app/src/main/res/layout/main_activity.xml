@@ -116,6 +116,15 @@
                 android:textSize="14sp" />
 
             <Button
+                android:id="@+id/playback_pc_controls"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/pc_controls_short"
+                android:textAllCaps="false"
+                android:textColor="@color/luma_accent" />
+
+            <Button
                 android:id="@+id/playback_footer_settings"
                 style="?android:attr/borderlessButtonStyle"
                 android:layout_width="wrap_content"

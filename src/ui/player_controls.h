@@ -11,6 +11,12 @@ QIcon playerApplicationIcon();
 class SeekSlider final:public QSlider {
 public:
     explicit SeekSlider(QWidget *parent=nullptr);
+    void setBuffer(int value,int fillingPercent=-1);
+protected:
+    void paintEvent(QPaintEvent *) override;
+private:
+    int bufferedValue_=-1;
+    int fillingPercent_=-1;
 };
 class BrandMark final:public QWidget {
 public:
@@ -39,5 +45,6 @@ protected:
     void paintEvent(QPaintEvent *)override;
 private:
     QPointer<QMenu> popup_;
+    void wheelEvent(QWheelEvent *)override;
 };
 }
