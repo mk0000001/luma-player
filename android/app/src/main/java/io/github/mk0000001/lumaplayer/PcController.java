@@ -22,7 +22,11 @@ final class PcController {
     private final FrameLayout dock;
     private final LinearLayout panel;
     private final ScrollView scroll;
+    private final Button playPause;
     private Consumer<String> send;
+    private boolean inline = true;
+    private boolean overlay;
+    private boolean suspended;
 
     PcController(Activity activity) {
         this.activity = activity;
@@ -45,7 +49,7 @@ final class PcController {
         title.setTextSize(15);
         title.setTypeface(title.getTypeface(), Typeface.BOLD);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        Button close = button("×", activity.getString(R.string.pc_controls_close), this::close);
+        Button close = button("×", activity.getString(R.string.pc_controls_close), this::hide);
         header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(46)));
         panel.addView(header);
 
@@ -56,6 +60,11 @@ final class PcController {
         scroll.addView(controls);
         panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
 
+        playPause = command("재생", "재생 또는 일시정지", "play-pause");
+        addRow(controls, command("이전", "이전 챕터", "previous-chapter"),
+                command("−10초", "10초 뒤로", "seek-back"), playPause,
+                command("+10초", "10초 앞으로", "seek-forward"),
+                command("다음", "다음 챕터", "next-chapter"));
         addRow(controls, command("파일 선택", "PC 파일 선택", "file-picker"),
                 command("Blu-ray", "Blu-ray 열기", "disc-open"));
         addRow(controls,
@@ -64,9 +73,6 @@ final class PcController {
         addRow(controls, command("←", "왼쪽", "disc-left"), command("확인", "선택한 메뉴 실행", "disc-confirm"),
                 command("→", "오른쪽", "disc-right"));
         addRow(controls, null, command("↓", "아래", "disc-down"), null);
-        addRow(controls, command("이전", "이전 챕터", "previous-chapter"), command("재생 / 정지", "재생 또는 일시정지", "play-pause"),
-                command("다음", "다음 챕터", "next-chapter"));
-        addRow(controls, command("−10초", "10초 뒤로", "seek-back"), command("+10초", "10초 앞으로", "seek-forward"));
         addRow(controls, command("음량 −", "음량 낮추기", "volume-down"), command("음소거", "음소거", "mute"),
                 command("음량 +", "음량 높이기", "volume-up"));
         addRow(controls, command("전체 화면", "PC 전체 화면", "fullscreen"),
@@ -81,36 +87,71 @@ final class PcController {
         canvas.addOnLayoutChangeListener((view, l, t, r, b, ol, ot, or, ob) -> position());
     }
 
-    void show(Consumer<String> action) {
-        if (panel.getVisibility() == View.VISIBLE) {
-            close();
-            return;
-        }
+    void openInline(Consumer<String> action) {
         send = action;
-        panel.setVisibility(View.VISIBLE);
+        inline = true;
+        overlay = false;
         scroll.scrollTo(0, 0);
         position();
     }
 
-    boolean close() {
-        if (panel.getVisibility() != View.VISIBLE) return false;
-        panel.setVisibility(View.GONE);
-        dock.setVisibility(View.GONE);
+    void toggle(Consumer<String> action) {
+        send = action;
+        if (activity.findViewById(R.id.playback_details).isShown()) inline = !inline;
+        else overlay = !overlay;
+        if (inline || overlay) scroll.scrollTo(0, 0);
+        position();
+    }
+
+    void reset() {
         send = null;
+        inline = true;
+        overlay = false;
+        position();
+    }
+
+    boolean dismissOverlay() {
+        if (!overlay) return false;
+        overlay = false;
+        position();
         return true;
     }
 
+    void setVideoOnly(boolean videoOnly, boolean pip) {
+        if (!videoOnly || pip) overlay = false;
+        suspended = pip;
+        position();
+    }
+
+    void setPlaying(boolean playing) {
+        playPause.setText(playing ? R.string.status_pause_action : R.string.status_play_action);
+    }
+
+    private void hide() {
+        if (!dismissOverlay()) {
+            inline = false;
+            position();
+        }
+    }
+
     private void position() {
-        if (panel.getVisibility() != View.VISIBLE || root.getWidth() == 0) return;
-        View details = activity.findViewById(R.id.playback_details);
-        if (details.isShown()) {
+        boolean docked = activity.findViewById(R.id.playback_details).isShown();
+        boolean visible = send != null && !suspended && (docked ? inline : overlay);
+        panel.setVisibility(visible ? View.VISIBLE : View.GONE);
+        dock.setVisibility(visible && docked ? View.VISIBLE : View.GONE);
+        if (!visible) return;
+        if (docked) {
+            int height = canvas.getWidth() == root.getWidth() ? 170 : 215;
             if (panel.getParent() != dock) {
                 ((FrameLayout) panel.getParent()).removeView(panel);
-                dock.addView(panel, new FrameLayout.LayoutParams(-1, dp(200)));
+                dock.addView(panel, new FrameLayout.LayoutParams(-1, dp(height)));
+            } else if (panel.getLayoutParams().height != dp(height)) {
+                panel.getLayoutParams().height = dp(height);
+                panel.requestLayout();
             }
-            dock.setVisibility(View.VISIBLE);
             return;
         }
+        if (root.getWidth() == 0) return;
         if (panel.getParent() != root) {
             dock.removeView(panel);
             dock.setVisibility(View.GONE);
@@ -178,6 +219,9 @@ final class PcController {
         button.setContentDescription(description);
         button.setAllCaps(false);
         button.setTextSize(12);
+        button.setSingleLine(true);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
         button.setPadding(dp(4), 0, dp(4), 0);
         button.setTextColor(activity.getColor(R.color.luma_text));
         button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x35ffffff), background(0xff29313d, 22), null));

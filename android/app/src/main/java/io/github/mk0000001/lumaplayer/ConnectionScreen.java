@@ -140,7 +140,7 @@ final class ConnectionScreen {
 
     void stop() {
         foreground = false;
-        controller.close();
+        controller.reset();
         stopDiscovery();
         closeVpnSearch();
         if (nearby != null) {
@@ -184,7 +184,7 @@ final class ConnectionScreen {
     }
 
     boolean handleBack() {
-        if (controller.close()) return true;
+        if (controller.dismissOverlay()) return true;
         if (pairScreen.getVisibility() != View.VISIBLE) {
             return false;
         }
@@ -193,7 +193,7 @@ final class ConnectionScreen {
     }
 
     void showHome(int message, boolean error) {
-        controller.close();
+        controller.reset();
         if (waitingClient != null) {
             waitingClient.close();
             waitingClient = null;
@@ -219,8 +219,7 @@ final class ConnectionScreen {
         }
     }
 
-    void hideForPlayback() {
-        controller.close();
+    void hideForPlayback(LanClient media) {
         playing = true;
         waitingClient = null;
         if (attempt != null) {
@@ -232,9 +231,11 @@ final class ConnectionScreen {
         pairScreen.setVisibility(View.GONE);
         clearCode();
         activity.protectPairingForm(false);
+        controller.openInline(action -> sendPcAction(media, action));
     }
 
     void returnToControls(LanClient media) {
+        controller.reset();
         playing = false;
         waitingClient = media;
         home.setVisibility(View.GONE);
@@ -791,28 +792,30 @@ final class ConnectionScreen {
     }
 
     void showPcControls(LanClient media) {
-        controller.show(action -> {
-            if ("file-picker".equals(action)) {
-                chooseRemoteFile(media);
-                return;
+        controller.toggle(action -> sendPcAction(media, action));
+    }
+
+    private void sendPcAction(LanClient media, String action) {
+        if ("file-picker".equals(action)) {
+            chooseRemoteFile(media);
+            return;
+        }
+        if (activity.applyStreamingControl(media, action)) return;
+        if (controlInFlight) return;
+        controlInFlight = true;
+        network.execute(() -> {
+            int message = 0;
+            try {
+                media.controlPlayer(action);
+            } catch (LanClient.HttpException error) {
+                message = error.status == 403 || error.status == 404 ? R.string.pc_control_permission : R.string.pc_control_failed;
+            } catch (IOException error) {
+                message = R.string.pc_control_failed;
             }
-            if (activity.applyStreamingControl(media, action)) return;
-            if (controlInFlight) return;
-            controlInFlight = true;
-            network.execute(() -> {
-                int message = 0;
-                try {
-                    media.controlPlayer(action);
-                } catch (LanClient.HttpException error) {
-                    message = error.status == 403 || error.status == 404 ? R.string.pc_control_permission : R.string.pc_control_failed;
-                } catch (IOException error) {
-                    message = R.string.pc_control_failed;
-                }
-                int result = message;
-                activity.runOnUiThread(() -> {
-                    controlInFlight = false;
-                    if (foreground && result != 0) Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
-                });
+            int result = message;
+            activity.runOnUiThread(() -> {
+                controlInFlight = false;
+                if (foreground && result != 0) Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
             });
         });
     }
@@ -855,7 +858,15 @@ final class ConnectionScreen {
     }
 
     boolean closePcControls() {
-        return controller.close();
+        return controller.dismissOverlay();
+    }
+
+    void updatePcControllerLayout(boolean videoOnly, boolean pip) {
+        controller.setVideoOnly(videoOnly, pip);
+    }
+
+    void updatePcControllerPlayback(boolean playing) {
+        controller.setPlaying(playing);
     }
 
     private void requestSession(PairingConnection current, LanClient media, boolean saveFailed, long delayMs) {

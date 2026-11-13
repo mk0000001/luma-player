@@ -67,6 +67,8 @@
     <string name="status_buffering">재생 준비 중…</string>
     <string name="status_playing">재생 중</string>
     <string name="status_paused">일시 정지</string>
+    <string name="status_play_action">재생</string>
+    <string name="status_pause_action">일시정지</string>
     <string name="status_ended">재생이 끝났습니다.</string>
     <string name="source_disc">Blu-ray · 실시간 타이틀</string>
     <string name="source_file">미디어 파일</string>

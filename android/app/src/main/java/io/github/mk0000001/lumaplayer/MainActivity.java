@@ -357,7 +357,7 @@ public final class MainActivity extends Activity {
         playerView.setPlayer(active);
         playbackScreen.setVisibility(View.VISIBLE);
         applyPlaybackLayout();
-        connectionScreen.hideForPlayback();
+        connectionScreen.hideForPlayback(attempt);
         applyVideoAspect();
         playerView.showController();
         navigation.setVisible(true);
@@ -418,7 +418,7 @@ public final class MainActivity extends Activity {
     }
 
     boolean applyStreamingControl(LanClient media, String action) {
-        if (client != media || player == null || playbackSession == null || !playbackSession.isBluRay()) return false;
+        if (client != media || player == null || playbackSession == null) return false;
         switch (action) {
             case "play-pause" -> player.setPlayWhenReady(!player.getPlayWhenReady());
             case "seek-back" -> seekPlayback(absolutePosition() - 10_000);
@@ -554,6 +554,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updatePlaybackStatus(Player source) {
+        connectionScreen.updatePcControllerPlayback(source.isPlaying());
         int state = source.getPlaybackState();
         int message = R.string.status_buffering;
         if (state == Player.STATE_READY) {
@@ -772,7 +773,8 @@ public final class MainActivity extends Activity {
     }
 
     private void applyPlaybackLayout() {
-        boolean videoOnly = fullscreen || isInPictureInPictureMode();
+        boolean pip = isInPictureInPictureMode();
+        boolean videoOnly = fullscreen || pip;
         int width = playbackScreen.getWidth();
         float density = getResources().getDisplayMetrics().density;
         Configuration configuration = getResources().getConfiguration();
@@ -784,6 +786,7 @@ public final class MainActivity extends Activity {
         boolean sidePanel = layout == PlaybackLayout.SIDE_BY_SIDE;
         navigation.setChapterPaneAvailable(stacked || sidePanel);
         playbackDetails.setVisibility(videoOnly ? View.GONE : View.VISIBLE);
+        connectionScreen.updatePcControllerLayout(videoOnly, pip);
         if (stacked && width == 0) {
             return;
         }
