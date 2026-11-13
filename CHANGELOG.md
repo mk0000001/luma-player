@@ -5,6 +5,7 @@
 ### 0.2.6
 
 - Windows의 인앱 업데이트 확인이나 다운로드가 실패하면 오류 창에서 공식 다운로드 페이지를 열 수 있습니다.
+- 자동 UI 테스트에서 실제 광학 드라이브 검색과 저장장치 온도 조회를 차단했습니다.
 
 ### 0.2.5
 
@@ -165,6 +166,7 @@
 ### 0.2.6
 
 - The Windows updater offers a link to the official downloads when a check or download fails.
+- Automated UI tests skip physical optical-drive discovery and storage temperature queries.
 
 ### 0.2.5
 

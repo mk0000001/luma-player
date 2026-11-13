@@ -86,12 +86,21 @@ class UiTests:public QObject {
     }
 private slots:
     void initTestCase(){
+        qputenv("LUMA_DISABLE_HOST_STORAGE_PROBES","1");
         QCoreApplication::setOrganizationName("LumaPlayerTests");
         QCoreApplication::setApplicationName("UiTests");
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void automaticStorageProbesStayDisabledInUiTests(){
+        luma::MainWindow window;
+        auto *label=window.findChild<QLabel*>("connectedDiscLabel");
+        QVERIFY(label);
+        QTRY_COMPARE(label->text(),QString("자동 디스크 검색 꺼짐"));
+        QVERIFY(window.diagnostics().value("hostStorageProbesDisabled").toBool());
+        QVERIFY(window.diagnostics().value("discRoot").toString().isEmpty());
+    }
     void mobilePlaybackSettingsAllowNoOpenSource(){
         luma::MainWindow window;
         auto *share=window.findChild<QPushButton*>("openLanPlayback");

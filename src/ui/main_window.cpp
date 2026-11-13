@@ -121,7 +121,8 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         appendLog("번역 장치 확인: "+message);
     });
     QTimer::singleShot(0,this,[this]{
-        discoverDisc();deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();
+        if(QSettings().value("disc/scanAutomatically",true).toBool())discoverDisc();
+        deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();
         if(auto *window=windowHandle())connect(window,&QWindow::screenChanged,this,&MainWindow::updateDisplayStatus,Qt::QueuedConnection);
     });
 }
@@ -134,6 +135,7 @@ QJsonObject MainWindow::diagnostics()const{
     QJsonObject result{{"version",LUMA_VERSION},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()},{"aiBackend",job_.selectedBackend()},{"aiEnabled",aiEnabled_->isChecked()},{"aiRetryCount",aiRetryCount_},{"aiRetryAt",nextAiAttemptMs_},{"captionBufferHolding",bufferHolding_},{"captionResumeRequested",bufferResume_},{"captionBufferBypass",bufferBypass_},{"hangulReadings",readingEnabled_->isChecked()},{"readingRuntime",reading_.available()},{"originalCaptions",originalEnabled_->isChecked()},{"koreanTranslations",translationEnabled_->isChecked()},{"translationCount",translations_.size()},{"translationBackend",translation_?translation_->selectedBackend():QString{}},{"bundledFonts",qApp->property("lumaFontsLoaded").toBool()},{"externalCueCount",externalCues_.size()},{"theme",playerUsesDarkTheme()?"dark":"light"},{"fullscreen",full_},{"transportVisible",transport_->isVisible()},{"transportHeight",transport_->height()},{"developerMode",developerApproved_},{"captureAllowed",captureApproved_},{"videoRecoveryCount",videoRecoveryCount_},{"videoRecoveryExhausted",videoRecoveryExhausted_}};
     result.insert("translationSkippedCount",translationSkipped_.size());result.insert("translationPendingCount",translationPending_.size());result.insert("translationFailed",translationFailed_);
     result.insert("translationGlossaryEntries",translation_->glossary().size());
+    result.insert("hostStorageProbesDisabled",qEnvironmentVariableIsSet("LUMA_DISABLE_HOST_STORAGE_PROBES"));
     result.insert("pictureInPicture",pictureInPicture_);
     result.insert("lanReceiving",lanRemotePlayback_);result.insert("lanReceiveSeekable",lanRemoteSeekable_);
     if(lanRemotePlayback_ && active_)result.insert("lanSubtitleCueActive",active_->state().lanSubtitleCueActive);

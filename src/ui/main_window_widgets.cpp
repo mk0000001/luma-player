@@ -205,7 +205,7 @@ void MainWindow::buildUi(){
     auto *lanPlayback=button("내부망 재생","openLanPlayback");lanPlayback->setToolTip("같은 네트워크의 PC와 Android 연결을 관리합니다.");nav->addWidget(lanPlayback);
     connect(lanPlayback,&QPushButton::clicked,this,&MainWindow::showLanPlayback);
     nav->addSpacing(22);nav->addWidget(label("연결된 디스크","section"));
-    discLabel_=label("디스크 확인 중…");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
+    discLabel_=label(QSettings().value("disc/scanAutomatically",true).toBool()?"디스크 확인 중…":"Blu-ray 재생 또는 새로 확인을 눌러 주세요.","connectedDiscLabel");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
     auto *rescan=button("새로 확인","subtle");nav->addWidget(rescan);nav->addStretch();nav->addWidget(label("MADE FOR\nYOUR SCREEN","section"));body->addWidget(sidebar_);
     auto *center=new QWidget;auto *centerLayout=new QVBoxLayout(center);centerLayout->setContentsMargins(0,0,0,0);centerLayout->setSpacing(0);
     surface_=new VideoSurface;surface_->setObjectName("videoSurface");surface_->setFocusPolicy(Qt::StrongFocus);surface_->setMinimumSize(500,280);surface_->setMouseTracking(true);

@@ -216,6 +216,12 @@ void MainWindow::updateMotionSettings(){
 
 void MainWindow::discoverDisc(){
     if(discProbeRunning_ || discProbeClosing_)return;
+    if(qEnvironmentVariableIsSet("LUMA_DISABLE_HOST_STORAGE_PROBES")){
+        discPath_.clear();
+        discLabel_->setText("자동 디스크 검색 꺼짐");
+        discDetails_->clear();
+        return;
+    }
     discProbeRunning_=true;
     const auto request=discPlayPending_?discPlayRequest_:0;
     const auto revision=discProbeRevision_;

@@ -208,6 +208,7 @@ if(LUMA_BUILD_APP)
   if(WIN32)
     set_tests_properties(ui_keyboard native_opt_in PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
   endif()
+  set_property(TEST ui_keyboard video_surface APPEND PROPERTY ENVIRONMENT "LUMA_DISABLE_HOST_STORAGE_PROBES=1")
   if(WIN32)
     target_sources(luma_ui PRIVATE src/ui/update_manager.cpp src/ui/update_manager.h
         src/ui/ai_acceleration_setup.cpp src/ui/ai_acceleration_setup.h)

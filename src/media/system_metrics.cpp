@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QRegularExpression>
 #include <QSet>
+#include <QSettings>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -483,11 +484,14 @@ SystemMetrics SystemMetricsReader::sample() {
             result.npuTemperatureCelsius = temperature;
     }
     const auto elapsed = state_->clock.elapsed();
-    if (state_->storageReadMs < 0 || elapsed - state_->storageReadMs >= 5000) {
-        state_->storage = sampleStorageTemperatures();
-        state_->storageReadMs = elapsed;
+    if (!qEnvironmentVariableIsSet("LUMA_DISABLE_HOST_STORAGE_PROBES") &&
+        QSettings().value("developer/readStorageTemperature",true).toBool()) {
+        if (state_->storageReadMs < 0 || elapsed - state_->storageReadMs >= 5000) {
+            state_->storage = sampleStorageTemperatures();
+            state_->storageReadMs = elapsed;
+        }
+        result.storageTemperatures = state_->storage;
     }
-    result.storageTemperatures = state_->storage;
 #elif defined(Q_OS_LINUX)
     QFile cpu("/proc/stat");
     if (cpu.open(QIODevice::ReadOnly)) {
