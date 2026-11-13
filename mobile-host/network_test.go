@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strconv"
 	"testing"
 )
 
@@ -50,8 +51,8 @@ func TestLANListenerRejectsOutsidePeersAndCapsSockets(t *testing.T) {
 	public := queue.add("203.0.113.4")
 	otherLAN := queue.add("192.168.5.9")
 	var open []net.Conn
-	for index := 0; index < 8; index++ {
-		queue.add("192.168.4.9")
+	for index := range maxConnections {
+		queue.add("192.168.4." + strconv.Itoa(index+1))
 		conn, err := listener.Accept()
 		if err != nil {
 			t.Fatalf("allowed peer %d was rejected: %v", index+1, err)
@@ -76,4 +77,46 @@ func TestLANListenerRejectsOutsidePeersAndCapsSockets(t *testing.T) {
 	for _, conn := range open[1:] {
 		_ = conn.Close()
 	}
+}
+
+func TestLANListenerLeavesCapacityForAnotherPeer(t *testing.T) {
+	queue := &peerQueue{}
+	listener := &lanListener{
+		Listener: queue,
+		subnet:   netip.MustParsePrefix("192.168.4.0/24"),
+		slots:    make(chan struct{}, maxConnections),
+	}
+	const first, second = "192.168.4.9", "192.168.4.10"
+	var open []net.Conn
+	for range maxConnectionsPerPeer {
+		queue.add(first)
+		conn, err := listener.Accept()
+		if err != nil {
+			t.Fatal(err)
+		}
+		open = append(open, conn)
+	}
+	defer func() {
+		for _, conn := range open {
+			_ = conn.Close()
+		}
+	}()
+	excess := queue.add(first)
+	queue.add(second)
+	conn, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if !excess.closed || conn.RemoteAddr().(*net.TCPAddr).AddrPort().Addr().Unmap().String() != second {
+		t.Fatal("another peer could not use the remaining connection capacity")
+	}
+	_ = open[0].Close()
+	_ = open[0].Close()
+	queue.add(first)
+	reused, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = reused.Close()
 }

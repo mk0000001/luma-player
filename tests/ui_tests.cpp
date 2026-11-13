@@ -414,7 +414,7 @@ private slots:
         auto *start=dialog->findChild<QPushButton*>("lanStart");
         auto *stop=dialog->findChild<QPushButton*>("lanStop");
         QVERIFY(endpoint && status && start && stop);
-        QTRY_VERIFY_WITH_TIMEOUT(endpoint->text().contains(address),12000);
+        QTRY_VERIFY2_WITH_TIMEOUT(endpoint->text().contains(address),qPrintable(endpoint->text()+" · "+status->text()),12000);
         QVERIFY(!start->isEnabled());
 
         QNetworkAccessManager manager;
@@ -475,7 +475,7 @@ private slots:
         const auto codeDigest=sha("luma-pair-code-v1\n"+input+'\n'+serverNonce);
         QCOMPARE(code->text(),QString("%1").arg(qFromBigEndian<quint32>(codeDigest.constData())%1000000,6,10,QChar('0')));
         approve->click();
-        QTRY_VERIFY2_WITH_TIMEOUT(dialog->property("sharing").toBool(),qPrintable(status->text()),15000);
+        QTRY_VERIFY(start->isEnabled());
         auto *poll=post("/v1/pair/poll",{{"id",attemptId}});
         QTRY_VERIFY_WITH_TIMEOUT(poll->isFinished(),12000);
         const auto approvalReply=QJsonDocument::fromJson(poll->readAll()).object();
@@ -483,6 +483,26 @@ private slots:
         const auto token=approvalReply.value("token").toString().toLatin1();
         QCOMPARE(token.size(),22);
         QVERIFY(approvalReply.value("rememberToken").toString().isEmpty());
+        auto *beforeShare=manager.get(request("/v1/session",token));
+        QTRY_VERIFY_WITH_TIMEOUT(beforeShare->isFinished(),12000);
+        QCOMPARE(beforeShare->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);
+        QVERIFY(!dialog->property("sharing").toBool());
+        if(disc){
+            start->click();
+        }else{
+            auto *remoteStart=dialog->findChild<QCheckBox*>("lanAllowRemoteStart");
+            QVERIFY(remoteStart);
+            QVERIFY(!remoteStart->isChecked());
+            auto *denied=manager.post(request("/v1/playback/start",token),QByteArray());
+            QTRY_VERIFY_WITH_TIMEOUT(denied->isFinished(),12000);
+            QCOMPARE(denied->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);
+            QVERIFY(!dialog->property("sharing").toBool());
+            remoteStart->click();
+            auto *requested=manager.post(request("/v1/playback/start",token),QByteArray());
+            QTRY_VERIFY_WITH_TIMEOUT(requested->isFinished(),12000);
+            QCOMPARE(requested->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),202);
+        }
+        QTRY_VERIFY2_WITH_TIMEOUT(dialog->property("sharing").toBool(),qPrintable(status->text()),15000);
         auto *session=manager.get(request("/v1/session",token));
         QTRY_VERIFY_WITH_TIMEOUT(session->isFinished(),12000);
         QVERIFY2(session->error()==QNetworkReply::NoError,qPrintable(session->errorString()));
@@ -581,7 +601,11 @@ private slots:
         auto *shareDialog=host.findChild<QDialog*>("lanPlaybackDialog");
         auto *hostStatus=host.findChild<QLabel*>("lanPlaybackStatus");
         auto *playbackStatus=receiver.findChild<QLabel*>("status");
-        QVERIFY(shareDialog && hostStatus && playbackStatus);
+        auto *start=host.findChild<QPushButton*>("lanStart");
+        QVERIFY(shareDialog && hostStatus && playbackStatus && start);
+        QTRY_VERIFY(start->isEnabled());
+        QVERIFY(!shareDialog->property("sharing").toBool());
+        start->click();
         QTRY_VERIFY2_WITH_TIMEOUT(shareDialog->property("sharing").toBool(),qPrintable(hostStatus->text()),15000);
         const auto failure=[&]{
             const auto state=receiver.diagnostics();

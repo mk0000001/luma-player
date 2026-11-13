@@ -22,6 +22,9 @@
 #include <QUrl>
 #include <algorithm>
 #include <cmath>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
 namespace luma {
 namespace {
 constexpr qint64 dayMs=86400000,chunkMs=30000,projectLimit=64*1024*1024;
@@ -41,32 +44,85 @@ bool integer(const QJsonObject &object,const QString &key,qint64 minimum,qint64 
     if(!value.isDouble()||!std::isfinite(number)||number<minimum||number>maximum||std::floor(number)!=number)return false;
     out=static_cast<qint64>(number);return true;
 }
-bool localPath(const QString &path){return !path.isEmpty()&&path.size()<=4096&&unicode(path,false)&&QFileInfo(path).isAbsolute()&&!path.contains("://");}
+bool localPath(const QString &path){
+    if(path.isEmpty() || path.size()>4096 || !unicode(path,false) || path.contains("://"))
+        return false;
+#ifdef Q_OS_WIN
+    const auto normalized=QDir::fromNativeSeparators(path);
+    if(normalized.size()<3 || !normalized[0].isLetter() || normalized[1]!=':' ||
+       normalized[2]!='/' || normalized.indexOf(':',2)>=0)
+        return false;
+    const auto root=QDir::toNativeSeparators(normalized.left(3));
+    const auto type=GetDriveTypeW(reinterpret_cast<LPCWSTR>(root.utf16()));
+    if(type!=DRIVE_FIXED && type!=DRIVE_REMOVABLE && type!=DRIVE_CDROM && type!=DRIVE_RAMDISK)
+        return false;
+    // Check each component before following it, including directory junctions.
+    auto parent=root;
+    const auto components=normalized.mid(3).split('/',Qt::SkipEmptyParts);
+    bool missing=false;
+    for(const auto &component:components){
+        if(component.endsWith('.') || component.endsWith(' '))
+            return false;
+        if(missing)
+            continue;
+        parent+=component;
+        const auto attributes=GetFileAttributesW(reinterpret_cast<LPCWSTR>(parent.utf16()));
+        if(attributes==INVALID_FILE_ATTRIBUTES){
+            const auto error=GetLastError();
+            if(error!=ERROR_FILE_NOT_FOUND && error!=ERROR_PATH_NOT_FOUND)
+                return false;
+            missing=true;
+        }else if(attributes&FILE_ATTRIBUTE_REPARSE_POINT){
+            return false;
+        }
+        parent+='\\';
+    }
+    return true;
+#else
+    return QFileInfo(path).isAbsolute();
+#endif
+}
+std::optional<QByteArray> readBounded(const QString &path,qint64 limit){
+    if(!localPath(path) || !QFileInfo(path).isFile())
+        return {};
+    QFile file(path);
+    if(!file.open(QIODevice::ReadOnly) || file.size()>limit)
+        return {};
+    auto bytes=file.read(limit+1);
+    if(bytes.size()>limit || file.error()!=QFileDevice::NoError)
+        return {};
+    return bytes;
+}
 std::optional<QJsonObject> fileMetadata(const QString &path,bool required,QString &error){
+    if(!localPath(path)){reject(error,"로컬 파일 경로를 확인할 수 없습니다.");return {};}
     const QFileInfo file(path);
     if(!file.isFile()){if(required){reject(error,"필요한 로컬 파일을 찾을 수 없습니다: "+path);return {};}return QJsonObject{{"path",file.absoluteFilePath()},{"exists",false}};}
-    const auto canonical=file.canonicalFilePath();if(canonical.isEmpty())return {};
+    const auto canonical=file.canonicalFilePath();if(!localPath(canonical))return {};
     return QJsonObject{{"path",canonical},{"exists",true},{"bytes",file.size()},{"mtime_ms",file.lastModified().toMSecsSinceEpoch()}};
 }
-std::optional<QJsonObject> hashedMetadata(const QString &path,qint64 limit,QString &error){
+std::optional<QJsonObject> hashedMetadata(const QString &path,const QByteArray &bytes,QString &error){
     auto record=fileMetadata(path,true,error);if(!record)return {};
-    QFile file(path);if(!file.open(QIODevice::ReadOnly)||file.size()>limit){reject(error,"디스크 메타데이터를 안전하게 읽을 수 없습니다.");return {};}
-    record->insert("sha256",QString::fromLatin1(digest(file.readAll()).toHex()));return record;
+    record->insert("sha256",QString::fromLatin1(digest(bytes).toHex()));return record;
 }
 std::optional<QJsonObject> sourceMetadata(const CaptionPreparationRequest &request,QString &error){
     const auto &source=request.source;
     if(!localPath(source.source)){reject(error,"로컬 영상 파일 또는 Blu-ray 폴더를 선택하세요.");return {};}
     const QFileInfo input(source.source);const auto canonical=input.canonicalFilePath();
-    if(canonical.isEmpty()){reject(error,"원본 미디어를 찾을 수 없습니다.");return {};}
+    if(!localPath(canonical)){reject(error,"원본 미디어를 찾을 수 없습니다.");return {};}
     if(!source.disc){if(!input.isFile()){reject(error,"영상 원본은 로컬 파일이어야 합니다.");return {};}const auto record=fileMetadata(canonical,true,error);if(!record)return {};return QJsonObject{{"kind","file"},{"source",*record}};}
     if(!input.isDir()||!QRegularExpression("^[0-9]{5}$").match(source.playlist).hasMatch()){reject(error,"Blu-ray 폴더와 다섯 자리 플레이리스트를 확인하세요.");return {};}
     const QDir root(canonical);
-    const auto index=hashedMetadata(root.filePath("BDMV/index.bdmv"),16*1024*1024,error);
-    const auto playlist=hashedMetadata(root.filePath("BDMV/PLAYLIST/"+source.playlist+".mpls"),8*1024*1024,error);if(!index||!playlist)return {};
-    QFile indexFile(root.filePath("BDMV/index.bdmv"));
-    if(!indexFile.open(QIODevice::ReadOnly)||!indexFile.read(8).startsWith("INDX")){reject(error,"유효한 Blu-ray 인덱스가 아닙니다.");return {};}
-    QFile file(root.filePath("BDMV/PLAYLIST/"+source.playlist+".mpls"));if(!file.open(QIODevice::ReadOnly))return {};
-    const auto title=parsePlaylist(file.readAll(),source.playlist);
+    const auto indexPath=root.filePath("BDMV/index.bdmv");
+    const auto playlistPath=root.filePath("BDMV/PLAYLIST/"+source.playlist+".mpls");
+    const auto indexBytes=readBounded(indexPath,16*1024*1024);
+    const auto playlistBytes=readBounded(playlistPath,8*1024*1024);
+    if(!indexBytes || !indexBytes->startsWith("INDX") || !playlistBytes){
+        reject(error,"Blu-ray 인덱스와 플레이리스트를 읽을 수 없습니다.");return {};
+    }
+    const auto index=hashedMetadata(indexPath,*indexBytes,error);
+    const auto playlist=hashedMetadata(playlistPath,*playlistBytes,error);
+    if(!index || !playlist)return {};
+    const auto title=parsePlaylist(*playlistBytes,source.playlist);
     if(title.durationMs!=request.durationMs||title.clips.isEmpty()||title.clips.size()>10000){reject(error,"선택한 Blu-ray 플레이리스트의 전체 길이와 클립을 확인하세요.");return {};}
     QJsonArray clips;QSet<QString> seen;
     for(const auto &clip:title.clips){if(seen.contains(clip))continue;seen.insert(clip);
@@ -206,10 +262,11 @@ bool saveCheckpoint(Checkpoint &state,QString &error){
 std::optional<Checkpoint> readCheckpoint(const QString &path,bool requireComplete,QString &error){
     const QFileInfo info(path);
     if(!localPath(path)||!info.isFile()||info.isSymLink()||info.size()<=0||info.size()>projectLimit){reject(error,"프로젝트 파일이 없거나 입력 한도를 초과했습니다.");return {};}
-    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};
-    const auto bytes=file.readAll();QStringDecoder decoder(QStringDecoder::Utf8);const auto decoded=decoder(bytes);Q_UNUSED(decoded);
+    const auto bytes=readBounded(path,projectLimit);
+    if(!bytes || bytes->isEmpty()){reject(error,"프로젝트를 읽을 수 없거나 입력 한도를 초과했습니다.");return {};}
+    QStringDecoder decoder(QStringDecoder::Utf8);const auto decoded=decoder(*bytes);Q_UNUSED(decoded);
     if(decoder.hasError()){reject(error,"프로젝트의 UTF-8 문자가 손상되었습니다.");return {};}
-    QJsonParseError parse;const auto document=QJsonDocument::fromJson(bytes,&parse);
+    QJsonParseError parse;const auto document=QJsonDocument::fromJson(*bytes,&parse);
     if(parse.error!=QJsonParseError::NoError||!document.isObject()){reject(error,"프로젝트 JSON이 손상되었습니다.");return {};}
     const auto root=document.object();Checkpoint state;qint64 schema=0;
     const QSet<QString> allowed{"schema","format","complete","phase","next_chunk_ms","request","source_metadata","source_identity","job_identity","originals","translations","skipped","recognition_backend","translation_backend"};
@@ -219,7 +276,7 @@ std::optional<Checkpoint> readCheckpoint(const QString &path,bool requireComplet
     state.phase=root["phase"].toString();
     if(!QStringList{"recognition","translation","complete"}.contains(state.phase)||(root["complete"].toBool()!=(state.phase=="complete"))||(state.next!=request->durationMs&&state.next%chunkMs!=0)||(state.phase!="recognition"&&state.next!=request->durationMs)){reject(error,"프로젝트 완료 범위가 잘못되었습니다.");return {};}
     const auto directory=info.dir().canonicalPath();
-    if(directory.isEmpty()||QFileInfo(request->outputDirectory).canonicalFilePath()!=directory){reject(error,"프로젝트 저장 폴더가 작업 설정과 다릅니다.");return {};}
+    if(!localPath(directory)||!localPath(request->outputDirectory)||QFileInfo(request->outputDirectory).canonicalFilePath()!=directory){reject(error,"프로젝트 저장 폴더가 작업 설정과 다릅니다.");return {};}
     state.identity=root["job_identity"].toObject();state.source=root["source_metadata"].toObject();const auto hex=root["source_identity"].toString();
     if(!QRegularExpression("^[a-f0-9]{64}$").match(hex).hasMatch()||state.identity["request"]!=requestJson(*request)||QJsonDocument(state.identity).toJson(QJsonDocument::Compact).size()>1024*1024){reject(error,"프로젝트 정체성 정보가 잘못되었습니다.");return {};}
     state.result.sourceIdentity=QByteArray::fromHex(hex.toLatin1());
@@ -249,8 +306,9 @@ std::optional<Checkpoint> readCheckpoint(const QString &path,bool requireComplet
     if(requireComplete){
         if(state.phase!="complete"){reject(error,"미완료 프로젝트입니다. 같은 설정으로 다시 시작해 이어서 준비하세요.");return {};}
         for(const auto &artifact:QVector<QPair<QString,QByteArray>>{{state.result.originalSrt,writeSrt(captionPages(state.result.originals)).toUtf8()},{state.result.koreanSrt,writeSrt(koreanCues(state)).toUtf8()}}){
-            if(artifact.first.isEmpty())continue;QFile exported(artifact.first);
-            if(QFileInfo(artifact.first).isSymLink()||!exported.open(QIODevice::ReadOnly)||exported.size()>projectLimit||exported.readAll()!=artifact.second){reject(error,"내보낸 SRT가 프로젝트와 다릅니다. 같은 작업을 다시 시작해 복구하세요.");return {};}
+            if(artifact.first.isEmpty())continue;
+            const auto exported=readBounded(artifact.first,projectLimit);
+            if(QFileInfo(artifact.first).isSymLink()||!exported||*exported!=artifact.second){reject(error,"내보낸 SRT가 프로젝트와 다릅니다. 같은 작업을 다시 시작해 복구하세요.");return {};}
         }
     }return state;
 }
@@ -298,13 +356,15 @@ struct CaptionPreparationService::Impl {
         if(request.translate&&request.translationModel.isEmpty()){const auto quality=QDir(runtime).filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");request.translationModel=QFileInfo::exists(quality)?quality:QDir(runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf");}
         if(!validRequest(request,error)){fail(error,false);return;}
         const auto canonicalSource=QFileInfo(request.source.source).canonicalFilePath(),canonicalModel=QFileInfo(request.model).canonicalFilePath();
-        if(canonicalSource.isEmpty()||canonicalModel.isEmpty()){fail("원본과 인식 모델을 찾을 수 없습니다.",false);return;}
+        if(!localPath(canonicalSource)||!localPath(canonicalModel)){fail("원본과 인식 모델을 찾을 수 없습니다.",false);return;}
         request.source.source=canonicalSource;request.model=canonicalModel;request.source.durationMs=chunkMs;
-        if(request.translate){const auto canonical=QFileInfo(request.translationModel).canonicalFilePath();if(canonical.isEmpty()){fail("번역 모델을 찾을 수 없습니다.",false);return;}request.translationModel=canonical;}
+        if(request.translate){const auto canonical=QFileInfo(request.translationModel).canonicalFilePath();if(!localPath(canonical)){fail("번역 모델을 찾을 수 없습니다.",false);return;}request.translationModel=canonical;}
         else if(!request.translationModel.isEmpty())request.translationModel=QFileInfo(request.translationModel).absoluteFilePath();
         const auto source=sourceMetadata(request,error);if(!source){fail(error,false);return;}
         if(!QDir().mkpath(request.outputDirectory)){fail("프로젝트 저장 폴더를 만들 수 없습니다.",false);return;}
-        request.outputDirectory=QFileInfo(request.outputDirectory).canonicalFilePath();state.result.request=request;
+        request.outputDirectory=QFileInfo(request.outputDirectory).canonicalFilePath();
+        if(!localPath(request.outputDirectory)){fail("로컬 프로젝트 저장 폴더를 확인할 수 없습니다.",false);return;}
+        state.result.request=request;
         const auto identity=jobIdentity(request,runtime,error);if(!identity){fail(error,false);return;}
         lock=std::make_unique<QLockFile>(QDir(request.outputDirectory).filePath("luma-caption-project.lock"));lock->setStaleLockTime(0);
         if(!lock->tryLock(0)){fail("다른 작업이 이 자막 저장 폴더를 사용 중입니다.",false);return;}

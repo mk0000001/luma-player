@@ -9,10 +9,12 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
 const maxPairBody = 1024
+const remoteStartPath = "/v1/playback/start"
 
 func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	w := newResponseWriter(original, r)
@@ -28,6 +30,8 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	}
 	peer := remote.Addr().Unmap()
 	switch r.URL.Path {
+	case remoteStartPath:
+		p.serveRemoteStart(w, r, peer)
 	case pairIdentityPath:
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, "GET")
@@ -47,6 +51,46 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 	default:
 		p.servePlayerMedia(w, r, peer)
 	}
+}
+
+func (p *player) serveRemoteStart(w *responseWriter, r *http.Request, peer netip.Addr) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, "POST")
+		return
+	}
+	if rejectRequestBody(w, r) {
+		return
+	}
+	status := p.requestRemoteStart(peer, requestBearer(r))
+	if status == http.StatusUnauthorized {
+		unauthorized(w)
+	} else if status == http.StatusAccepted {
+		w.WriteHeader(status)
+	} else {
+		http.Error(w, http.StatusText(status), status)
+	}
+}
+
+func (p *player) requestRemoteStart(peer netip.Addr, token string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := p.now()
+	device := p.authorizeLocked(peer, token, false, now)
+	if device == nil {
+		return http.StatusUnauthorized
+	}
+	if p.remoteStart == "" {
+		return http.StatusForbidden
+	}
+	if p.media != nil && p.media.ctx.Err() == nil {
+		return http.StatusAccepted
+	}
+	if !p.lastRemoteStart.IsZero() && now.Sub(p.lastRemoteStart) < 2*time.Second {
+		return http.StatusTooManyRequests
+	}
+	p.lastRemoteStart = now
+	p.announce(playerStatus{Status: "remoteStart", ID: p.remoteStart})
+	return http.StatusAccepted
 }
 
 func (p *player) servePairing(w *responseWriter, r *http.Request, peer netip.Addr) {

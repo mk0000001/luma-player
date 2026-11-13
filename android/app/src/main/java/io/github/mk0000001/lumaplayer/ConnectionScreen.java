@@ -60,6 +60,8 @@ final class ConnectionScreen {
     private final RadioGroup options;
     private final Button startPairing;
     private final Button confirmCode;
+    private final Button startPlayback;
+    private int mediaRequestGeneration;
 
     private boolean foreground;
     private boolean playing;
@@ -95,6 +97,7 @@ final class ConnectionScreen {
         options = activity.findViewById(R.id.pair_options);
         startPairing = activity.findViewById(R.id.pair_start_button);
         confirmCode = activity.findViewById(R.id.pair_confirm_button);
+        startPlayback = activity.findViewById(R.id.pair_playback_button);
 
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
@@ -634,15 +637,45 @@ final class ConnectionScreen {
         clearCode();
         activity.protectPairingForm(false);
         setStatus(pairStatus, R.string.connecting, false);
+        startPlayback.setOnClickListener(view -> {
+            if (!active(current)) {
+                return;
+            }
+            if (request != null) {
+                request.cancel(false);
+            }
+            startPlayback.setEnabled(false);
+            int generation = ++mediaRequestGeneration;
+            request = network.schedule(() -> {
+                int message;
+                try {
+                    media.requestPlaybackStart();
+                    message = R.string.pair_playback_pending;
+                } catch (LanClient.HttpException error) {
+                    message = error.status == 403 || error.status == 404
+                            ? R.string.pair_playback_permission : connectionMessage(error, false);
+                } catch (IOException error) {
+                    message = connectionMessage(error, false);
+                }
+                int status = message;
+                activity.runOnUiThread(() -> {
+                    if (active(current) && mediaRequestGeneration == generation) {
+                        setStatus(pairStatus, status, status != R.string.pair_playback_pending);
+                        requestSession(current, media, saveFailed, 1500);
+                    }
+                });
+            }, 0, TimeUnit.MILLISECONDS);
+        });
         requestSession(current, media, saveFailed, 0);
     }
 
     private void requestSession(PairingConnection current, LanClient media, boolean saveFailed, long delayMs) {
+        int generation = ++mediaRequestGeneration;
         request = network.schedule(() -> {
             try {
                 LanSession session = media.fetchSession();
                 activity.runOnUiThread(() -> {
-                    if (active(current)) {
+                    if (active(current) && mediaRequestGeneration == generation) {
                         if (saveFailed) {
                             Toast.makeText(activity, R.string.remember_not_saved, Toast.LENGTH_LONG).show();
                         }
@@ -651,19 +684,32 @@ final class ConnectionScreen {
                 });
             } catch (LanClient.HttpException error) {
                 if (error.status != 409) {
-                    postFailure(current, connectionMessage(error, false));
+                    postMediaFailure(current, generation, error);
                     return;
                 }
                 activity.runOnUiThread(() -> {
-                    if (active(current)) {
-                        setStatus(pairStatus, saveFailed ? R.string.pair_wait_media_unsaved : R.string.pair_wait_media, saveFailed);
+                    if (active(current) && mediaRequestGeneration == generation) {
+                        if (startPlayback.getVisibility() != View.VISIBLE) {
+                            setStatus(pairStatus, saveFailed ? R.string.pair_wait_media_unsaved : R.string.pair_wait_media, saveFailed);
+                        }
+                        startPlayback.setVisibility(View.VISIBLE);
+                        startPlayback.setEnabled(true);
                         requestSession(current, media, saveFailed, 2000);
                     }
                 });
             } catch (IOException error) {
-                postFailure(current, connectionMessage(error, false));
+                postMediaFailure(current, generation, error);
             }
         }, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void postMediaFailure(PairingConnection current, int generation, IOException error) {
+        activity.runOnUiThread(() -> {
+            if (active(current) && mediaRequestGeneration == generation) {
+                cancelAttempt();
+                showOptions(connectionMessage(error, false), true);
+            }
+        });
     }
 
     private boolean active(PairingConnection current) {
@@ -680,6 +726,8 @@ final class ConnectionScreen {
     }
 
     private void cancelAttempt() {
+        startPlayback.setVisibility(View.GONE);
+        startPlayback.setOnClickListener(null);
         if (request != null) {
             request.cancel(false);
             request = null;

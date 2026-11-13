@@ -8,14 +8,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 final class LanSession {
-    private static final String DISC_MIME = "video/x-matroska";
-    private static final Pattern FILE_MIME = Pattern.compile("(?:audio|video)/[a-z0-9!#$&^_.+-]{1,80}");
+    static final String DISC_MIME = "video/x-matroska";
     private static final long MAX_RESTARTABLE_DURATION_MS = 999_990_000;
 
     final String title;
@@ -154,8 +152,16 @@ final class LanSession {
         if ("bluray".equals(sourceKind)) {
             return DISC_MIME.equals(mimeType) && !seekable;
         }
-        return "file".equals(sourceKind)
-                && (FILE_MIME.matcher(mimeType).matches() || "application/octet-stream".equals(mimeType));
+        return "file".equals(sourceKind) && supportsFileMime(mimeType);
+    }
+
+    static boolean supportsFileMime(String mimeType) {
+        return switch (mimeType) {
+            case DISC_MIME, "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
+                    "video/mp2t", "audio/mp4", "audio/flac", "audio/mpeg", "audio/wav",
+                    "application/octet-stream" -> true;
+            default -> false;
+        };
     }
 
     private static List<Subtitle> parseSubtitles(JSONArray tracks) throws JSONException {

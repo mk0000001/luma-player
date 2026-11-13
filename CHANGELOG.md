@@ -2,6 +2,12 @@
 
 ## 한국어
 
+### 0.2.7
+
+- PC에서 허용하면 페어링한 Android 기기에서 PC에 열려 있는 영상의 재생 공유를 시작할 수 있습니다.
+- 로컬 자막 번역은 실행할 때마다 새 인증서를 사용하는 루프백 HTTPS 연결로 처리합니다.
+- 자막 프로젝트의 로컬 경로 확인, LAN 연결 수 제한, Android의 미디어 요청과 세션 응답 검증을 강화했습니다.
+
 ### 0.2.6
 
 - Windows의 인앱 업데이트 확인이나 다운로드가 실패하면 오류 창에서 공식 다운로드 페이지를 열 수 있습니다.
@@ -162,6 +168,12 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.7
+
+- A paired Android device can start sharing the media currently open on its PC when the PC enables remote start.
+- Local caption translation uses loopback HTTPS with a new certificate for each worker launch.
+- Hardened caption project path checks, LAN connection limits, and validation of Android media requests and session responses.
 
 ### 0.2.6
 

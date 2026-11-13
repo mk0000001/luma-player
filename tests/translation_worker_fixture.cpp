@@ -1,6 +1,11 @@
 #include <QCoreApplication>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QSslServer>
+#include <QSslSocket>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslKey>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -15,7 +20,7 @@
 int main(int argc,char **argv){
     QCoreApplication app(argc,argv);const auto args=app.arguments();
     const auto value=[&](const QString &name){const auto index=args.indexOf(name);return index>=0&&index+1<args.size()?args[index+1]:QString();};
-    const auto model=value("--model"),token=value("--api-key"),device=value("--device");
+    const auto model=value("--model"),token=qEnvironmentVariable("LLAMA_API_KEY"),device=value("--device");
     if(value("--host")!="127.0.0.1"||!args.contains("--offline")||token.isEmpty())return 20;
     const bool npu=qEnvironmentVariable("GGML_OPENVINO_DEVICE")=="NPU";
     const bool npuBudgetFixture=npu && model.contains("fixture-npu-budget");
@@ -29,8 +34,18 @@ int main(int argc,char **argv){
     else if(device=="Vulkan8")std::fprintf(stderr,"using device Vulkan8 (Fixture GPU)\noffloaded 12/29 layers to GPU\n");
     else std::fprintf(stderr,"llama_prepare_model_devices: using device Vulkan0 (Fixture GPU)\nload_tensors: offloaded 29/29 layers to GPU\n");
     std::fflush(stderr);
-    QTcpServer server;if(!server.listen(QHostAddress::LocalHost,value("--port").toUShort()))return 21;
-    QObject::connect(&server,&QTcpServer::newConnection,&app,[&]{
+    QFile certFile(value("--ssl-cert-file")),keyFile(value("--ssl-key-file"));
+    if(!certFile.open(QIODevice::ReadOnly)||!keyFile.open(QIODevice::ReadOnly))return 21;
+    auto tls=QSslConfiguration::defaultConfiguration();
+    tls.setLocalCertificate(QSslCertificate(&certFile));
+    tls.setPrivateKey(QSslKey(&keyFile,QSsl::Ec));
+    tls.setPeerVerifyMode(QSslSocket::VerifyNone);
+    QSslServer server;
+    server.setSslConfiguration(tls);
+    if(!server.listen(QHostAddress::LocalHost,value("--port").toUShort()))return 21;
+    std::fprintf(stderr,"listening on https://127.0.0.1:%u\n",unsigned(server.serverPort()));
+    std::fflush(stderr);
+    QObject::connect(&server,&QTcpServer::pendingConnectionAvailable,&app,[&]{
         while(auto *socket=server.nextPendingConnection()){
             auto input=std::make_shared<QByteArray>();
             QObject::connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);

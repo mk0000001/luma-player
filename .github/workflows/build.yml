@@ -120,6 +120,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build g++ qt6-base-dev libvlc-dev vlc-plugin-base vlc-plugin-video-output libmpv-dev ffmpeg
+      - name: Install pinned Go toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fLsS https://go.dev/dl/go1.26.11.linux-amd64.tar.gz -o "$RUNNER_TEMP/luma-go.tar.gz"
+          echo "9849f4e04ee35303714e34fbc3ac8ab44ea3e448a95aa182f91e3b9b79c710ec  $RUNNER_TEMP/luma-go.tar.gz" | sha256sum -c
+          tar -xzf "$RUNNER_TEMP/luma-go.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/go/bin" >> "$GITHUB_PATH"
       - name: Configure and compile
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

@@ -1,4 +1,5 @@
 #include "update_manager.h"
+#include "core/private_directory.h"
 
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -28,14 +29,12 @@
 #include <QStorageInfo>
 #include <QStringList>
 #include <QTimer>
-#include <QUuid>
 #include <algorithm>
 #include <functional>
 #include <mutex>
 #include <utility>
 #include <windows.h>
 #include <bcrypt.h>
-#include <sddl.h>
 #include <winhttp.h>
 
 namespace luma {
@@ -224,35 +223,6 @@ bool verifySignature(const QByteArray &data, const QByteArray &signature, const 
 bool notificationsEnabled()
 {
     return QSettings().value(notificationSetting, true).toBool();
-}
-
-QString createPrivateStaging(const QString &folder)
-{
-    HANDLE token = nullptr;
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
-        return {};
-    const auto closeToken = qScopeGuard([&] { CloseHandle(token); });
-    DWORD tokenBytes = 0;
-    GetTokenInformation(token, TokenUser, nullptr, 0, &tokenBytes);
-    if (!tokenBytes || tokenBytes > 4096)
-        return {};
-    QByteArray tokenUser(tokenBytes, '\0');
-    if (!GetTokenInformation(token, TokenUser, tokenUser.data(), tokenBytes, &tokenBytes))
-        return {};
-    LPWSTR sid = nullptr;
-    if (!ConvertSidToStringSidW(reinterpret_cast<const TOKEN_USER *>(tokenUser.constData())->User.Sid, &sid))
-        return {};
-    const auto freeSid = qScopeGuard([&] { LocalFree(sid); });
-    const auto sddl = QStringLiteral("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;%1)").arg(QString::fromWCharArray(sid));
-    PSECURITY_DESCRIPTOR descriptor = nullptr;
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(reinterpret_cast<LPCWSTR>(sddl.utf16()),
-                                                              SDDL_REVISION_1, &descriptor, nullptr))
-        return {};
-    const auto freeDescriptor = qScopeGuard([&] { LocalFree(descriptor); });
-    SECURITY_ATTRIBUTES attributes{sizeof(SECURITY_ATTRIBUTES), descriptor, FALSE};
-    const auto path = QDir(folder).filePath(QStringLiteral("LumaPlayer-update-") + QUuid::createUuid().toString(QUuid::WithoutBraces));
-    const auto native = QDir::toNativeSeparators(path);
-    return CreateDirectoryW(reinterpret_cast<LPCWSTR>(native.utf16()), &attributes) ? path : QString{};
 }
 
 HANDLE lockPath(const QString &path, bool directory)
@@ -915,7 +885,7 @@ void UpdateManager::State::beginDownload(const QString &folder)
             QStringLiteral("다른 폴더 선택…"), [this] { chooseFolder(); });
         return;
     }
-    stagingPath = createPrivateStaging(selected);
+    stagingPath = createPrivateDirectory(selected, QStringLiteral("LumaPlayer-update-"));
     if (stagingPath.isEmpty()) {
         fail(QStringLiteral("선택한 폴더에 설치 파일을 준비할 수 없습니다."));
         return;

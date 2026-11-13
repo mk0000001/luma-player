@@ -31,8 +31,11 @@
     <string name="pair_compare">PC와 휴대폰에 표시된 코드가 같은지 확인하세요.</string>
     <string name="pair_confirm">코드 일치 확인</string>
     <string name="pair_approve">PC에서 연결을 승인하세요.</string>
-    <string name="pair_wait_media">연결되었습니다. PC에서 재생 공유를 시작하세요.</string>
-    <string name="pair_wait_media_unsaved">이 PC를 기억하지 못했습니다. 이번 연결로 재생하려면 PC에서 공유를 시작하세요.</string>
+    <string name="pair_wait_media">연결되었습니다. PC에서 허용한 미디어를 여기에서 재생할 수 있습니다.</string>
+    <string name="pair_wait_media_unsaved">이 PC를 기억하지 못했습니다. 이번 연결로 재생할 수 있습니다.</string>
+    <string name="pair_playback_start">PC 미디어 재생 시작</string>
+    <string name="pair_playback_permission">PC의 내부망 재생에서 현재 미디어의 기기 재생 시작을 허용하거나 PC에서 공유를 시작하세요.</string>
+    <string name="pair_playback_pending">PC에 재생을 요청했습니다. 시작되지 않으면 PC에서 재생할 미디어를 확인하세요.</string>
     <string name="remember_not_saved">이 PC를 기억하지 못했습니다. 이번 연결에서 재생할 수 있습니다.</string>
     <string name="remember_login">기억한 PC에 연결하는 중…</string>
     <string name="remember_rejected">PC에서 기억한 승인을 확인할 수 없습니다. 다시 승인받으세요.</string>

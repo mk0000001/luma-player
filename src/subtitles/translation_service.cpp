@@ -1,8 +1,11 @@
 #include "translation_service.h"
 #include "translation_support.h"
+#include "core/private_directory.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
@@ -11,12 +14,21 @@
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QProcess>
-#include <QTcpServer>
+#include <QRegularExpression>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslError>
+#include <QSslSocket>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QUuid>
 #include <algorithm>
 namespace luma {
 struct TranslationService::Impl {
+    struct WorkerIdentityFiles {
+        QDir directory;
+        ~WorkerIdentityFiles(){directory.removeRecursively();}
+    };
     TranslationService *q;
     QString runtime,model,selected,log,token;
     AiPreferences preferences;
@@ -31,6 +43,8 @@ struct TranslationService::Impl {
     int backendIndex=-1,startupMs=75000,requestMs=45000;
     quint64 launchSerial=0;
     quint16 port=0;
+    std::shared_ptr<WorkerIdentityFiles> identityFiles;
+    QSslCertificate workerCertificate;
     bool ready=false,pumpScheduled=false;
     QPointer<QProcess> process;
     QPointer<QNetworkReply> reply;
@@ -43,6 +57,20 @@ struct TranslationService::Impl {
         if(runtime.isEmpty())runtime=QCoreApplication::applicationDirPath()+"/runtime";
         model=QDir(runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf");
         network.setProxy(QNetworkProxy::NoProxy);poll.setInterval(200);startupDeadline.setSingleShot(true);requestDeadline.setSingleShot(true);
+        QObject::connect(&network,&QNetworkAccessManager::sslErrors,q,[this](QNetworkReply *response,const QList<QSslError> &errors){
+            if(response!=reply || workerCertificate.isNull() || response->sslConfiguration().peerCertificate()!=workerCertificate)
+                return;
+            const bool privateTrustOnly=std::all_of(errors.begin(),errors.end(),[](const QSslError &error){
+                return error.error()==QSslError::SelfSignedCertificate || error.error()==QSslError::CertificateUntrusted ||
+                    error.error()==QSslError::UnableToGetLocalIssuerCertificate || error.error()==QSslError::UnableToVerifyFirstCertificate;
+            });
+            if(privateTrustOnly)
+                response->ignoreSslErrors(errors);
+        });
+        QObject::connect(&network,&QNetworkAccessManager::encrypted,q,[this](QNetworkReply *response){
+            if(response!=reply || workerCertificate.isNull() || response->sslConfiguration().peerCertificate()!=workerCertificate)
+                response->abort();
+        });
         QObject::connect(&poll,&QTimer::timeout,q,[this]{health();});
         QObject::connect(&startupDeadline,&QTimer::timeout,q,[this]{nextBackend("모델 시작 시간이 초과되었습니다.");});
         QObject::connect(&requestDeadline,&QTimer::timeout,q,[this]{
@@ -57,11 +85,59 @@ struct TranslationService::Impl {
     void abortReply(){if(reply){auto *old=reply.data();reply=nullptr;old->abort();old->deleteLater();}}
     void stop(){
         ++launchSerial;ready=false;poll.stop();startupDeadline.stop();requestDeadline.stop();abortReply();
+        network.clearConnectionCache();workerCertificate=QSslCertificate();port=0;
         if(process){
             auto *old=process.data();process=nullptr;QObject::disconnect(old,nullptr,q,nullptr);
             if(old->state()==QProcess::NotRunning)old->deleteLater();
-            else {QObject::connect(old,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),old,&QObject::deleteLater);old->kill();}
+            else {
+                // Keep the PEM files alive until a worker that is still starting has exited.
+                auto retiredIdentity=std::move(identityFiles);
+                QObject::connect(old,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),old,[old,retiredIdentity]{old->deleteLater();});
+                old->kill();
+            }
         }
+        identityFiles.reset();
+    }
+    bool prepareIdentity(){
+        QString helper="tools/lumaplayer-mobile-host";
+#ifdef Q_OS_WIN
+        helper+=".exe";
+#endif
+        auto executable=QDir(runtime).filePath(helper);
+        if(!QFileInfo(executable).isFile())
+            executable=QDir(QCoreApplication::applicationDirPath()+"/runtime").filePath(helper);
+        QProcess generator;
+        generator.start(executable,{"--translation-identity"},QIODevice::ReadOnly);
+        if(!generator.waitForStarted(1000) || !generator.waitForFinished(2500)){
+            generator.kill();generator.waitForFinished(1000);
+            return false;
+        }
+        if(generator.exitStatus()!=QProcess::NormalExit || generator.exitCode()!=0)
+            return false;
+        const auto data=generator.readAllStandardOutput();
+        if(data.size()>8192)
+            return false;
+        const auto identity=QJsonDocument::fromJson(data).object();
+        const auto certificate=identity.value("certificate").toString().toLatin1();
+        const auto key=identity.value("privateKey").toString().toLatin1();
+        workerCertificate=QSslCertificate(certificate);
+        if(workerCertificate.isNull() || key.isEmpty())
+            return false;
+        const auto dataDirectory=QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+        if(dataDirectory.isEmpty() || !QDir().mkpath(dataDirectory))
+            return false;
+        const auto directory=createPrivateDirectory(dataDirectory,"translation-");
+        if(directory.isEmpty())
+            return false;
+        identityFiles=std::make_shared<WorkerIdentityFiles>(QDir(directory));
+        for(const auto &[name,bytes]:{std::pair{"certificate.pem",certificate},std::pair{"key.pem",key}}){
+            QFile file(identityFiles->directory.filePath(name));
+            if(!file.open(QIODevice::WriteOnly|QIODevice::NewOnly) ||
+               !file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner) ||
+               file.write(bytes)!=bytes.size())
+                return false;
+        }
+        return true;
     }
     void schedule(){if(pumpScheduled)return;pumpScheduled=true;QTimer::singleShot(0,q,[this]{pumpScheduled=false;pump();});}
     void clear(){
@@ -107,6 +183,11 @@ struct TranslationService::Impl {
             }
         }
         if(!QFileInfo::exists(model)){failAll("한국어 번역 모델이 없습니다. 선택 기능의 로컬 모델을 설치해 주세요.");return;}
+        if(ready && workerCertificate.expiryDate()<=QDateTime::currentDateTimeUtc().addSecs(60)){
+            --backendIndex;
+            nextBackend();
+            return;
+        }
         if(ready){infer(task);return;}
         if(process)return;
         nextBackend();
@@ -121,13 +202,20 @@ struct TranslationService::Impl {
                 if(!candidate.vulkanCompatibility)q->progress(candidate.device+" 번역 실행기가 없습니다.");
                 continue;
             }
-            QTcpServer reservation;if(!reservation.listen(QHostAddress::LocalHost,0)){failAll("로컬 번역 포트를 열 수 없습니다.");return;}
-            port=reservation.serverPort();reservation.close();token=QUuid::createUuid().toString(QUuid::Id128);
-            const auto command=translationLaunch(candidate,model,port,token);
+            if(!prepareIdentity()){failAll("로컬 번역 실행기의 보안 연결을 준비할 수 없습니다.");return;}
+            token=QUuid::createUuid().toString(QUuid::Id128);
+            auto command=translationLaunch(candidate,model,0,token);
+            command.arguments.append({"--ssl-key-file",identityFiles->directory.filePath("key.pem"),
+                                      "--ssl-cert-file",identityFiles->directory.filePath("certificate.pem")});
             log.clear();process=new QProcess(q);auto *worker=process.data();const auto serial=launchSerial;
             worker->setWorkingDirectory(QFileInfo(command.program).absolutePath());worker->setProcessEnvironment(command.environment);worker->setProcessChannelMode(QProcess::MergedChannels);
             QObject::connect(worker,&QProcess::readyRead,q,[this,worker,serial]{if(serial==launchSerial&&process==worker){
                 log+=QString::fromUtf8(worker->readAll());if(log.size()>65536)log=log.right(65536);
+                if(!port){
+                    static const QRegularExpression address(R"(\blistening on https://127\.0\.0\.1:([0-9]{1,5})\r?\n)");
+                    port=address.match(log).captured(1).toUShort();
+                    if(port)health();
+                }
                 if(log.contains("NPU_COMPILER_DYNAMIC_QUANTIZATION"))nextBackend("현재 NPU 드라이버가 모델 컴파일 옵션을 지원하지 않습니다.");
                 else if(log.contains("GGML OpenVINO backend ov::Exception"))nextBackend("OpenVINO 모델 컴파일 또는 추론에 실패했습니다.");
             }});
@@ -144,13 +232,19 @@ struct TranslationService::Impl {
         failAll("사용 가능한 로컬 한국어 번역 실행기가 없습니다. 번역 모델·런타임과 선택한 장치를 확인해 주세요.");
     }
     QNetworkRequest endpoint(const QString &path,int timeout){
-        QNetworkRequest request(QUrl(QString("http://127.0.0.1:%1%2").arg(port).arg(path)));request.setRawHeader("Authorization","Bearer "+token.toUtf8());request.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
+        QNetworkRequest request(QUrl(QString("https://127.0.0.1:%1%2").arg(port).arg(path)));
+        auto tls=QSslConfiguration::defaultConfiguration();
+        tls.setCaCertificates({});
+        tls.setPeerVerifyMode(QSslSocket::VerifyPeer);
+        tls.setProtocol(QSsl::TlsV1_2OrLater);
+        request.setSslConfiguration(tls);
+        request.setRawHeader("Authorization","Bearer "+token.toUtf8());request.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);
         request.setAttribute(QNetworkRequest::Http2AllowedAttribute,false);
         request.setTransferTimeout(timeout);return request;
     }
     void health(){
-        if(ready||reply||!process)return;
+        if(ready||reply||!process||!port)return;
         const auto serial=launchSerial;auto *response=network.get(endpoint("/health",1000));reply=response;
         response->setReadBufferSize(maximumResponseBytes+1);
         QObject::connect(response,&QNetworkReply::readyRead,q,[this,response,serial]{

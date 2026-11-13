@@ -64,8 +64,10 @@ begin
   Result := '';
   ExpectedHash := ExpandConstant('{param:LumaCurrentHash|}');
   PlayerPath := ExpandConstant('{app}\LumaPlayer.exe');
-  if (ExpectedHash <> '') and FileExists(PlayerPath) then
-    if CompareText(GetSHA256OfFile(PlayerPath), ExpectedHash) <> 0 then
+  if ExpectedHash <> '' then
+    if not FileExists(PlayerPath) then
+      Result := ExpandConstant('{cm:UpdateTargetChanged}')
+    else if CompareText(GetSHA256OfFile(PlayerPath), ExpectedHash) <> 0 then
       Result := ExpandConstant('{cm:UpdateTargetChanged}');
 end;
 

@@ -187,6 +187,29 @@ private slots:
         data=QJsonDocument::fromJson(pristine).object();cues=data["originals"].toArray();cue=cues[0].toObject();auto tokens=cue["tokens"].toArray();auto token=tokens[0].toObject();token["text_start"]=1;tokens[0]=token;cue["tokens"]=tokens;cues[0]=cue;data["originals"]=cues;put(project,QJsonDocument(data).toJson());QVERIFY(!CaptionPreparationService::loadProject(project));
         put(project,"{broken");QVERIFY(!CaptionPreparationService::loadProject(project));put(project,QByteArray(64*1024*1024+1,' '));QVERIFY(!CaptionPreparationService::loadProject(project));
     }
+#ifdef Q_OS_WIN
+    void rejectsNonlocalPathsBeforeOpeningProjectReferences(){
+        QTemporaryDir dir;
+        auto request=prepare(dir);
+        request.durationMs=1000;
+        CaptionPreparationService service(dir.path());
+        QSignalSpy ready(&service,&CaptionPreparationService::ready);
+        service.start(request);
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(),1,10000);
+        const auto project=result(ready).projectFile;
+        const auto pristine=QJsonDocument::fromJson(read(project)).object();
+        for(const auto &field:{"source","output_directory","model","translation_model"}){
+            auto data=pristine;
+            auto settings=data["request"].toObject();
+            settings[field]=QStringLiteral("//invalid.test/share/model.")+(QString(field)=="translation_model"?"gguf":"bin");
+            data["request"]=settings;
+            put(project,QJsonDocument(data).toJson());
+            QString error;
+            QVERIFY(!CaptionPreparationService::loadProject(project,&error));
+            QCOMPARE(error,QStringLiteral("프로젝트 작업 설정이 잘못되었습니다."));
+        }
+    }
+#endif
     void queuedOldGenerationCannotPublishIntoReplacement(){
         QTemporaryDir dir;auto oldRequest=prepare(dir);auto fresh=oldRequest;fresh.outputDirectory=dir.filePath("new-captions");fresh.source.source=dir.filePath("other-owned.mkv");put(fresh.source.source,"speech");
         CaptionPreparationService service(dir.path());QSignalSpy ready(&service,&CaptionPreparationService::ready),failed(&service,&CaptionPreparationService::failed),canceled(&service,&CaptionPreparationService::canceled);

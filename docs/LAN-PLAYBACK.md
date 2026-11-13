@@ -7,9 +7,9 @@ Windows PC가 Blu-ray를 읽고 같은 사설 네트워크의 Android나 다른 
 1. 송출 PC에서 **LumaPlayer 0.2**를 실행합니다. 재생할 기기를 같은 사설 네트워크에 연결하세요.
 2. Android 9 이상에서 APK를 설치하고 앱을 엽니다. Windows에서 받으려면 **내부망 재생 → PC에서 받기**를 엽니다. 검색된 PC를 선택하거나 송출 PC의 **내부망 재생**에 표시된 사설 IP를 입력합니다. 기본 포트는 `48762`입니다.
 3. 재생할 기기에서 다음 연결 방식을 선택합니다. 양쪽에 나온 6자리 코드가 같으면 받는 기기에서 코드 일치를 확인하고 송출 PC에서 승인하세요. 양쪽에서 기억을 선택하면 이후 그 기기에서 다시 연결할 수 있습니다.
-4. 송출 PC에 열린 로컬 동영상이나 Blu-ray 본편을 재생합니다. 먼저 연결했다면 미디어를 연 뒤 송출 PC에서 **공유 시작**을 누릅니다. **공유 중지**로 재생을 종료합니다.
+4. 송출 PC에서 로컬 동영상이나 Blu-ray 본편을 엽니다. PC에서 **공유 시작**을 누르거나, **연결된 기기에서 현재 미디어 재생 시작 허용**을 켜고 Android에서 **재생 시작**을 누릅니다. PC에서 소스나 Blu-ray 타이틀을 바꾸거나 공유를 중지하면 Android 시작 권한을 다시 켜야 합니다.
 
-송출 PC의 **내부망 재생**에서 연결 중인 기기와 기억한 기기를 확인할 수 있습니다. 선택한 기기의 연결을 끊거나 기억을 삭제할 수 있습니다. 기억을 삭제한 기기가 다시 연결하려면 6자리 코드와 PC 승인이 필요합니다. **공유 중지**를 누른 뒤 이 플레이어에서 다시 송출하려면 **공유 시작**을 누르세요.
+송출 PC의 **내부망 재생**에서 연결 중인 기기와 기억한 기기를 확인할 수 있습니다. 선택한 기기의 연결을 끊거나 기억을 삭제할 수 있습니다. 기억을 삭제한 기기가 다시 연결하려면 6자리 코드와 PC 승인이 필요합니다. **공유 중지**를 누른 뒤 다시 송출하려면 받는 기기를 재연결하고 **공유 시작**을 누르세요.
 
 같은 네트워크를 사용할 수 없으면 Windows에서 **공유기 없이 휴대폰 연결**을 누르고 Android 10 이상에서 **주변 PC 직접 연결**을 여세요. Bluetooth에서 찾은 Wi‑Fi 이름을 선택하거나 PC에 표시된 이름을 직접 입력한 뒤 임시 암호를 입력합니다. Android의 Wi‑Fi 연결을 승인한 뒤 양쪽의 6자리 코드를 확인합니다. Windows에서 **공유기 없는 연결 종료**를 누르면 임시 네트워크와 연결이 닫힙니다. 갤럭시 탭 `SM-X736N`에서 이름과 암호를 직접 입력해 HDR10+ 샘플을 재생했습니다. 이 테스트에서 Bluetooth 자동 검색은 확인되지 않았습니다.
 
@@ -38,9 +38,9 @@ The Windows PC reads Blu-ray discs. Android and other Windows PCs on the same pr
 1. Open LumaPlayer 0.2 on the host PC. Connect the receiving device to the same private network.
 2. Install and open the APK on Android 9 or later, or open **내부망 재생 → PC에서 받기** on Windows. Select a discovered PC or enter the private IP shown under **내부망 재생** on the host. The default port is `48762`.
 3. Choose how the next connection should work. Compare the six-digit code, confirm it on the receiving device, and approve on the host PC. If you opt to remember the device on both screens, select it to reconnect next time.
-4. Play the local video or main Blu-ray title open on the host. If you connected before opening media, open a title and choose **공유 시작** on the host. Select **공유 중지** to end playback.
+4. Open a local video or the main Blu-ray title on the host. Start sharing from the PC with **공유 시작**, or enable **연결된 기기에서 현재 미디어 재생 시작 허용** on the PC and tap **Start playback** on Android. After the PC changes the source or Blu-ray title, or stops sharing, enable the permission again to start from Android.
 
-Use **내부망 재생** on the host to view connected and remembered devices. Disconnect or forget a selected device. A forgotten device must confirm a new code and obtain PC approval on its next connection. After choosing **공유 중지**, select **공유 시작** to resume sharing from that player.
+Use **내부망 재생** on the host to view connected and remembered devices. Disconnect or forget a selected device. A forgotten device must confirm a new code and obtain PC approval on its next connection. After choosing **공유 중지**, reconnect the receiving device and select **공유 시작** to resume sharing.
 
 If a shared network is unavailable, choose **공유기 없이 휴대폰 연결** on Windows and open **주변 PC 직접 연결** on Android 10 or later. Select the Wi‑Fi name found over Bluetooth or enter the name displayed on the PC, then enter the temporary password. Approve the Android Wi‑Fi connection and compare the six-digit code. Use **공유기 없는 연결 종료** on Windows to close the temporary network and its connections. A Galaxy Tab `SM-X736N` played the HDR10+ fixture after manual Wi‑Fi entry. Bluetooth discovery was unverified on this setup.
 

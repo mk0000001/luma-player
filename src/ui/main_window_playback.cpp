@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "lan_playback_dialog.h"
 #include "lan_receiver_dialog.h"
 
 #include "caption_overlay.h"
@@ -436,7 +437,11 @@ void MainWindow::refresh(){
         }
         lastAudio_=state.currentAudio;
     }
-    if(active_==discEngine_.get() && (state.currentTitle!=lastTitle_ || state.navigationTitle!=lastNavigation_)){resetSubtitleSession();lastTitle_=state.currentTitle;lastNavigation_=state.navigationTitle;if(state.navigationTitle)releaseCaptionBuffer(true);}
+    if(active_==discEngine_.get() && (state.currentTitle!=lastTitle_ || state.navigationTitle!=lastNavigation_)){
+        if(lanPlaybackDialog_)lanPlaybackDialog_->disarmRemoteStart();
+        resetSubtitleSession();lastTitle_=state.currentTitle;lastNavigation_=state.navigationTitle;
+        if(state.navigationTitle)releaseCaptionBuffer(true);
+    }
     if(pendingSeek_>=0 && (std::abs(state.positionMs-pendingSeek_)<=750 || QDateTime::currentMSecsSinceEpoch()-seekRequestedAt_>5000))pendingSeek_=-1;
     if(!lanDiscSharing_){restorePlaybackProgress();applyPreparedCaptions();}
     savePlaybackProgress();

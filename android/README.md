@@ -10,7 +10,7 @@ Android 9 이상에서 Windows LumaPlayer가 같은 네트워크에 공유한 �
 
 승인된 연결은 HTTPS로 PC 인증서의 IP 이름과 공개 키 지문을 확인합니다. 기억한 연결의 자격 증명은 Android Keystore 키로 암호화하며, 현재 재생 토큰과 미디어는 앱 메모리에서 처리합니다. 재생 중 화면 캡처에는 보호된 영상 표면이 가려지고 컨트롤과 텍스트 자막은 UI에 표시됩니다. 재생 음성 캡처는 Android의 앱 정책으로 제한됩니다.
 
-승인한 뒤 PC에서 재생 공유를 시작하세요. 재생 화면의 자막 아이콘으로 제공된 자막을 선택할 수 있습니다. 파일은 호스트와 컨테이너가 지원할 때 위치 이동이 가능하고, Blu-ray 타이틀은 실시간 스트림으로 재생합니다.
+승인한 뒤 PC에서 **공유 시작**을 누르세요. Android에서 직접 시작하려면 PC에서 영상을 열고 **내부망 재생 → 연결된 기기에서 현재 미디어 재생 시작 허용**을 켠 다음, Android에서 **재생 시작**을 누르세요. PC에서 소스를 바꾸거나 공유를 중지하면 시작 권한을 다시 켜야 합니다. 재생 화면의 자막 아이콘으로 제공된 자막을 선택할 수 있습니다. 파일은 호스트와 컨테이너가 지원할 때 위치 이동이 가능하고, Blu-ray 타이틀은 실시간 스트림으로 재생합니다.
 
 **재생 정보**에서 소스 형식, 초기화된 영상 디코더, AudioTrack 형식, 화면과 오디오 경로가 보고한 지원 형식을 확인할 수 있습니다. HDR10, HDR10+, Dolby Vision, Dolby Digital Plus JOC(Atmos), Dolby TrueHD 및 DTS의 사용 가능 여부는 실제 소스, 기기와 연결된 출력 장치에 따라 달라집니다.
 
@@ -34,7 +34,7 @@ Choose to ask every time or remember the PC, then request approval. If the six-d
 
 Approved HTTPS connections verify the PC certificate's IP name and public key fingerprint. An Android Keystore key encrypts remembered credentials. The current playback token and media stay in app memory. Screen capture obscures the secure video surface, while playback controls and text subtitle overlays remain in the UI. Android app policy restricts playback audio capture.
 
-Start sharing from the PC after approval. Choose an available subtitle track with the player's subtitle button. File seeking depends on the host and container. Blu-ray titles use a live stream.
+After approval, start sharing on the PC. To start from Android, open the media on the PC, enable **연결된 기기에서 현재 미디어 재생 시작 허용** under **내부망 재생**, then tap **Start playback** on Android. Enable the permission again after the PC changes the source or stops sharing. Choose an available subtitle track with the player's subtitle button. File seeking depends on the host and container. Blu-ray titles use a live stream.
 
 **재생 정보** shows the source formats, initialized video decoder, AudioTrack format, and capabilities reported by the display and audio route. HDR10, HDR10+, Dolby Vision, Dolby Digital Plus JOC (Atmos), Dolby TrueHD, and DTS availability depends on the source, device, and connected outputs.
 

@@ -100,13 +100,15 @@ TranslationLaunch translationLaunch(const TranslationBackend &backend,const QStr
     command.environment=localRuntimeEnvironment(runtime);
     // A child inherits only local paths/settings. Never honor unrelated llama server, model, tool or proxy defaults.
     for(const auto &key:command.environment.keys())if(key.startsWith("LLAMA_ARG_")||key.startsWith("GGML_OPENVINO_")||key=="GGML_BACKEND_PATH")command.environment.remove(key);
+    command.environment.remove("LLAMA_API_KEY");
+    if(!token.isEmpty())command.environment.insert("LLAMA_API_KEY",token);
     command.environment.insert("GGML_BACKEND_PATH",QFileInfo(backend.program).absolutePath());
     command.arguments={"--model",model,"--host","127.0.0.1","--port",QString::number(port),"--ctx-size",
         backend.key=="npu"?"512":backend.vulkanCompatibility?"4096":"8192",
         "--parallel","1","--batch-size","128","--ubatch-size","128","--threads","6","--n-gpu-layers",
         backend.key=="cpu"?"0":backend.vulkanCompatibility?"12":"99",
         "--flash-attn",backend.vulkanCompatibility?"off":"on","--offline","--no-webui","--no-context-shift","--log-colors","off","--verbosity","4",
-        "--cache-ram","0","--no-slots","--api-key",token,"--jinja"};
+        "--cache-ram","0","--no-slots","--jinja"};
     if(backend.openvino){command.environment.insert("GGML_OPENVINO_DEVICE",backend.device);command.environment.insert("GGML_OPENVINO_STATEFUL_EXECUTION","0");command.environment.insert("GGML_OPENVINO_PREFILL_CHUNK_SIZE","128");}
     else command.arguments.append({"--device",backend.key=="cpu"?"none":backend.device});
     if(backend.key=="cuda")command.arguments.append({"--split-mode","none"});

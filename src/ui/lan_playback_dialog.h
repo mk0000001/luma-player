@@ -65,11 +65,11 @@ public:
     void cancelDiscShare(const QString &message);
     bool shareMedia(const LanPlaybackMedia &media);
     bool stopSharingAndWait();
+    void disarmRemoteStart();
 
 signals:
     void shareRequested();
     void receiveRequested();
-    void deviceAuthorized();
     void shareStopped(bool cleanupConfirmed);
     void sharingChanged(bool sharing);
 
@@ -124,11 +124,12 @@ private:
     QGroupBox *deviceOptionsBox_;
     QComboBox *deviceProfile_, *deviceHdr_, *deviceSkip_, *deviceFill_;
     QCheckBox *deviceSubtitleDelayEnabled_;
+    QCheckBox *remoteStart_;
+    QString remoteStartGrant_;
     QSpinBox *deviceSubtitleDelay_;
     QPushButton *applyOptions_, *resetOptions_;
     MediaState mediaState_ = MediaState::Idle;
     bool ready_ = false, sharing_ = false, mediaAvailable_ = false, hasActiveDevice_ = false;
-    bool autoShare_ = true;
     bool forgetting_ = false, shuttingDown_ = false, closingHost_ = false, protocolFailed_ = false;
     bool cleanupConfirmed_ = true;
 #ifdef Q_OS_WIN

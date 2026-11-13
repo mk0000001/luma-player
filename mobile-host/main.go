@@ -24,6 +24,12 @@ type startupStatus struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--translation-identity" {
+		if writeTranslationIdentity(os.Stdout) != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	os.Exit(run(os.Stdin, os.Stdout))
 }
 

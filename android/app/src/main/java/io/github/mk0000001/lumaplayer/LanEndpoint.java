@@ -10,6 +10,7 @@ import okhttp3.HttpUrl;
 final class LanEndpoint {
     static final String SESSION_PATH = "/v1/session";
     static final String MEDIA_PATH = "/v1/media";
+    static final String PLAYBACK_START_PATH = "/v1/playback/start";
     static final String IDENTITY_PATH = "/v1/pair/identity";
     static final String PAIR_START_PATH = "/v1/pair/start";
     static final String PAIR_REVEAL_PATH = "/v1/pair/reveal";
@@ -126,7 +127,7 @@ final class LanEndpoint {
     }
 
     private static boolean permitsPath(String path) {
-        return isMediaPath(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
+        return isMediaPath(path) || PLAYBACK_START_PATH.equals(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
                 || PAIR_REVEAL_PATH.equals(path) || PAIR_POLL_PATH.equals(path) || PAIR_LOGIN_PATH.equals(path);
     }
 

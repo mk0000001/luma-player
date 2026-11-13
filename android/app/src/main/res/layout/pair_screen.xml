@@ -105,5 +105,13 @@
             android:layout_marginTop="14dp"
             android:text="@string/pair_confirm"
             android:visibility="gone" />
+        <Button
+            android:id="@+id/pair_playback_button"
+            style="@style/LumaPrimaryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:text="@string/pair_playback_start"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

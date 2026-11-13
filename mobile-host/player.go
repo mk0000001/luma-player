@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -45,6 +46,7 @@ type playerCommand struct {
 	ID       string         `json:"id"`
 	Decision string         `json:"decision"`
 	Options  *deviceOptions `json:"options"`
+	Grant    string         `json:"grant"`
 }
 
 type statusWriter struct {
@@ -73,6 +75,8 @@ type player struct {
 	startRate       peerRate
 	loginRate       peerRate
 	optionsRevision int64
+	remoteStart     string
+	lastRemoteStart time.Time
 }
 
 func newPlayer(name, pin string, remembered map[string]rememberedDevice,
@@ -188,6 +192,14 @@ func readPlayerCommands(ctx context.Context, input *bufio.Reader, lines chan<- c
 func (p *player) handleCommand(binding config, command playerCommand) {
 	var err error
 	switch command.Command {
+	case "allowRemoteStart":
+		if command.Grant != "" && (len(command.Grant) != 32 || strings.Trim(command.Grant, "0123456789abcdef") != "") {
+			break
+		}
+		p.mu.Lock()
+		p.remoteStart = command.Grant
+		p.lastRemoteStart = time.Time{}
+		p.mu.Unlock()
 	case "share":
 		err = p.shareMedia(binding, command.Media)
 		if err == nil {
@@ -269,6 +281,7 @@ func (p *player) stopMedia() {
 func (p *player) revokeAndStop(command string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.remoteStart = ""
 	if command == "forget" {
 		empty := make(map[string]rememberedDevice)
 		if err := p.persist(empty); err != nil {
@@ -291,13 +304,16 @@ func (p *player) revokeAndStop(command string) error {
 }
 
 func (p *player) authorize(peer netip.Addr, token string, trackRequest bool) (*sharedMedia, *activeDevice) {
-	if !validPairValue(token, 16) {
-		return nil, nil
-	}
-	hash := sha256.Sum256([]byte(token))
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	now := p.now()
+	return p.media, p.authorizeLocked(peer, token, trackRequest, p.now())
+}
+
+func (p *player) authorizeLocked(peer netip.Addr, token string, trackRequest bool, now time.Time) *activeDevice {
+	if !validPairValue(token, 16) {
+		return nil
+	}
+	hash := sha256.Sum256([]byte(token))
 	p.expireDevices(now)
 	var authorized *activeDevice
 	for _, device := range p.active {
@@ -306,14 +322,14 @@ func (p *player) authorize(peer netip.Addr, token string, trackRequest bool) (*s
 		}
 	}
 	if authorized == nil {
-		return nil, nil
+		return nil
 	}
 	authorized.used = true
 	authorized.seen.Store(now.UnixNano())
 	if trackRequest {
 		authorized.requests.Add(1)
 	}
-	return p.media, authorized
+	return authorized
 }
 
 func (shared *sharedMedia) serve(w *responseWriter, r *http.Request, device *activeDevice, route playbackRoute) {

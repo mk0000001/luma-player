@@ -72,6 +72,33 @@ public final class MediaRequestsTest {
     }
 
     @Test
+    public void mediaResponsesAcceptOnlyProgressivePlaybackTypes() throws Exception {
+        Request original = new Request.Builder().url("https://192.168.0.2:48762/v1/media").build();
+        Request variant = new Request.Builder().url("https://192.168.0.2:48762/v1/media/variant/720p/0").build();
+        Request originalAlias = new Request.Builder()
+                .url("https://192.168.0.2:48762" + LanEndpoint.mediaVariantPath("original", 0)).build();
+        for (String type : new String[]{"video/mp4", "audio/flac", "application/octet-stream"}) {
+            try (Response response = responseFor(original, type)) {
+                assertTrue(response == LanClient.checkedPlaybackResponse(response));
+            }
+        }
+        for (String type : new String[]{"text/html", "application/vnd.apple.mpegurl"}) {
+            try (Response response = responseFor(original, type)) {
+                assertThrows(IOException.class, () -> LanClient.checkedPlaybackResponse(response));
+            }
+        }
+        try (Response response = responseFor(variant, "video/x-matroska")) {
+            assertTrue(response == LanClient.checkedPlaybackResponse(response));
+        }
+        try (Response response = responseFor(variant, "video/mp4")) {
+            assertThrows(IOException.class, () -> LanClient.checkedPlaybackResponse(response));
+        }
+        try (Response response = responseFor(originalAlias, "video/mp4")) {
+            assertTrue(response == LanClient.checkedPlaybackResponse(response));
+        }
+    }
+
+    @Test
     public void subtitleResponsesPreserveTextAndRejectUnsupportedContent() throws Exception {
         String cue = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSynthetic cue\n";
         try (ResponseBody input = ResponseBody.create(cue, MediaType.get("text/vtt; charset=utf-8"));

@@ -32,6 +32,7 @@
 #include <QSysInfo>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QUuid>
 #include <QVBoxLayout>
 #include <algorithm>
 #ifdef Q_OS_WIN
@@ -231,6 +232,14 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     shareButtons->addWidget(wirelessDisplay);
 #endif
     layout->addLayout(shareButtons);
+    remoteStart_ = new QCheckBox("연결된 기기에서 현재 미디어 재생 시작 허용", this);
+    remoteStart_->setObjectName("lanAllowRemoteStart");
+    layout->addWidget(remoteStart_);
+    connect(remoteStart_, &QCheckBox::toggled, this, [this](bool enabled) {
+        remoteStartGrant_ = enabled ? QUuid::createUuid().toString(QUuid::Id128) : QString{};
+        if (ready_)
+            writeMessage(QJsonObject{{"command", "allowRemoteStart"}, {"grant", remoteStartGrant_}});
+    });
 #ifdef Q_OS_WIN
     directButton_ = new QPushButton("공유기 없이 휴대폰 연결", this);
     directButton_->setObjectName("lanWindowsDirect");
@@ -330,14 +339,8 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     deviceRefresh_.setInterval(5000);
     connect(&deviceRefresh_, &QTimer::timeout, this, &LanPlaybackDialog::requestDevices);
     host_.setStandardErrorFile(QProcess::nullDevice());
-    connect(start_, &QPushButton::clicked, this, [this] {
-        autoShare_ = true;
-        emit shareRequested();
-    });
-    connect(stop_, &QPushButton::clicked, this, [this] {
-        autoShare_ = false;
-        stopSharing();
-    });
+    connect(start_, &QPushButton::clicked, this, &LanPlaybackDialog::shareRequested);
+    connect(stop_, &QPushButton::clicked, this, &LanPlaybackDialog::stopSharing);
     connect(receive, &QPushButton::clicked, this, &LanPlaybackDialog::receiveRequested);
     connect(disconnectDevice_, &QPushButton::clicked, this, [this] { manageDevice(false); });
     connect(forgetDevice_, &QPushButton::clicked, this, [this] { manageDevice(true); });
@@ -378,6 +381,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
         updateControls();
     });
     connect(&host_, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        disarmRemoteStart();
         watchdog_.stop();
         const bool stoppedCleanly = exitStatus == QProcess::NormalExit && exitCode == 0;
         const bool mediaReleased = stoppedCleanly || mediaState_ == MediaState::Preparing;
@@ -575,7 +579,9 @@ void LanPlaybackDialog::pollDirect() {
         return;
     const auto result = direct_->poll();
     if (result.phase == WindowsDirectConnection::Phase::Failed ||
-        (result.phase == WindowsDirectConnection::Phase::Starting && directStartup_.hasExpired(15000))) {
+        (result.phase == WindowsDirectConnection::Phase::Starting && directStartup_.hasExpired(15000)) ||
+        (result.phase == WindowsDirectConnection::Phase::Started && !directBinding_ &&
+         !result.binding && directStartup_.hasExpired(90000))) {
         stopDirect("Wi-Fi Direct 연결을 사용할 수 없습니다. 내부망 연결로 돌아갑니다.");
         return;
     }
@@ -616,6 +622,7 @@ void LanPlaybackDialog::stopDirect(const QString &message) {
 #endif
 
 void LanPlaybackDialog::closeHost() {
+    disarmRemoteStart();
     if (host_.state() == QProcess::NotRunning)
         return;
     closingHost_ = true;
@@ -628,7 +635,13 @@ void LanPlaybackDialog::closeHost() {
     closingHost_ = false;
 }
 
+void LanPlaybackDialog::disarmRemoteStart() {
+    remoteStart_->setChecked(false);
+}
+
 void LanPlaybackDialog::setMediaAvailable(bool available, bool disc) {
+    if (!available)
+        disarmRemoteStart();
     const bool showAudio = available && disc;
     if (audioMode_->isHidden() == showAudio)
         audioMode_->setVisible(showAudio);
@@ -707,6 +720,7 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
 }
 
 void LanPlaybackDialog::stopSharing() {
+    disarmRemoteStart();
     if (mediaState_ == MediaState::Idle || mediaState_ == MediaState::Stopping)
         return;
     mediaState_ = MediaState::Stopping;
@@ -740,6 +754,7 @@ void LanPlaybackDialog::forgetDevices() {
             "기억한 기기와 현재 연결을 모두 해제합니다. 다시 연결하려면 PC에서 승인해야 합니다.",
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes || !ready_)
         return;
+    disarmRemoteStart();
     forgetting_ = true;
     if (mediaState_ != MediaState::Idle)
         mediaState_ = MediaState::Stopping;
@@ -808,6 +823,7 @@ void LanPlaybackDialog::manageDevice(bool forget) {
             "이 기기를 목록에서 지우고 연결을 끊습니다. 다음 연결은 PC의 승인이 필요합니다.",
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
+    disarmRemoteStart();
     if (ready_ && !forgetting_ && !writeMessage(QJsonObject{
             {"command", forget ? "forgetDevice" : "disconnectDevice"}, {"id", id}}))
         status_->setText("기기 연결을 변경할 수 없습니다.");
@@ -927,13 +943,16 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         if (mediaState_ == MediaState::Idle) {
             if (!mediaAvailable_)
                 status_->setText("기기가 연결되었습니다. PC에서 미디어를 열고 공유를 시작하세요.");
+            else if (remoteStart_->isChecked())
+                status_->setText("기기가 연결되었습니다. Android에서 재생을 시작할 수 있습니다.");
             else
-                status_->setText(autoShare_ ? "기기 연결이 승인되었습니다." : "기기가 연결되었습니다. 공유 시작을 누르세요.");
+                status_->setText("기기가 연결되었습니다. 공유 시작을 누르세요.");
         }
         updateControls();
-        if (autoShare_)
-            emit deviceAuthorized();
         requestDevices();
+    } else if (event == "remoteStart") {
+        if (!remoteStartGrant_.isEmpty() && message.value("id").toString() == remoteStartGrant_ && canShare())
+            emit shareRequested();
     } else if (event == "devices" && message.value("devices").isArray()) {
         updateDevices(message.value("devices").toArray());
     } else if (event == "sharing" && (mediaState_ == MediaState::Starting || mediaState_ == MediaState::Stopping)) {
@@ -1109,6 +1128,7 @@ void LanPlaybackDialog::updateControls() {
     retry_->setEnabled(idle && !starting && !forgetting_ && !direct);
     audioMode_->setEnabled(idle && !forgetting_);
     start_->setEnabled(canShare());
+    remoteStart_->setEnabled(ready_ && mediaAvailable_ && !forgetting_ && mediaState_ == MediaState::Idle);
     stop_->setEnabled(!idle && mediaState_ != MediaState::Stopping);
     forget_->setEnabled(ready_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     const auto *selected = devices_->currentItem();

@@ -215,6 +215,18 @@ final class LanClient implements Closeable {
         return fetchSession(4);
     }
 
+    void requestPlaybackStart() throws IOException {
+        Request request = new Request.Builder().url(url(LanEndpoint.PLAYBACK_START_PATH))
+                .post(RequestBody.create(new byte[0], null)).build();
+        Call call = metadataRequests.newCall(request);
+        call.timeout().timeout(5, TimeUnit.SECONDS);
+        try (Response response = call.execute()) {
+            if (response.code() != 202) {
+                throw new HttpException(response.code());
+            }
+        }
+    }
+
     private LanSession fetchSession(long timeoutSeconds) throws IOException {
         return LanSession.parse(readJson(LanEndpoint.SESSION_PATH, null, timeoutSeconds, MAX_SESSION_BYTES));
     }
@@ -257,6 +269,18 @@ final class LanClient implements Closeable {
                     .header("Content-Length", "0").body(ResponseBody.create(new byte[0], null)).build();
         }
         if (!LanEndpoint.isSubtitlePath(path)) {
+            MediaType type = body == null ? null : body.contentType();
+            String mimeType = type == null ? "" : type.type() + "/" + type.subtype();
+            boolean original = LanEndpoint.MEDIA_PATH.equals(path)
+                    || LanEndpoint.mediaVariantPath("original", 0).equals(path);
+            boolean supported = original
+                    ? LanSession.supportsFileMime(mimeType) : LanSession.DISC_MIME.equals(mimeType);
+            if (!supported) {
+                if (body != null) {
+                    body.close();
+                }
+                throw new IOException("Unsupported LAN media response type");
+            }
             return response;
         }
         try {
@@ -358,7 +382,8 @@ final class LanClient implements Closeable {
                 case PAIRING -> "POST".equals(method) && (LanEndpoint.PAIR_START_PATH.equals(path)
                         || LanEndpoint.PAIR_REVEAL_PATH.equals(path) || LanEndpoint.PAIR_POLL_PATH.equals(path));
                 case REMEMBERED -> "POST".equals(method) && LanEndpoint.PAIR_LOGIN_PATH.equals(path);
-                case PLAYBACK -> "GET".equals(method) && LanEndpoint.isMediaPath(path);
+                case PLAYBACK -> ("GET".equals(method) && LanEndpoint.isMediaPath(path))
+                        || ("POST".equals(method) && LanEndpoint.PLAYBACK_START_PATH.equals(path));
             };
         }
     }

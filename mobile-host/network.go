@@ -15,7 +15,10 @@ import (
 	"time"
 )
 
-const maxConnections = 8
+const (
+	maxConnections        = 8
+	maxConnectionsPerPeer = 6
+)
 
 func allowedPeer(ip netip.Addr, subnet netip.Prefix) bool {
 	return ip.Is4() && ip.IsPrivate() && subnet.Contains(ip)
@@ -37,6 +40,41 @@ type lanListener struct {
 	subnet   netip.Prefix
 	loopback bool
 	slots    chan struct{}
+	mu       sync.Mutex
+	peers    map[netip.Addr]int
+}
+
+func (l *lanListener) acquire(ip netip.Addr) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.loopback && l.peers[ip] >= maxConnectionsPerPeer {
+		return false
+	}
+	select {
+	case l.slots <- struct{}{}:
+		if !l.loopback {
+			if l.peers == nil {
+				l.peers = make(map[netip.Addr]int)
+			}
+			l.peers[ip]++
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func (l *lanListener) release(ip netip.Addr) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	<-l.slots
+	if !l.loopback {
+		if l.peers[ip] == 1 {
+			delete(l.peers, ip)
+		} else {
+			l.peers[ip]--
+		}
+	}
 }
 
 func (l *lanListener) Accept() (net.Conn, error) {
@@ -46,37 +84,30 @@ func (l *lanListener) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		peer, ok := conn.RemoteAddr().(*net.TCPAddr)
-		var allowed bool
+		var ip netip.Addr
 		if ok {
-			ip := peer.AddrPort().Addr().Unmap()
-			if l.loopback {
-				allowed = ip == netip.AddrFrom4([4]byte{127, 0, 0, 1})
-			} else {
-				allowed = allowedPeer(ip, l.subnet)
-			}
+			ip = peer.AddrPort().Addr().Unmap()
 		}
-		if !allowed {
-			_ = conn.Close()
-			continue
+		allowed := allowedPeer(ip, l.subnet)
+		if l.loopback {
+			allowed = ip == netip.AddrFrom4([4]byte{127, 0, 0, 1})
 		}
-		select {
-		case l.slots <- struct{}{}:
-			return &lanConnection{Conn: conn, slots: l.slots}, nil
-		default:
-			_ = conn.Close()
+		if allowed && l.acquire(ip) {
+			return &lanConnection{Conn: conn, release: func() { l.release(ip) }}, nil
 		}
+		_ = conn.Close()
 	}
 }
 
 type lanConnection struct {
 	net.Conn
-	slots chan struct{}
-	once  sync.Once
+	release func()
+	once    sync.Once
 }
 
 func (c *lanConnection) Close() error {
 	err := c.Conn.Close()
-	c.once.Do(func() { <-c.slots })
+	c.once.Do(c.release)
 	return err
 }
 

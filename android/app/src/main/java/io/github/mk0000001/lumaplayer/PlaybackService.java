@@ -22,7 +22,7 @@ import androidx.media3.session.MediaSessionService;
 import androidx.media3.session.SessionCommands;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import java.util.List;
+import java.util.Collections;
 
 @UnstableApi
 public final class PlaybackService extends MediaSessionService {
@@ -240,7 +240,7 @@ public final class PlaybackService extends MediaSessionService {
                     .setPlaybackSuppressionReason(player.getPlaybackSuppressionReason())
                     .setPlaybackParameters(player.getPlaybackParameters());
             if (hasMedia) {
-                state.setPlaylist(List.of(new MediaItemData.Builder("luma-playback")
+                state.setPlaylist(Collections.singletonList(new MediaItemData.Builder("luma-playback")
                                 .setMediaItem(displayItem).setDurationUs(Util.msToUs(player.getDuration())).build()))
                         .setContentPositionMs(player.getContentPosition());
             }

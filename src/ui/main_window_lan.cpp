@@ -17,7 +17,6 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
         lanPlaybackDialog_ = new LanPlaybackDialog(this);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareRequested, this, &MainWindow::startLanShare);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::receiveRequested, this, &MainWindow::showLanReceiver);
-        connect(lanPlaybackDialog_, &LanPlaybackDialog::deviceAuthorized, this, &MainWindow::startLanShare);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareStopped, this, &MainWindow::finishLanShare);
         updateLanPlaybackAvailability();
     }
@@ -192,6 +191,7 @@ void MainWindow::finishLanShare(bool cleanupConfirmed) {
 bool MainWindow::stopLanShareForSourceChange() {
     if (!lanPlaybackDialog_)
         return true;
+    lanPlaybackDialog_->disarmRemoteStart();
     QScopedValueRollback changing(lanSourceChanging_, true);
     const bool resume = lanDiscResume_;
     lanDiscResume_ = false;
