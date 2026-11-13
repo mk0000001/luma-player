@@ -95,6 +95,13 @@ final class PcController {
         position();
     }
 
+    void openOverlay(Consumer<String> action) {
+        send = action;
+        overlay = true;
+        scroll.scrollTo(0, 0);
+        position();
+    }
+
     void toggle(Consumer<String> action) {
         send = action;
         if (activity.findViewById(R.id.playback_details).isShown()) inline = !inline;

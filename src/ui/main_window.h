@@ -96,6 +96,7 @@ private:
     bool lanDiscSharing_=false,lanDiscAwaitingPause_=false,lanDiscResume_=false,lanSourceChanging_=false;
     bool lanRemotePlayback_=false,lanRemoteSeekable_=false;
     bool lanReturnToDiscMenu_=false;
+    bool pendingLanDiscOpen_=false;
     QDeadlineTimer lanDiscPauseDeadline_;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;

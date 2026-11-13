@@ -254,6 +254,7 @@ final class ConnectionScreen {
             }
         }));
         setStatus(pairStatus, R.string.pair_wait_media, false);
+        controller.openOverlay(action -> sendPcAction(media, action));
         checkWaitingClient(media, 0);
     }
 

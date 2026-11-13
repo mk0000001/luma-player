@@ -48,7 +48,15 @@ void MainWindow::applyLanRemoteControl(const QString &action,const QString &file
         }
         return;
     }
-    if (action == "disc-open") { if (!lanDiscSharing_) playConnectedDisc(); return; }
+    if (action == "disc-open") {
+        if (lanDiscSharing_) return;
+        if (lanPlaybackDialog_->isSharing()) {
+            if (lanPlaybackDialog_->releaseMediaForRemoteControl()) pendingLanDiscOpen_ = true;
+        } else {
+            playConnectedDisc();
+        }
+        return;
+    }
     if (action == "resume") { if (!lanDiscSharing_) resumeLatest(); return; }
     if (action == "fullscreen") { toggleFullScreen(); return; }
     if (action == "picture-in-picture") { togglePictureInPicture(); return; }
@@ -275,6 +283,11 @@ bool MainWindow::sendLanMedia() {
 
 void MainWindow::finishLanShare(bool cleanupConfirmed) {
     const auto file=std::exchange(pendingLanFile_,QString{});
+    const bool openDisc=std::exchange(pendingLanDiscOpen_,false);
+    if(cleanupConfirmed && openDisc){
+        QTimer::singleShot(0,this,[this]{applyLanRemoteControl("disc-open",{});});
+        return;
+    }
     if(cleanupConfirmed && !file.isEmpty()){
         lanDiscSharing_=lanDiscAwaitingPause_=lanDiscResume_=false;
         QTimer::singleShot(0,this,[this,file]{applyLanRemoteControl("file-open",file);});
