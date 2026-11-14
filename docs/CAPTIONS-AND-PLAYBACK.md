@@ -18,7 +18,7 @@
 
 ### Windows AI 가속 설치
 
-처음 실행할 때 Windows에서 감지한 GPU와 NPU에 맞춰 AI 가속 라이브러리를 추천합니다. 이후 **설정 → AI 가속 설정**에서도 설치할 수 있습니다. NVIDIA CUDA, AMD Radeon을 포함한 Vulkan, Intel OpenVINO 중 원하는 항목을 직접 선택할 수 있습니다. 설치는 LumaPlayer 폴더에 적용되며, 가속 사용은 장치와 드라이버가 해당 백엔드를 지원할 때 시작됩니다. Radeon은 Windows의 D3D11 영상 디코딩과 Vulkan 음성 인식·번역 경로를 사용합니다.
+**설정 → AI 가속 설정**을 열면 GPU와 NPU를 확인하고 알맞은 라이브러리를 표시합니다. NVIDIA CUDA, AMD Radeon을 포함한 Vulkan, Intel OpenVINO 중 원하는 항목을 선택해 설치할 수 있습니다. 설치는 LumaPlayer 폴더에 적용되며, 가속 사용은 장치와 드라이버가 해당 백엔드를 지원할 때 시작됩니다. Radeon은 Windows의 D3D11 영상 디코딩과 Vulkan 음성 인식·번역 경로를 사용합니다.
 
 ### Radeon 가속 비교
 
@@ -153,7 +153,7 @@ A manual pause remains paused when preparation finishes. Failures show status an
 
 ### Windows AI acceleration setup
 
-On first launch, LumaPlayer recommends AI libraries based on the GPUs and NPUs detected on Windows. Open **설정 → AI 가속 설정** to install them later. NVIDIA CUDA, Vulkan (including AMD Radeon), and Intel OpenVINO are also available for manual selection. Installation is scoped to the LumaPlayer directory. Acceleration requires a device and driver that support the backend. Radeon uses Windows D3D11 for video decoding and Vulkan for speech recognition and translation.
+Open **설정 → AI 가속 설정** to check detected GPUs and NPUs and see the recommended libraries. Select NVIDIA CUDA, Vulkan (including AMD Radeon), or Intel OpenVINO to install a runtime. Installation is scoped to the LumaPlayer directory. Acceleration requires a device and driver that support the backend. Radeon uses Windows D3D11 for video decoding and Vulkan for speech recognition and translation.
 
 ### Comparing Radeon acceleration
 
