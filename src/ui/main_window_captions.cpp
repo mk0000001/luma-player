@@ -211,12 +211,25 @@ void MainWindow::enableAutomaticSubtitles(const QString &language){const int ind
 void MainWindow::automaticCaptionsChanged(bool enabled){
     if(subtitleFileLoader_)subtitleFileLoader_->cancel();presentationDirty_=true;QSettings().setValue("subtitles/aiEnabled",enabled);
     if(lanRemotePlayback_)return;
-    if(enabled)requestComputeDeviceInventory();
-    if(enabled){preparedCaptions_.reset();preparedApplied_=false;externalCues_.clear();aiFailed_=false;bufferBypass_=false;captionPrefillPending_=true;aiRetryCount_=0;nextAiAttemptMs_=0;if(active_)active_->setSubtitle(-1);rebuildManagedCaptions();job_.warmUp(model_);warmTranslationForCaptions();scheduleSubtitles();}
+    if(enabled){
+        preparedCaptions_.reset();preparedApplied_=false;externalCues_.clear();aiFailed_=false;bufferBypass_=false;
+        captionPrefillPending_=true;aiRetryCount_=0;nextAiAttemptMs_=0;
+        if(active_)active_->setSubtitle(-1);
+        rebuildManagedCaptions();
+        if(liveCaptioningActive()){
+            requestComputeDeviceInventory();
+            job_.warmUp(model_);
+            warmTranslationForCaptions();
+            scheduleSubtitles();
+        }
+    }
     else{cancelSubtitleWork();job_.shutdown();releaseCaptionBuffer(true);if(active_)active_->clearManagedSubtitles();aiStatus_->setText("AI 자동자막 꺼짐");bufferStatus_->setText("AI 자동자막 꺼짐 · 일반 재생");rebuildManagedCaptions();}
 }
 
-bool MainWindow::liveCaptioningActive()const{return !lanRemotePlayback_ && aiEnabled_->isChecked() && !preparedCaptions_ && externalCues_.isEmpty();}
+bool MainWindow::liveCaptioningActive()const{
+    return active_ && !active_->state().failed && !lanRemotePlayback_ && aiEnabled_->isChecked()
+        && !preparedCaptions_ && externalCues_.isEmpty();
+}
 
 void MainWindow::setCaptionsVisible(bool visible){
     captionsVisible_=visible;

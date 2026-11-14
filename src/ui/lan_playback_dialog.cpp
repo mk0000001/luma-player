@@ -50,7 +50,6 @@ constexpr int port = 48762;
 constexpr int startupWaitMs = 10000;
 constexpr int discoveryRefreshMs = 5000;
 constexpr auto discoveryAtStartupKey = "lan/discoveryAtStartup";
-constexpr auto controlAfterPairingKey = "lan/controlAfterPairing";
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
@@ -272,9 +271,6 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     layout->addWidget(remoteControl_);
     connect(remoteControl_, &QCheckBox::toggled, this, [this](bool enabled) {
         publishRemoteControl(enabled);
-    });
-    connect(remoteControl_, &QCheckBox::clicked, this, [](bool enabled) {
-        QSettings().setValue(controlAfterPairingKey, enabled);
     });
     auto *remoteFiles = new QPushButton("갤탭에서 고를 파일 지정", this);
     remoteFiles->setObjectName("lanChooseRemoteFiles");
@@ -1140,12 +1136,6 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         showPairRequest(message);
     } else if (event == "deviceConnected" && !forgetting_) {
         hasActiveDevice_ = true;
-        if (mediaState_ != MediaState::Stopping && QSettings().value(controlAfterPairingKey, false).toBool()) {
-            if (remoteControl_->isChecked())
-                publishRemoteControl(true);
-            else
-                remoteControl_->setChecked(true);
-        }
         if (mediaState_ == MediaState::Idle) {
             if (!mediaAvailable_)
                 status_->setText("기기가 연결되었습니다. PC에서 미디어를 열고 공유를 시작하세요.");
@@ -1276,8 +1266,6 @@ void LanPlaybackDialog::showPairRequest(const QJsonObject &message) {
     const auto name = message.value("device").toString().simplified().left(128);
     layout->addWidget(plainLabel(name.isEmpty() ? "Android 기기" : name, dialog));
     layout->addWidget(plainLabel("연결하려는 기기에 같은 번호가 보이면 승인하세요.", dialog));
-    if (QSettings().value(controlAfterPairingKey, false).toBool())
-        layout->addWidget(plainLabel("승인한 기기에서 PC 플레이어를 조작할 수 있습니다.", dialog));
     auto *number = plainLabel(code, dialog);
     number->setObjectName("lanPairingCode");
     number->setAlignment(Qt::AlignCenter);

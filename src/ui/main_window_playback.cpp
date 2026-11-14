@@ -390,7 +390,10 @@ bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     surface->setVideoActive(opened);applyCapturePolicy();updateDisplayStatus();updateMotionSettings();
     updateLanPlaybackAvailability();
     if(opened)QTimer::singleShot(0,this,&MainWindow::warmTranslationForCaptions);
-    if(opened && !remote && !preparedOpen && liveCaptioningActive())requestComputeDeviceInventory();
+    if(opened && !preparedOpen && liveCaptioningActive()){
+        requestComputeDeviceInventory();
+        job_.warmUp(model_);
+    }
     if(opened && !remote && !disc && !preparedOpen && QDir::isAbsolutePath(source_)){
         const QFileInfo media(source_);const auto base=media.dir().filePath(media.completeBaseName());
         for(const auto &extension:QStringList{"srt","ass","ssa","vtt","smi","sami"})if(QFileInfo::exists(base+'.'+extension)){loadCaptionFile(base+'.'+extension);break;}
