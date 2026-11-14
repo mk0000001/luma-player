@@ -35,7 +35,7 @@ struct LanPlaybackMedia {
     qint64 durationMs = 0;
     qint64 startMs = 0;
     int audioIndex = -1, audioTrackId = -1;
-    bool disc = false;
+    bool disc = false, liveCaptions = false;
 };
 
 struct LanPrivateInterface {
@@ -73,6 +73,8 @@ public:
     void disarmRemoteStart();
     QString remoteFilePath(const QString &id) const;
     void sendDiscMenuFrame(const QByteArray &png);
+    bool publishCaptions(QJsonObject state);
+    bool requestCaptionAudio(const QString &id,qint64 positionMs,qint64 durationMs);
 
 signals:
     void shareRequested();
@@ -82,6 +84,8 @@ signals:
     void receiveRequested();
     void shareStopped(bool cleanupConfirmed);
     void sharingChanged(bool sharing);
+    void captionClockChanged(qint64 positionMs);
+    void captionAudioReceived(const QString &id,const QString &state,const QByteArray &pcm);
 
 protected:
     void showEvent(QShowEvent *event) override;
@@ -144,6 +148,8 @@ private:
     QCheckBox *remoteControl_;
     QString remoteStartGrant_;
     QString remoteControlGrant_;
+    QString mediaRevision_;
+    QJsonObject lastCaptions_;
     QSpinBox *deviceSubtitleDelay_;
     QPushButton *applyOptions_, *resetOptions_;
     MediaState mediaState_ = MediaState::Idle;

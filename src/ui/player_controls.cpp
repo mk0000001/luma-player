@@ -43,7 +43,10 @@ void paintIcon(QPainter &p,PlayerIcon icon){
         for(const auto corner:{QPointF(-1,-1),QPointF(1,-1),QPointF(-1,1),QPointF(1,1)}){
             const QPointF at=corner*8;const QPointF origin=icon==PlayerIcon::Fullscreen?at:at*.45;
             p.drawLine(origin,origin+QPointF(-corner.x()*5*sign,0));p.drawLine(origin,origin+QPointF(0,-corner.y()*5*sign));}break;}
-    case PlayerIcon::Volume:p.drawPolyline(QPolygonF{{-9,-3},{-5,-3},{0,-7},{0,7},{-5,3},{-9,3},{-9,-3}});p.drawArc(QRectF(-5,-6,12,12),-65*16,130*16);p.drawArc(QRectF(-7,-10,20,20),-55*16,110*16);break;
+    case PlayerIcon::Volume:case PlayerIcon::Mute:
+        p.drawPolyline(QPolygonF{{-9,-3},{-5,-3},{0,-7},{0,7},{-5,3},{-9,3},{-9,-3}});
+        if(icon==PlayerIcon::Volume){p.drawArc(QRectF(-5,-6,12,12),-65*16,130*16);p.drawArc(QRectF(-7,-10,20,20),-55*16,110*16);}
+        else{p.drawLine(QPointF(4,-3),QPointF(10,3));p.drawLine(QPointF(10,-3),QPointF(4,3));}break;
     case PlayerIcon::PictureInPicture:
         p.drawRoundedRect(QRectF(-9,-6,18,12),2,2);
         p.setBrush(p.pen().color());p.drawRect(QRectF(0,0,6,3));break;
@@ -74,9 +77,16 @@ void SeekSlider::setBuffer(int value,int fillingPercent){
     fillingPercent_=fillingPercent;
     update();
 }
+void SeekSlider::setChapterMarks(QVector<int> marks,int activeMark){
+    if(chapterMarks_==marks && activeChapterMark_==activeMark)return;
+    chapterMarks_=std::move(marks);
+    activeChapterMark_=activeMark;
+    update();
+}
 void SeekSlider::paintEvent(QPaintEvent *event){
     QSlider::paintEvent(event);
-    if(bufferedValue_<=sliderPosition() && fillingPercent_<0)return;
+    const bool buffered=bufferedValue_>sliderPosition() || fillingPercent_>=0;
+    if(!buffered && chapterMarks_.isEmpty())return;
     QStyleOptionSlider option;
     initStyleOption(&option);
     const auto groove=style()->subControlRect(QStyle::CC_Slider,&option,QStyle::SC_SliderGroove,this);
@@ -85,15 +95,25 @@ void SeekSlider::paintEvent(QPaintEvent *event){
     const int start=handle.center().x();
     const int direction=option.upsideDown?-1:1;
     const int limit=option.upsideDown?groove.left():groove.right();
-    const int end=fillingPercent_>=0
-        ? start+direction*std::min(std::abs(limit-start),handle.width()/2+1+36*fillingPercent_/100)
-        : groove.left()+handle.width()/2+
-            QStyle::sliderPositionFromValue(minimum(),maximum(),bufferedValue_,travel,option.upsideDown);
-    if(start==end)return;
     QPainter painter(this);
-    painter.setPen(QPen(palette().color(QPalette::Midlight),3,Qt::SolidLine,Qt::RoundCap));
-    const int first=start+direction*(handle.width()/2+1);
-    if((end-first)*direction>=0)painter.drawLine(first,groove.center().y(),end,groove.center().y());
+    const auto xAt=[&](int value){return groove.left()+handle.width()/2+
+        QStyle::sliderPositionFromValue(minimum(),maximum(),value,travel,option.upsideDown);};
+    if(buffered){
+        const int end=fillingPercent_>=0
+            ? start+direction*std::min(std::abs(limit-start),handle.width()/2+1+36*fillingPercent_/100)
+            : xAt(bufferedValue_);
+        painter.setPen(QPen(palette().color(QPalette::Midlight),3,Qt::SolidLine,Qt::RoundCap));
+        const int first=start+direction*(handle.width()/2+1);
+        if((end-first)*direction>=0)painter.drawLine(first,groove.center().y(),end,groove.center().y());
+    }
+    const int y=groove.center().y();
+    for(int mark:chapterMarks_){
+        const int x=xAt(mark);
+        if(handle.contains(x,y))continue;
+        const bool active=mark==activeChapterMark_;
+        painter.setPen(QPen(palette().color(active?QPalette::Highlight:QPalette::Text),active?2:1));
+        painter.drawLine(x,y-(active?4:2),x,y+(active?4:2));
+    }
 }
 BrandMark::BrandMark(QWidget *parent):QWidget(parent){setFixedSize(137,36);setAccessibleName("LumaPlayer");setAttribute(Qt::WA_TranslucentBackground);}
 void BrandMark::paintEvent(QPaintEvent *){

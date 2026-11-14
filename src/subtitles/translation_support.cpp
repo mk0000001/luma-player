@@ -15,19 +15,24 @@ namespace luma {
 QVector<SubtitleCue> nearbyTranslationCues(const QVector<SubtitleCue> &cues,qint64 positionMs,
     const std::function<bool(const QString &)> &skip){
     constexpr qsizetype limit=16;
-    constexpr qint64 historyMs=5000,lookAheadMs=90000;
+    constexpr qint64 urgentLeadMs=2000,lookAheadMs=90000;
     const auto position=std::max<qint64>(positionMs,0);
     const auto latest=position+std::min(lookAheadMs,std::numeric_limits<qint64>::max()-position);
-    const auto distance=[position](const SubtitleCue &cue){
-        return cue.startMs>=position?quint64(cue.startMs)-quint64(position):quint64(position)-quint64(cue.startMs);
+    const auto priority=[position](const SubtitleCue &cue){
+        if(cue.startMs<position)return 1; // The cue is already visible.
+        return cue.startMs-position<=urgentLeadMs?0:2;
     };
     struct Candidate {const SubtitleCue *cue;QString key;};
-    const auto nearer=[&distance](const Candidate &a,const Candidate &b){return distance(*a.cue)<distance(*b.cue);};
+    const auto nearer=[&priority](const Candidate &a,const Candidate &b){
+        const auto left=priority(*a.cue),right=priority(*b.cue);
+        if(left!=right)return left<right;
+        return left==1?a.cue->startMs>b.cue->startMs:a.cue->startMs<b.cue->startMs;
+    };
     QVector<Candidate> nearest;
     nearest.reserve(limit);
     QSet<QString> queued;
     for(const auto &cue:cues){
-        if(cue.endMs<position-historyMs || cue.startMs>latest || cue.text.isEmpty())continue;
+        if(cue.startMs<0 || cue.endMs<=cue.startMs || cue.endMs<=position || cue.startMs>latest || cue.text.isEmpty())continue;
         Candidate candidate{&cue,{}};
         if(nearest.size()==limit && !nearer(candidate,nearest.back()))continue;
         candidate.key=translationCueKey(cue);
@@ -45,14 +50,14 @@ QVector<SubtitleCue> nearbyTranslationCues(const QVector<SubtitleCue> &cues,qint
 }
 
 TranslationQueue::TranslationQueue(int pendingLimit,int cacheLimit):pendingLimit_(std::max(1,pendingLimit)),cacheLimit_(std::max(1,cacheLimit)){}
-void TranslationQueue::enqueue(const QStringList &sources){
+void TranslationQueue::enqueue(const QStringList &sources,bool keepPending){
     QStringList prioritized;QSet<QString> seen;
     auto append=[&](const QString &source){
         if(prioritized.size()>=pendingLimit_||source.trimmed().isEmpty()||source==active_||seen.contains(source))return;
         prioritized.append(source);seen.insert(source);
     };
     for(const auto &source:sources)append(source);
-    for(const auto &source:pending_)append(source);
+    if(keepPending)for(const auto &source:pending_)append(source);
     pending_=prioritized;
 }
 std::optional<TranslationTask> TranslationQueue::take(){
@@ -259,8 +264,9 @@ QString translationCueKey(const SubtitleCue &cue){
     return "cue:"+QString::number(cue.startMs)+":"+QString::number(cue.endMs)+":"+QString::fromLatin1(hash);
 }
 QJsonObject translationPayload(const QString &source,TranslationProfile profile){return translationPayload(SubtitleCue{0,0,source},{},profile);}
-QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile,int promptByteBudget,const TranslationGlossary &glossary){
+QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile,int promptByteBudget,const TranslationGlossary &glossary,int contextCueLimit){
     promptByteBudget=std::clamp(promptByteBudget,0,6144);
+    contextCueLimit=std::clamp(contextCueLimit,0,24);
     if(target.startMs<0 || target.endMs<target.startMs || target.text.size()>800 || target.text.trimmed().isEmpty() || !validTranslationUnicode(target.text))return {};
     TranslationGlossary terms;
     auto payload=payloadWithContext(target,{},profile,terms);if(translationPromptBytes(payload)>promptByteBudget)return {};
@@ -283,7 +289,7 @@ QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleC
     std::stable_sort(candidates.begin(),candidates.end(),[&](const auto &left,const auto &right){const auto a=distance(left),b=distance(right);return a==b?cueOrder(left,right):a<b;});
     QVector<SubtitleCue> selected;
     for(const auto &cue:candidates){
-        if(selected.size()>=24)break;
+        if(selected.size()>=contextCueLimit)break;
         auto next=selected;next.append(cue);std::sort(next.begin(),next.end(),cueOrder);
         QJsonArray context;for(const auto &item:next)context.append(cueData(item));
         if(QJsonDocument(context).toJson(QJsonDocument::Compact).size()>2048)continue;

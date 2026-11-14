@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"time"
 )
@@ -37,16 +38,31 @@ func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, 
 	offset := blurayChapterOffset(s.config, start)
 	args := variantArguments(s.config, profile, start, false, offset)
 	optical := s.config.SourceKind == "bluray"
-	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream, optical)
+	remux := func(args []string) remuxOutcome {
+		if !optical || !s.config.LiveCaptions || s.config.AudioIndex < 0 && s.config.AudioTrackID == nil {
+			return streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream, optical, nil)
+		}
+		audio := new(captionAudioBuffer)
+		audio.reset(start)
+		s.captionAudio.Store(audio)
+		// Stdout is Matroska and stderr is raw PCM. The inherited handles work on
+		// Windows, with no separate optical reader or local network listener.
+		withAudio := append(slices.Clone(args), captionAudioOutput(s.config)...)
+		outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, withAudio, s.reportStream, optical, audio)
+		audio.finish()
+		if outcome == remuxFailed && ctx.Err() == nil {
+			outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream, optical, nil)
+		}
+		return outcome
+	}
+	outcome := remux(args)
 	if outcome == remuxFailed && ctx.Err() == nil && offset > 0 {
 		offset = 0
-		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
-			variantArguments(s.config, profile, start, false, 0), s.reportStream, optical)
+		outcome = remux(variantArguments(s.config, profile, start, false, 0))
 	}
 	pcm := outcome == remuxNeedsPCM && profile == originalProfile
 	if pcm && ctx.Err() == nil {
-		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
-			variantArguments(s.config, profile, start, true, offset), s.reportStream, optical)
+		outcome = remux(variantArguments(s.config, profile, start, true, offset))
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
 		if s.reportStream != nil {
@@ -60,7 +76,14 @@ func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, 
 	}
 }
 
-func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string, report func(string), optical bool) remuxOutcome {
+func captionAudioOutput(cfg validatedConfig, options ...string) []string {
+	args := []string{"-map", selectedAudioMap(cfg), "-vn", "-sn", "-dn",
+		"-af", "aresample=16000:async=1:first_pts=0", "-ac", "1", "-c:a", "pcm_s16le",
+		"-f", "s16le", "-flush_packets", "1", "-loglevel", "quiet"}
+	return append(append(args, options...), "pipe:2")
+}
+
+func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string, report func(string), optical bool, captionAudio *captionAudioBuffer) remuxOutcome {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var timedOut atomic.Bool
@@ -115,6 +138,9 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 	defer stopPipeClose()
 	var diagnostics ffmpegDiagnostics
 	command.Stderr = &diagnostics
+	if captionAudio != nil {
+		command.Stderr = captionAudio
+	}
 	if command.Start() != nil {
 		return remuxFailed
 	}

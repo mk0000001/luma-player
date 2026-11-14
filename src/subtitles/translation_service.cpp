@@ -47,10 +47,12 @@ struct TranslationService::Impl {
     QSslCertificate workerCertificate;
     bool ready=false,pumpScheduled=false;
     QPointer<QProcess> process;
+    QList<QPointer<QProcess>> retiringProcesses;
     QPointer<QNetworkReply> reply;
     QNetworkAccessManager network;
     QTimer poll,startupDeadline,requestDeadline;
     std::optional<TranslationTask> active;
+    bool liveWindow=false;
     static constexpr qint64 maximumResponseBytes=262144;
 
     Impl(QString root,TranslationService *owner):q(owner),runtime(std::move(root)){
@@ -80,7 +82,14 @@ struct TranslationService::Impl {
     }
     ~Impl(){
         ++launchSerial;poll.stop();startupDeadline.stop();requestDeadline.stop();abortReply();
-        if(process){QObject::disconnect(process,nullptr,q,nullptr);process->kill();process->waitForFinished(1000);delete process.data();}
+        const auto waitForStop=[this](QProcess *worker){
+            if(!worker)return;
+            QObject::disconnect(worker,nullptr,q,nullptr);
+            if(worker->state()!=QProcess::NotRunning){worker->kill();worker->waitForFinished(2500);}
+            delete worker;
+        };
+        waitForStop(process);
+        for(const auto &worker:retiringProcesses)waitForStop(worker);
     }
     void abortReply(){if(reply){auto *old=reply.data();reply=nullptr;old->abort();old->deleteLater();}}
     void stop(){
@@ -92,6 +101,8 @@ struct TranslationService::Impl {
             else {
                 // Keep the PEM files alive until a worker that is still starting has exited.
                 auto retiredIdentity=std::move(identityFiles);
+                retiringProcesses.erase(std::remove_if(retiringProcesses.begin(),retiringProcesses.end(),[](const auto &worker){return worker.isNull();}),retiringProcesses.end());
+                retiringProcesses.append(old);
                 QObject::connect(old,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),old,[old,retiredIdentity]{old->deleteLater();});
                 old->kill();
             }
@@ -141,7 +152,7 @@ struct TranslationService::Impl {
     }
     void schedule(){if(pumpScheduled)return;pumpScheduled=true;QTimer::singleShot(0,q,[this]{pumpScheduled=false;pump();});}
     void clear(){
-        queue.cancel(true);active.reset();requestDeadline.stop();contextCues.clear();targets.clear();fingerprints.clear();activeFingerprint.clear();
+        queue.cancel(true);active.reset();liveWindow=false;requestDeadline.stop();contextCues.clear();targets.clear();fingerprints.clear();activeFingerprint.clear();
         // A seek cancels caption work, not model initialization. Its health check is
         // independent of the source generation, so subsequent cues share the load.
         if(ready)abortReply();
@@ -162,7 +173,11 @@ struct TranslationService::Impl {
         const bool npu=backendIndex>=0 && backendIndex<backends.size() && backends[backendIndex].key=="npu";
         const auto budget=promptByteBudget>=0?promptByteBudget:npu?std::max(0,512-(profile==TranslationProfile::HyMt2Plain?512:256)-128):6144;
         const auto target=targets.constFind(task.source);
-        return target==targets.cend()?translationPayload(SubtitleCue{0,0,task.source},{},profile,budget,glossary):translationPayload(*target,contextCues,profile,budget,glossary);
+        const bool cpu=backendIndex>=0 && backendIndex<backends.size() && backends[backendIndex].key=="cpu";
+        // Prefilling many near-duplicate cues dominates short CPU translations.
+        // Keep the nearest context during playback and the full window for preparation.
+        const int contextCueLimit=liveWindow && cpu?4:24;
+        return target==targets.cend()?translationPayload(SubtitleCue{0,0,task.source},{},profile,budget,glossary):translationPayload(*target,contextCues,profile,budget,glossary,contextCueLimit);
     }
     static QByteArray fingerprint(const QJsonObject &payload){return QCryptographicHash::hash(QJsonDocument(payload).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256);}
     void skipCue(TranslationTask task,const QString &message){
@@ -171,6 +186,17 @@ struct TranslationService::Impl {
         const auto target=targets.constFind(task.source);
         if(target==targets.cend())q->skipped(task.generation,task.source,message);else q->skippedCue(task.generation,task.source,target->text,message);
         pruneTargets();schedule();
+    }
+    void updateLivePosition(qint64 position){
+        liveWindow=true;
+        if(!active)return;
+        const auto target=targets.constFind(active->source);
+        if(target==targets.cend() || (reply && ready && target->endMs>position))return;
+        // Unstarted work is replaceable during model loading. For a running
+        // request, expiration lets the next visible cue take over the slot.
+        requestDeadline.stop();
+        if(ready)abortReply();
+        queue.release(*active);active.reset();activeFingerprint.clear();
     }
     void pump(){
         if(reply)return;
@@ -280,9 +306,9 @@ struct TranslationService::Impl {
             if(status==400 || status==413 || status==422){skipCue(task,"번역 실행기가 이 자막 요청을 처리하지 못해 건너뜁니다.");return;}
             if(networkError!=QNetworkReply::NoError || status!=200){nextBackend("로컬 번역 추론 요청이 실패했습니다.");return;}
             const auto body=response->readAll();if(body.size()>maximumResponseBytes){skipCue(task,"번역 응답이 너무 커서 이 자막을 건너뜁니다.");return;}
-            // Keep the timed target pending until its response matches the latest
-            // bounded source context. A stale response must not reach the cache/UI.
-            if(targets.contains(task.source) && fingerprint(payloadFor(task))!=activeFingerprint){
+            // Offline preparation can wait for the exact current context.
+            // Live playback accepts the context snapshot used at dispatch.
+            if(!liveWindow && targets.contains(task.source) && fingerprint(payloadFor(task))!=activeFingerprint){
                 queue.release(task);active.reset();activeFingerprint.clear();queue.enqueue({task.source});schedule();return;
             }
             const auto target=targets.constFind(task.source);const auto source=target==targets.cend()?task.source:target->text;
@@ -326,9 +352,11 @@ bool TranslationService::needsTranslation(const SubtitleCue &cue)const{
     const auto payload=d->payloadFor({d->queue.generation(),key});
     return payload.isEmpty() || d->fingerprints.value(key)!=Impl::fingerprint(payload);
 }
-void TranslationService::requestCues(const QVector<SubtitleCue> &cues){
+void TranslationService::requestCues(const QVector<SubtitleCue> &cues,std::optional<qint64> playbackPositionMs){
+    if(playbackPositionMs)d->updateLivePosition(*playbackPositionMs);
     const auto generation=d->queue.generation();QStringList keys;
     for(const auto &cue:cues){
+        if(playbackPositionMs && cue.endMs<=*playbackPositionMs)continue;
         const auto key=translationCueKey(cue);
         if(cue.startMs<0 || cue.endMs<=cue.startMs || cue.text.size()>800){
             emit skippedCue(generation,key,cue.text,"시간 정보가 잘못되었거나 너무 긴 자막은 로컬 번역에서 제외했습니다 (최대 800자).");
@@ -337,9 +365,24 @@ void TranslationService::requestCues(const QVector<SubtitleCue> &cues){
         if(cue.text.trimmed().isEmpty())continue;
         d->targets.insert(key,cue);keys.append(key);if(keys.size()>=128)break;
     }
-    d->queue.enqueue(keys);d->pruneTargets();d->schedule();
+    d->queue.enqueue(keys,!playbackPositionMs);d->pruneTargets();d->schedule();
 }
 void TranslationService::cancel(){d->clear();}
+void TranslationService::warmUp(){
+    if(!d->ready && !d->process && QFileInfo(d->model).isFile()){
+        d->backendIndex=-1;
+        d->nextBackend();
+    }
+}
+void TranslationService::shutdown(){
+    d->clear();
+    d->stop();
+    d->backendIndex=-1;
+    if(!d->selected.isEmpty()){
+        d->selected.clear();
+        emit backendSelected({});
+    }
+}
 quint64 TranslationService::generation()const{return d->queue.generation();}
 QString TranslationService::selectedBackend()const{return d->selected;}
 bool TranslationService::selectedVulkanCompatibility()const{

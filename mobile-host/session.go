@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,6 +35,7 @@ type sessionMetadata struct {
 	VideoRange    string             `json:"videoRange"`
 	Options       *deviceOptions     `json:"options,omitempty"`
 	Subtitles     []subtitleMetadata `json:"subtitles"`
+	LiveCaptions  bool               `json:"liveCaptions,omitempty"`
 }
 
 type subtitleMetadata struct {
@@ -53,6 +55,7 @@ type mediaSession struct {
 	fileInfo           os.FileInfo
 	media              mediaGate
 	reportStream       func(string)
+	captionAudio       atomic.Pointer[captionAudioBuffer]
 }
 
 func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
@@ -65,6 +68,7 @@ func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
 			Profiles: []string{originalProfile}, ChaptersMS: append([]int64{}, cfg.ChaptersMS...), VideoRange: cfg.VideoRange,
 			ChapterTitles: cfg.ChapterTitles,
 			Subtitles:     make([]subtitleMetadata, 0, len(cfg.Subtitles)),
+			LiveCaptions:  cfg.LiveCaptions,
 		},
 	}
 	for _, subtitle := range cfg.Subtitles {

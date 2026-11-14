@@ -6,17 +6,20 @@
 #include <QSlider>
 class QMenu;
 namespace luma {
-enum class PlayerIcon { Play,Pause,Previous,Next,Rewind,Forward,Fullscreen,ExitFullscreen,PictureInPicture,Volume,Folder,Disc,Sun,Moon,Up,Down,Left,Right,Confirm };
+enum class PlayerIcon { Play,Pause,Previous,Next,Rewind,Forward,Fullscreen,ExitFullscreen,PictureInPicture,Volume,Mute,Folder,Disc,Sun,Moon,Up,Down,Left,Right,Confirm };
 QIcon playerApplicationIcon();
 class SeekSlider final:public QSlider {
 public:
     explicit SeekSlider(QWidget *parent=nullptr);
     void setBuffer(int value,int fillingPercent=-1);
+    void setChapterMarks(QVector<int> marks,int activeMark);
 protected:
     void paintEvent(QPaintEvent *) override;
 private:
     int bufferedValue_=-1;
     int fillingPercent_=-1;
+    QVector<int> chapterMarks_;
+    int activeChapterMark_=-1;
 };
 class BrandMark final:public QWidget {
 public:

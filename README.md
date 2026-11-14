@@ -42,10 +42,11 @@ Windows 11 x64에서 1080p H.264 재생과 full-v3 Q5 음성 인식 + Hy-MT2-7B 
 
 | 증상 | 확인할 곳 |
 | --- | --- |
-| 재생 시작이나 탐색 뒤 잠시 멈춤 | 실시간 자막은 먼저 10초 분량을 준비하고 이후 60초 앞까지 채웁니다. AI 자막의 준비 상태를 확인하세요. 반복해서 기다리게 되면 전체 자막을 미리 만들어 사용하세요. |
+| 재생 시작이나 탐색 뒤 잠시 멈춤 | 실시간 자막은 최대 12초 동안 원문 10초 분량을 준비하고 이후 60초 앞까지 채웁니다. 원문 준비가 늦어지면 영상은 계속 재생됩니다. |
 | 하단에 CPU 표시가 뜸 | 하단은 영상 디코딩 상태를 표시합니다. 음성 인식·번역에 실제 사용한 장치는 AI 자막 탭에서 확인할 수 있습니다. |
 | 한국어 번역이 안 나옴 | **한국어 번역**을 켜고 **번역 모델 선택**에서 설치된 Hy-MT2 파일을 고르세요. |
 | Blu-ray 메뉴나 재생이 열리지 않음 | **새로 확인**으로 디스크를 감지한 뒤 **Blu-ray 재생**을 눌러 보세요. 계속 실패하면 개발자 모드의 진단에서 첫 오류를 확인하세요. |
+| Windows 보안이 설치를 차단함 | 차단된 파일명과 탐지명을 확인하고 릴리스의 SHA‑256과 대조하세요. [설치 차단 진단과 신고 방법](docs/WINDOWS-INSTALLER.md) |
 
 [재생·자막·단축키 안내](docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](docs/INSTALL-TRANSLATION.md)
 
@@ -97,10 +98,11 @@ Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON
 
 | Symptom | What to check |
 | --- | --- |
-| Playback waits at startup or after a seek | Live captions first prepare 10 seconds of media, then work toward 60 seconds ahead. Check the AI caption tab. Use a completed project if waits keep recurring. |
+| Playback waits at startup or after a seek | Live captions wait up to 12 seconds for 10 seconds of original-language captions, then work toward 60 seconds ahead. Video continues if captions take longer. |
 | CPU appears in the playback bar | The bar shows video decoding. The AI caption tab displays the devices used for recognition and translation. |
 | Korean translation is missing | Enable **한국어 번역** and select the installed Hy-MT2 file with **번역 모델 선택**. |
 | Disc menu or playback fails to open | Refresh disc detection with **새로 확인**, then retry **Blu-ray 재생**. If it still fails, check the first error in developer diagnostics. |
+| Windows security blocks installation | Record the blocked filename and detection name and compare the installer SHA‑256 with the release. [Diagnose and report installation blocks](docs/WINDOWS-INSTALLER.md) |
 
 [Playback, captions, and shortcuts](docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](docs/INSTALL-TRANSLATION.md)
 

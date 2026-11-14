@@ -46,6 +46,8 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 		p.serveRemoteStart(w, r, peer)
 	case remoteControlPath:
 		p.serveRemoteControl(w, r, peer)
+	case liveCaptionPath:
+		p.serveCaptionState(w, r, peer)
 	case remoteFilesPath:
 		p.serveRemoteFiles(w, r, peer)
 	case discMenuPath:
@@ -148,8 +150,9 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 		return
 	}
 	var request struct {
-		Action string `json:"action"`
-		FileID string `json:"fileId"`
+		Action   string `json:"action"`
+		FileID   string `json:"fileId"`
+		Revision string `json:"revision"`
 	}
 	if !readPairJSON(w, r, &request) {
 		return
@@ -182,10 +185,25 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 	case "disc-open", "disc-menu", "disc-popup", "disc-up", "disc-down", "disc-left", "disc-right", "disc-confirm",
 		"play-pause", "previous-chapter", "next-chapter", "seek-back", "seek-forward", "volume-down", "volume-up",
 		"mute", "fullscreen", "picture-in-picture", "resume", "speed-next", "audio-next", "subtitle-next",
-		"caption-ai", "caption-original", "caption-reading", "caption-translation":
+		"caption-ai", "caption-original", "caption-reading", "caption-translation",
+		"caption-ai-on", "caption-ai-off", "caption-retry":
 	default:
 		http.Error(w, "invalid control", http.StatusBadRequest)
 		return
+	}
+	switch request.Action {
+	case "caption-ai-on", "caption-ai-off", "caption-retry", "caption-original", "caption-reading", "caption-translation":
+		scoped := request.Revision != "" || request.Action == "caption-ai-on" ||
+			request.Action == "caption-ai-off" || request.Action == "caption-retry"
+		if scoped && (p.media == nil || p.media.revision != request.Revision || !p.media.session.config.LiveCaptions) {
+			http.Error(w, "captions unavailable for this media", http.StatusConflict)
+			return
+		}
+	default:
+		if request.Revision != "" {
+			http.Error(w, "invalid control parameter", http.StatusBadRequest)
+			return
+		}
 	}
 	if request.Action != "file-open" && request.FileID != "" {
 		http.Error(w, "invalid control parameter", http.StatusBadRequest)
@@ -196,7 +214,8 @@ func (p *player) serveRemoteControl(w *responseWriter, r *http.Request, peer net
 		return
 	}
 	p.lastControl = now
-	p.announce(playerStatus{Status: "remoteControl", ID: p.remoteControl, Action: request.Action, DeviceID: request.FileID})
+	p.announce(playerStatus{Status: "remoteControl", ID: p.remoteControl, Action: request.Action,
+		DeviceID: request.FileID, Revision: request.Revision})
 	w.WriteHeader(http.StatusAccepted)
 }
 

@@ -86,12 +86,19 @@ SubtitleJob::SubtitleJob(QString runtime,QObject *parent):QObject(parent),runtim
 }
 SubtitleJob::~SubtitleJob(){shutdown();}
 bool SubtitleJob::busy()const{return stage_!=0;}
+QString SubtitleJob::currentPhase()const{
+    if(stage_==1)return "reading";
+    if(workerWarming_ || !queuedWorkerRequest_.isEmpty())return "loading";
+    return stage_==2?"recognizing":"idle";
+}
 void SubtitleJob::stopWorker(){
     warmupTimeout_.stop();QSignalBlocker blocked(worker_);workerSignature_.clear();queuedWorkerRequest_.clear();workerBuffer_.clear();workerPrefix_.clear();workerBusy_=false;workerWarming_=false;
     if(worker_.state()!=QProcess::NotRunning){worker_.kill();worker_.waitForFinished(1500);}retiredTemps_.clear();
 }
-void SubtitleJob::cancel(){
-    timeout_.stop();stage_=0;++generation_;queuedWorkerRequest_.clear();pcmBuffer_->cancel();if(process_.state()!=QProcess::NotRunning){process_.kill();process_.waitForFinished(1500);}
+void SubtitleJob::cancel(bool keepDiscAudio){
+    timeout_.stop();stage_=0;++generation_;queuedWorkerRequest_.clear();
+    if(keepDiscAudio)pcmBuffer_->cancelRequest();else pcmBuffer_->cancel();
+    if(process_.state()!=QProcess::NotRunning){process_.kill();process_.waitForFinished(1500);}
     if(workerBusy_ && !workerPrefix_.isEmpty()){QFile marker(workerPrefix_+".cancel");if(marker.open(QIODevice::WriteOnly))marker.close();}
     // Only the in-flight request needs its WAV/output directory retained.
     if(workerBusy_ && temp_ && workerPrefix_.startsWith(temp_->path()+'/'))retiredTemps_.push_back(std::move(temp_));else temp_.reset();
@@ -137,18 +144,37 @@ void SubtitleJob::setPreferences(const AiPreferences &preferences){
     shutdown();preferences_=preferences;rejected_.clear();selectedBackend_.clear();
     selectedAccelerator_.clear();selectedDevice_.clear();
 }
-quint64 SubtitleJob::start(const RecognitionRequest &request,const QString &model){
+bool SubtitleJob::begin(const RecognitionRequest &request,const QString &model){
     if(busy())cancel();else{++generation_;temp_.reset();}
     request_=request;request_.startMs=std::max<qint64>(0,request_.startMs);request_.durationMs=std::clamp<qint64>(request_.durationMs,1,60000);model_=model.isEmpty()?QDir(runtime_).filePath("models/ggml-base.bin"):model;
-    if(request_.disc && !QRegularExpression("^[0-9]{5}$").match(request_.playlist).hasMatch()){emit failed("선택된 디스크 타이틀의 플레이리스트를 확인할 수 없습니다.");return generation_;}
-    if(!QFileInfo::exists(model_)){emit failed("음성인식 모델을 찾을 수 없습니다. Whisper 모델을 선택하세요.");return generation_;}
+    if(request_.disc && !QRegularExpression("^[0-9]{5}$").match(request_.playlist).hasMatch()){emit failed("선택된 디스크 타이틀의 플레이리스트를 확인할 수 없습니다.");return false;}
+    if(!QFileInfo::exists(model_)){emit failed("음성인식 모델을 찾을 수 없습니다. Whisper 모델을 선택하세요.");return false;}
     if(rejectionModel_!=model_){rejected_.clear();rejectionModel_=model_;++warmupEpoch_;}warmupEnabled_=true;
     backends_=recognitionBackends(runtime_,model_,preferences_);backendIndex_=-1;
     temp_=std::make_unique<QTemporaryDir>(QDir::tempPath()+"/luma-recognition-XXXXXX");
-    if(!temp_->isValid()){emit failed("AI 자막 임시 폴더를 만들 수 없습니다.");return generation_;}
+    if(!temp_->isValid()){emit failed("AI 자막 임시 폴더를 만들 수 없습니다.");return false;}
+    return true;
+}
+quint64 SubtitleJob::start(const RecognitionRequest &request,const QString &model){
+    if(!begin(request,model))return generation_;
     stage_=1;emit progress(request_.disc?"디스크 음성을 앞서 읽는 중…":"음성 구간을 준비하는 중…");
     if(request_.disc){timeout_.start(extractionTimeoutMs_);pcmBuffer_->prepare(request_,temp_->filePath("audio.wav"));}
     else run(extractionCommand(runtime_,request_,temp_->filePath("audio.wav")));
+    return generation_;
+}
+quint64 SubtitleJob::startPcm(qint64 positionMs,const QByteArray &pcm,const QString &language,const QString &model){
+    if(pcm.isEmpty() || pcm.size()%32 || pcm.size()>15'000*32)return generation_;
+    RecognitionRequest request;
+    request.startMs=positionMs;
+    request.durationMs=pcm.size()/32;
+    request.language=language;
+    if(!begin(request,model))return generation_;
+    if(!writeRecognitionWave(temp_->filePath("audio.wav"),pcm)){
+        emit failed("송출 음성을 음성인식에 전달하지 못했습니다.");
+        return generation_;
+    }
+    stage_=1;
+    audioPrepared();
     return generation_;
 }
 void SubtitleJob::run(const ProcessInvocation &command){lastOutput_.clear();process_.setProgram(command.program);process_.setArguments(command.arguments);timeout_.start(stage_==1?extractionTimeoutMs_:backends_[backendIndex_].key=="CPU"?recognitionTimeoutMs_:acceleratorTimeoutMs_);process_.start();}

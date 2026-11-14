@@ -238,7 +238,7 @@ struct Checkpoint {
 };
 QVector<SubtitleCue> koreanCues(const Checkpoint &state){
     QVector<SubtitleCue> result;
-    for(const auto &page:captionPages(state.result.originals)){const auto text=state.result.translations.value(translationCueKey(page));if(!text.isEmpty())result.append({page.startMs,page.endMs,text});}
+    for(const auto &page:preparedCaptionPages(state.result.originals)){const auto text=state.result.translations.value(translationCueKey(page));if(!text.isEmpty())result.append({page.startMs,page.endMs,text});}
     return result;
 }
 void paths(Checkpoint &state,const QString &directory){
@@ -248,14 +248,14 @@ void paths(Checkpoint &state,const QString &directory){
 bool saveCheckpoint(Checkpoint &state,QString &error){
     paths(state,state.result.request.outputDirectory);QJsonArray originals,translations,skipped;
     for(const auto &cue:state.result.originals)originals.append(cueJson(cue));
-    for(const auto &page:captionPages(state.result.originals)){const auto key=translationCueKey(page);
+    for(const auto &page:preparedCaptionPages(state.result.originals)){const auto key=translationCueKey(page);
         if(state.result.translations.contains(key))translations.append(QJsonObject{{"key",key},{"korean",state.result.translations.value(key)}});
         if(state.skipped.contains(key))skipped.append(key);
     }
     const QJsonObject root{{"schema",1},{"format","luma-caption-project-v1"},{"complete",state.phase=="complete"},{"phase",state.phase},{"next_chunk_ms",state.next},{"request",requestJson(state.result.request)},{"source_metadata",state.source},{"source_identity",QString::fromLatin1(state.result.sourceIdentity.toHex())},{"job_identity",state.identity},{"originals",originals},{"translations",translations},{"skipped",skipped},{"recognition_backend",state.recognitionBackend},{"translation_backend",state.translationBackend}};
     const auto bytes=QJsonDocument(root).toJson(QJsonDocument::Compact);
     if(bytes.size()>projectLimit)return reject(error,"자막 프로젝트의 저장 한도를 초과했습니다.");
-    if(!atomicWrite(state.result.originalSrt,writeSrt(captionPages(state.result.originals)).toUtf8(),error))return false;
+    if(!atomicWrite(state.result.originalSrt,writeSrt(preparedCaptionPages(state.result.originals)).toUtf8(),error))return false;
     if(state.result.request.translate&&!atomicWrite(state.result.koreanSrt,writeSrt(koreanCues(state)).toUtf8(),error))return false;
     return atomicWrite(state.result.projectFile,bytes,error);
 }
@@ -289,7 +289,7 @@ std::optional<Checkpoint> readCheckpoint(const QString &path,bool requireComplet
         if(!cue||cue->startMs<previous){reject(error,"프로젝트 원문 시각 또는 토큰이 잘못되었습니다.");return {};}
         tokens+=cue->tokens.size();if(tokens>tokenLimit)return {};previous=cue->startMs;state.result.originals.append(std::move(*cue));
     }
-    QHash<QString,SubtitleCue> pages;for(const auto &page:captionPages(state.result.originals))pages.insert(translationCueKey(page),page);if(pages.size()>cueLimit)return {};
+    QHash<QString,SubtitleCue> pages;for(const auto &page:preparedCaptionPages(state.result.originals))pages.insert(translationCueKey(page),page);if(pages.size()>cueLimit)return {};
     const auto translated=root["translations"].toArray(),skipped=root["skipped"].toArray();
     if(translated.size()+skipped.size()>pages.size()||(!request->translate&&(!translated.isEmpty()||!skipped.isEmpty()))||(state.next<request->durationMs&&(!translated.isEmpty()||!skipped.isEmpty())))return {};
     for(const auto &entry:translated){if(!entry.isObject())return {};const auto translation=entry.toObject();if(translation.size()!=2||!translation["key"].isString()||!translation["korean"].isString())return {};
@@ -305,7 +305,7 @@ std::optional<Checkpoint> readCheckpoint(const QString &path,bool requireComplet
     paths(state,directory);
     if(requireComplete){
         if(state.phase!="complete"){reject(error,"미완료 프로젝트입니다. 같은 설정으로 다시 시작해 이어서 준비하세요.");return {};}
-        for(const auto &artifact:QVector<QPair<QString,QByteArray>>{{state.result.originalSrt,writeSrt(captionPages(state.result.originals)).toUtf8()},{state.result.koreanSrt,writeSrt(koreanCues(state)).toUtf8()}}){
+        for(const auto &artifact:QVector<QPair<QString,QByteArray>>{{state.result.originalSrt,writeSrt(preparedCaptionPages(state.result.originals)).toUtf8()},{state.result.koreanSrt,writeSrt(koreanCues(state)).toUtf8()}}){
             if(artifact.first.isEmpty())continue;
             const auto exported=readBounded(artifact.first,projectLimit);
             if(QFileInfo(artifact.first).isSymLink()||!exported||*exported!=artifact.second){reject(error,"내보낸 SRT가 프로젝트와 다릅니다. 같은 작업을 다시 시작해 복구하세요.");return {};}
@@ -418,7 +418,7 @@ struct CaptionPreparationService::Impl {
     }
     void beginTranslations(){
         releaseRecognition();
-        pages=captionPages(state.result.originals);if(pages.size()>cueLimit){fail("표시 자막 수가 저장 한도를 초과했습니다.");return;}
+        pages=preparedCaptionPages(state.result.originals);if(pages.size()>cueLimit){fail("표시 자막 수가 저장 한도를 초과했습니다.");return;}
         targets.clear();for(const auto &page:pages)targets.insert(translationCueKey(page),page);
         if(!state.result.request.translate){finish();return;}
         state.phase="translation";if(!checkpoint()||!report())return;

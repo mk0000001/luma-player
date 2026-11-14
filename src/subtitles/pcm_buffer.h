@@ -6,12 +6,14 @@
 #include <memory>
 namespace luma {
 struct RecognitionRequest;
+bool writeRecognitionWave(const QString &path,const QByteArray &pcm);
 class PcmBuffer:public QObject {
     Q_OBJECT
 public:
     explicit PcmBuffer(QString runtime,QObject *parent=nullptr);
     ~PcmBuffer()override;
     void prepare(const RecognitionRequest &request,const QString &wav);
+    void cancelRequest();
     void cancel();
 signals:
     void ready();

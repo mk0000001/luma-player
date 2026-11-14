@@ -169,6 +169,7 @@ public final class LanProtocolTest {
                 """;
         LanSession session = LanSession.parse(json);
         assertTrue(session.seekable);
+        assertFalse(session.liveCaptions);
         assertEquals("/v1/subtitle/ko.vtt", session.subtitles.get(0).path);
         assertThrows(IOException.class, () -> LanSession.parse(json.replace("/v1/subtitle/ko.vtt",
                 "https://192.168.0.50:48762/v1/subtitle/ko.vtt")));
@@ -176,6 +177,37 @@ public final class LanProtocolTest {
                 "/v1/subtitle/other.vtt")));
         assertThrows(IOException.class, () -> LanSession.parse(json.replace("\"version\":1",
                 "\"version\":2")));
+    }
+
+    @Test
+    public void liveCaptionsRequireAnAddressableMediaRevision() throws IOException {
+        String session = """
+                {"version":1,"title":"Synthetic","mimeType":"video/mp4","sourceKind":"file",
+                "durationMs":5000,"seekable":true,"subtitles":[],"liveCaptions":true}
+                """;
+        assertThrows(IOException.class, () -> LanSession.parse(session));
+        assertTrue(LanSession.parse(session.replace("\"liveCaptions\":true",
+                "\"liveCaptions\":true,\"mediaRevision\":\"AAECAwQFBgcICQoLDA0ODw\"")).liveCaptions);
+    }
+
+    @Test
+    public void liveCaptionStatusDistinguishesRevisionFromCaptionContents() throws Exception {
+        String json = """
+                {"revision":3,"state":"ready","enabled":true,"canAI":true,"canControl":true,
+                "original":true,"reading":true,"translation":true,"translationState":"processing",
+                "aheadMs":10000,"backend":"GPU"}
+                """;
+        RemoteCaptionState state = RemoteCaptionState.parse(json);
+        assertEquals(3, state.revision());
+        assertEquals("", state.vtt());
+        assertEquals("processing", state.translationState());
+        assertThrows(org.json.JSONException.class,
+                () -> RemoteCaptionState.parse(json.replace("\"revision\":3", "\"revision\":\"3\"")));
+        assertThrows(org.json.JSONException.class,
+                () -> RemoteCaptionState.parse(json.replace("\"enabled\":true", "\"enabled\":\"true\"")));
+        String windowsVtt = "WEBVTT\r\n\r\n00:00:00.000 --> 00:00:01.000\r\nHello\r\n";
+        assertEquals(windowsVtt, RemoteCaptionState.parse(new org.json.JSONObject(json)
+                .put("vtt", windowsVtt).toString()).vtt());
     }
 
     @Test

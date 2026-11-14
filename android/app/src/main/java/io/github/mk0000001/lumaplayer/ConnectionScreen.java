@@ -911,6 +911,10 @@ final class ConnectionScreen {
         return true;
     }
 
+    boolean pcControlsOverlayVisible() {
+        return controller.isOverlayVisible();
+    }
+
     void updatePcControllerLayout(boolean videoOnly, boolean pip) {
         controller.setVideoOnly(videoOnly, pip);
     }

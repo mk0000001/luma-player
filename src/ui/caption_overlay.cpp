@@ -9,12 +9,20 @@ CaptionOverlay::CaptionOverlay(QWidget *anchor):QWidget(anchor->window(),Qt::Too
     setObjectName("captionOverlay");setAttribute(Qt::WA_TranslucentBackground);setAttribute(Qt::WA_TransparentForMouseEvents);setAttribute(Qt::WA_ShowWithoutActivating);setFocusPolicy(Qt::NoFocus);
     anchor->installEventFilter(this);if(anchor->window()!=anchor)anchor->window()->installEventFilter(this);
 }
-void CaptionOverlay::setCues(const QVector<SubtitleCue> &cues){const auto generation=timeline_.reset();timeline_.attach(generation,cues);text_.clear();hide();}
-void CaptionOverlay::setPosition(qint64 position){const auto text=timeline_.at(position);if(text!=text_){text_=text;update();}syncGeometry();}
+void CaptionOverlay::setCues(const QVector<SubtitleCue> &cues){
+    const auto generation=timeline_.reset();
+    timeline_.attach(generation,cues);
+    setPosition(positionMs_);
+}
+void CaptionOverlay::setPosition(qint64 position){positionMs_=position;const auto text=timeline_.at(position);if(text!=text_){text_=text;update();}syncGeometry();}
 void CaptionOverlay::setBottomInset(int pixels){pixels=std::max(0,pixels);if(bottomInset_!=pixels){bottomInset_=pixels;update();}}
 void CaptionOverlay::setCaptionStyle(const CaptionStyle &style){
     style_=style;
     update();
+}
+void CaptionOverlay::setCaptionsVisible(bool visible){
+    captionsVisible_=visible;
+    syncGeometry();
 }
 bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     switch(event->type()){
@@ -26,7 +34,7 @@ bool CaptionOverlay::eventFilter(QObject *,QEvent *event){
     }return false;
 }
 void CaptionOverlay::syncGeometry(){
-    if(!anchor_ || !anchor_->isVisible() || anchor_->window()->isMinimized() || text_.isEmpty()){hide();return;}
+    if(!captionsVisible_ || !anchor_ || !anchor_->isVisible() || anchor_->window()->isMinimized() || text_.isEmpty()){hide();return;}
     const QRect target(anchor_->mapToGlobal(QPoint(0,0)),anchor_->size());if(geometry()!=target)setGeometry(target);
     if(!isVisible())show();
 }

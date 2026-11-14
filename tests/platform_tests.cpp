@@ -26,6 +26,31 @@ private slots:
         QVERIFY(!guard.applied());
 #endif
     }
+#ifdef Q_OS_WIN
+    void captureAffinityIsAppliedBeforeMediaWindowsAreShown(){
+        if(!qEnvironmentVariableIsSet("LUMA_NATIVE_PLATFORM"))QSKIP("Native desktop capture test is opt in.");
+        QWidget controls, video(&controls,Qt::Tool), captions(&controls,Qt::Tool);
+        controls.show();
+        CaptureGuard guard;
+        guard.watch(&video);
+        guard.watch(&captions);
+        guard.setEnabled(true);
+        const auto verifyAffinity=[](QWidget &window,DWORD expected){
+            DWORD actual=0;
+            QVERIFY(GetWindowDisplayAffinity(reinterpret_cast<HWND>(window.winId()),&actual));
+            QCOMPARE(actual,expected);
+        };
+        video.winId();
+        captions.winId();
+        QVERIFY(!video.isVisible() && !captions.isVisible());
+        verifyAffinity(video,WDA_EXCLUDEFROMCAPTURE);
+        verifyAffinity(captions,WDA_EXCLUDEFROMCAPTURE);
+        verifyAffinity(controls,WDA_NONE);
+        video.show();
+        captions.show();
+        QVERIFY(guard.applied());
+    }
+#endif
     void displayProbeMakesNoDolbyCertificationClaim(){
         QWidget window;const auto caps=displayCapabilities(window.winId());
         QVERIFY(caps.contains("hdrActive"));QVERIFY(!caps.value("dolbyVisionCertified").toBool());

@@ -125,7 +125,7 @@ void CaptionPreparationDialog::updateAcceleratorRetry(){
     retryAccelerator_->setVisible(available);retryAccelerator_->setEnabled(available);
 }
 bool CaptionPreparationDialog::exportDisplay(const CaptionPreparationResult &result,QString &error){
-    QVector<SubtitleCue> display;for(const auto &page:captionPages(result.originals)){QStringList lines{page.text};if(readingEnabled_->isChecked()){const auto reading=reading_.reading(page.text);if(!reading.isEmpty())lines.append(reading);}const auto korean=result.translations.value(translationCueKey(page));if(translate_->isChecked() && !korean.isEmpty())lines.append(korean);display.append({page.startMs,page.endMs,lines.join('\n')});}
+    QVector<SubtitleCue> display;for(const auto &page:preparedCaptionPages(result.originals)){QStringList lines{page.text};if(readingEnabled_->isChecked()){const auto reading=reading_.reading(page.text);if(!reading.isEmpty())lines.append(reading);}const auto korean=result.translations.value(translationCueKey(page));if(translate_->isChecked() && !korean.isEmpty())lines.append(korean);display.append({page.startMs,page.endMs,lines.join('\n')});}
     QSaveFile file(QDir(result.request.outputDirectory).filePath("display.srt"));const auto bytes=writeSrt(display).toUtf8();if(!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size() || !file.commit()){error=file.errorString();return false;}return true;
 }
 void CaptionPreparationDialog::reject(){retryingAccelerator_=false;probe_.cancel();service_.cancel();QDialog::reject();}

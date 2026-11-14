@@ -92,13 +92,17 @@ func fileVariantDemuxer(mimeType string) string {
 	}
 }
 
-func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool, offset int64) []string {
+func selectedAudioMap(cfg validatedConfig) string {
 	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
 	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
 		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
 	} else if cfg.AudioIndex == -1 || cfg.SourceKind == "file" {
 		audioMap += "?"
 	}
+	return audioMap
+}
+
+func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool, offset int64) []string {
 	args := []string{"-hide_banner", "-loglevel", "error"}
 	if cfg.SourceKind != "bluray" {
 		args = append(args, "-nostdin")
@@ -127,7 +131,7 @@ func variantArguments(cfg validatedConfig, profile string, start int64, convertP
 	if cfg.SourceKind == "file" {
 		videoMap = "0:V:0"
 	}
-	args = append(args, "-map", videoMap, "-map", audioMap)
+	args = append(args, "-map", videoMap, "-map", selectedAudioMap(cfg))
 	if profile == originalProfile {
 		args = append(args, "-c:v", "copy")
 		switch {

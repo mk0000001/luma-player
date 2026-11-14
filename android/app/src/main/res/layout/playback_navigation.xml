@@ -75,14 +75,17 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
                     android:paddingStart="8dp"
                     android:textColor="@android:color/white"
                     android:textSize="13sp" />
 
                 <ImageButton
-                    android:id="@id/exo_subtitle"
+                    android:id="@+id/playback_caption_options"
                     style="@style/LumaPlaybackIcon"
-                    android:contentDescription="@string/playback_captions" />
+                    android:contentDescription="@string/playback_captions"
+                    android:src="@drawable/ic_playback_captions" />
 
                 <ImageButton
                     android:id="@+id/playback_pc_overlay"

@@ -74,6 +74,7 @@ void installPlayerTheme(){
       QSlider{background:transparent;} QSlider::groove:horizontal{height:3px;background:%6;border-radius:1px;}
       QSlider::sub-page:horizontal{background:#2189ff;border-radius:1px;}
       QSlider::handle:horizontal{background:%4;width:10px;margin:-4px 0;border-radius:5px;} QSlider::handle:horizontal:hover{background:#2189ff;}
+      QSlider#volumeSlider::sub-page:horizontal:disabled{background:%6;} QSlider#volumeSlider::handle:horizontal:disabled{background:%5;}
       QCheckBox{background:transparent;spacing:9px;padding:5px 0;}
       QCheckBox::indicator{width:16px;height:16px;border:1px solid %5;border-radius:5px;background:%2;}
       QCheckBox::indicator:checked{background:#2189ff;border:3px solid #2189ff;} QCheckBox:disabled{color:%5;}

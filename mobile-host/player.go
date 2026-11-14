@@ -39,6 +39,9 @@ type playerStatus struct {
 	Message  string        `json:"message,omitempty"`
 	Devices  *[]deviceInfo `json:"devices,omitempty"`
 	Action   string        `json:"action,omitempty"`
+	Revision string        `json:"revision,omitempty"`
+	Position int64         `json:"positionMs,omitempty"`
+	PCM      []byte        `json:"pcm,omitempty"`
 }
 
 type playerCommand struct {
@@ -50,6 +53,10 @@ type playerCommand struct {
 	Grant    string         `json:"grant"`
 	Files    []remoteFile   `json:"files"`
 	Frame    []byte         `json:"frame"`
+	Revision string         `json:"revision"`
+	Position int64          `json:"positionMs"`
+	Duration int64          `json:"durationMs"`
+	Captions *captionState  `json:"captions"`
 }
 
 type remoteFile struct {
@@ -207,6 +214,10 @@ func readPlayerCommands(ctx context.Context, input *bufio.Reader, lines chan<- c
 func (p *player) handleCommand(binding config, command playerCommand) {
 	var err error
 	switch command.Command {
+	case "captionSnapshot":
+		p.setCaptionSnapshot(command.Revision, command.Captions)
+	case "captionAudio":
+		p.sendCaptionAudio(command.Revision, command.ID, command.Position, command.Duration)
 	case "discMenuFrame":
 		p.mu.Lock()
 		if command.Grant == p.remoteControl && p.remoteControl != "" &&
@@ -257,7 +268,10 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		p.mu.Unlock()
 		err = p.shareMedia(binding, command.Media)
 		if err == nil {
-			p.announce(playerStatus{Status: "sharing", Title: command.Media.Title})
+			p.mu.Lock()
+			revision := p.media.revision
+			p.mu.Unlock()
+			p.announce(playerStatus{Status: "sharing", Title: command.Media.Title, Revision: revision})
 		}
 	case "stop":
 		err = p.revokeAndStop("stop")
@@ -291,10 +305,13 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 }
 
 type sharedMedia struct {
-	session  *mediaSession
-	revision string
-	ctx      context.Context
-	cancel   context.CancelFunc
+	session          *mediaSession
+	revision         string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	captions         *captionState
+	lastCaptionClock time.Time
+	captionRevision  int64
 }
 
 func (p *player) shareMedia(binding config, media *config) error {

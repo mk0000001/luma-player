@@ -18,7 +18,7 @@ struct TranslationTask {quint64 generation;QString source;};
 class TranslationQueue {
 public:
     explicit TranslationQueue(int pendingLimit=64,int cacheLimit=1024);
-    void enqueue(const QStringList &nearestFirst);
+    void enqueue(const QStringList &nearestFirst,bool keepPending=true);
     std::optional<TranslationTask> take();
     bool complete(const TranslationTask &task,const QString &korean);
     void release(const TranslationTask &task);
@@ -51,7 +51,7 @@ QVector<SubtitleCue> nearbyTranslationCues(const QVector<SubtitleCue> &cues,qint
     const std::function<bool(const QString &)> &skip);
 // The target is immutable. Context is selected from raw original cues, never display pages.
 // UTF-8 bytes provide a conservative token ceiling; an empty object means the target cannot fit.
-QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile=TranslationProfile::LegacyQwenJson,int promptByteBudget=6144,const TranslationGlossary &glossary={});
+QJsonObject translationPayload(const SubtitleCue &target,const QVector<SubtitleCue> &originals,TranslationProfile profile=TranslationProfile::LegacyQwenJson,int promptByteBudget=6144,const TranslationGlossary &glossary={},int contextCueLimit=24);
 int translationPromptBytes(const QJsonObject &payload);
 QString confirmedTranslationBackend(const TranslationBackend &backend,const QString &log);
 }

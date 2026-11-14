@@ -44,6 +44,33 @@ public:
 class NativePlaybackTests:public QObject {
     Q_OBJECT
 private slots:
+    void ownedDiscPcmVolume(){
+        const auto folder=qEnvironmentVariable("LUMA_NATIVE_SILENT_DISC");
+        if(folder.isEmpty())QSKIP("Set LUMA_NATIVE_SILENT_DISC to a generated Blu-ray folder with silent audio.");
+        const QDir fixture(folder);
+        QVERIFY(!fixture.isRoot() && fixture.exists("BDMV/index.bdmv"));
+        QWidget video;
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,qEnvironmentVariable("LUMA_TEST_RUNTIME"));
+        QVERIFY2(engine.available(),qPrintable(engine.lastError()));
+        engine.setAudioOutputOptions({true});
+        engine.setVolume(0);
+        QVERIFY(engine.open(fixture.absolutePath(),video.winId()));
+        QTRY_VERIFY_WITH_TIMEOUT(engine.state().currentAudio>=0 && engine.state().playedAudioBuffers>10,20000);
+        QVERIFY(!engine.state().audioFormat.isEmpty());
+        if(engine.state().audioBitstreamActive)QSKIP("Shared PCM output is required to check app volume.");
+        QVERIFY(!engine.state().audioVolumeExternal);
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().audioVolumePercent,0,5000);
+        engine.setVolume(55);
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().audioVolumePercent,55,5000);
+        engine.setVolume(0);
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().audioVolumePercent,0,5000);
+        engine.setVolume(27);
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().audioVolumePercent,27,5000);
+        qInfo().noquote()<<"Negotiated format:"<<engine.state().audioFormat<<engine.state().audioLayout;
+        engine.setVolume(0);
+        QTRY_COMPARE_WITH_TIMEOUT(engine.state().audioVolumePercent,0,5000);
+        engine.stop();
+    }
     void physicalDiscMenusAndTransport(){
         const auto disc=qEnvironmentVariable("LUMA_NATIVE_DISC");if(disc.isEmpty())QSKIP("Physical disc test requires LUMA_NATIVE_DISC.");
         QWidget video;video.setWindowTitle("LumaPlayer · physical disc verification");video.resize(960,540);video.show();

@@ -26,6 +26,7 @@ final class LanSession {
     final List<Subtitle> subtitles;
     final boolean restartable;
     final boolean supportsCaptionOffset;
+    final boolean liveCaptions;
     final List<String> profiles;
     final List<Long> chaptersMs;
     final List<String> chapterTitles;
@@ -35,7 +36,7 @@ final class LanSession {
     private LanSession(String title, String mimeType, String sourceKind, long durationMs, long startMs,
                        boolean seekable, List<Subtitle> subtitles, boolean restartable, boolean supportsCaptionOffset,
                        List<String> profiles, List<Long> chaptersMs, String videoRange,
-                       RemotePlaybackOptions options, String mediaRevision, List<String> chapterTitles) {
+                       RemotePlaybackOptions options, String mediaRevision, List<String> chapterTitles, boolean liveCaptions) {
         this.title = title;
         this.mediaRevision = mediaRevision;
         this.mimeType = mimeType;
@@ -46,6 +47,7 @@ final class LanSession {
         this.subtitles = Collections.unmodifiableList(subtitles);
         this.restartable = restartable;
         this.supportsCaptionOffset = supportsCaptionOffset;
+        this.liveCaptions = liveCaptions;
         this.profiles = Collections.unmodifiableList(profiles);
         this.chaptersMs = Collections.unmodifiableList(chaptersMs);
         this.chapterTitles = Collections.unmodifiableList(chapterTitles);
@@ -98,12 +100,16 @@ final class LanSession {
             if (start < 0 || (start > 0 && (!"bluray".equals(sourceKind) || !restartable || start >= durationMs))) {
                 throw new JSONException("Session start is outside the playable timeline");
             }
+            String revision = session.has("mediaRevision") ? string(session, "mediaRevision", 64) : "";
+            boolean liveCaptions = session.has("liveCaptions") && booleanField(session, "liveCaptions");
+            if (liveCaptions && !LanPairing.isBase64(revision, 16)) {
+                throw new JSONException("Live captions require a media revision");
+            }
             return new LanSession(title, mimeType, sourceKind, durationMs, start, seekable,
                     parseSubtitles(session.getJSONArray("subtitles")), restartable, session.has("profiles"),
                     profiles, chapters, videoRange,
                     session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null,
-                    session.has("mediaRevision") ? string(session, "mediaRevision", 64) : "",
-                    parseChapterTitles(session, chapters.size()));
+                    revision, parseChapterTitles(session, chapters.size()), liveCaptions);
         } catch (JSONException | IllegalArgumentException e) {
             throw new IOException("Invalid LAN session metadata", e);
         }

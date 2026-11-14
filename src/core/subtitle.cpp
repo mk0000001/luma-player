@@ -32,15 +32,36 @@ int graphemeUnits(QStringView text){
     }
     return 1;
 }
+
+struct CaptionGrapheme { qsizetype start,end; int units; bool wordEnd,sentenceEnd; };
+enum class CaptionBreak { None, Word, Phrase, Pause, Clause, Sentence };
+
+bool closingCaptionPunctuation(QChar ch){
+    static const QString closing=QStringLiteral("。，、！？!?;；:：,.)]}」』】〉》〕”’»…");
+    return closing.contains(ch);
 }
-std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs){
+
+bool japaneseWordStart(QChar ch){
+    return ch.script()==QChar::Script_Han || ch.script()==QChar::Script_Katakana;
+}
+
+CaptionBreak japanesePhraseBreak(QStringView phrase,QChar left,QChar right){
+    if(!japaneseWordStart(right))return CaptionBreak::None;
+    // Conjunctive endings belong to the phrase just spoken. Use them before
+    // weaker script transitions when the recognizer omitted punctuation.
+    for(const auto ending:{u"てから",u"けれども",u"けれど",u"ながら",u"ので",u"のに",u"たら"})
+        if(phrase.endsWith(QStringView(ending)))return CaptionBreak::Phrase;
+    return left.script()==QChar::Script_Hiragana?CaptionBreak::Word:CaptionBreak::None;
+}
+}
+std::optional<qint64> CaptionCoverage::begin(qint64 positionMs,qint64 durationMs,qint64 prerollMs,qint64 limitMs){
     if(pending_ || positionMs<0 || positionMs>=durationMs || bufferedAhead(positionMs,durationMs)>=std::min(prefetchMs,durationMs-positionMs))return {};
     const auto ahead=bufferedAhead(positionMs,durationMs);
     // A disc seek/pause can settle slightly before the requested timestamp.
     // Recognize that real audio too; contiguous prefetch never reads it twice.
     auto start=ahead>0?positionMs+ahead:std::max<qint64>(0,positionMs-std::clamp<qint64>(prerollMs,0,chunkMs-lookAheadMs));
     if(!ahead)for(const auto &range:completed_)if(range.second<=positionMs)start=std::max(start,range.second);
-    auto end=std::min(start+chunkMs,durationMs);
+    auto end=std::min(start+std::clamp<qint64>(limitMs,1,chunkMs),durationMs);
     for(const auto &range:completed_)if(range.first>start){end=std::min(end,range.first);break;}
     pending_=qMakePair(start,end);return start;
 }
@@ -77,58 +98,129 @@ QVector<SubtitleCue> parseSrt(const QString &input) {
     std::stable_sort(cues.begin(),cues.end(),[](const auto &a,const auto &b){ return a.startMs<b.startMs; });
     return cues;
 }
-QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,qint64 minPageMs){
-    struct Grapheme {qsizetype start,end;int units;bool wordEnd,sentenceEnd;};
+static QVector<SubtitleCue> makeCaptionPages(const QVector<SubtitleCue> &cues,int maxUnits,qint64 minPageMs,bool legacy){
     QVector<SubtitleCue> result;maxUnits=std::max(1,maxUnits);minPageMs=std::max<qint64>(1,minPageMs);
     for(const auto &cue:cues){
-        if(cue.endMs<=cue.startMs || cue.text.trimmed().isEmpty())continue;
+        if(cue.startMs<0 || cue.endMs<=cue.startMs || cue.text.trimmed().isEmpty())continue;
         const bool timed=validTokenTimings(cue);
-        QVector<Grapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
+        QVector<CaptionGrapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
         while((end=finder.toNextBoundary())>=0){
             static const QString sentenceEnds=QStringLiteral("。！？!?;；.\n");
             const auto text=QStringView(cue.text).sliced(start,end-start);
             const auto last=text.back();characters.append({start,end,graphemeUnits(text),last.isSpace(),sentenceEnds.contains(last)});start=end;
         }
         if(characters.isEmpty())continue;
-        QVector<QPair<qsizetype,qsizetype>> ranges;qsizetype first=0;
-        const qint64 maxPages=std::max<qint64>(1,(cue.endMs-cue.startMs)/minPageMs);
-        while(first<characters.size()){
-            qsizetype last=first,lastWord=-1,lastSentence=-1;int used=0;
-            while(last<characters.size() && (last==first || used+characters[last].units<=maxUnits)){
-                used+=characters[last].units;
-                if(used>=maxUnits/2){if(characters[last].wordEnd)lastWord=last+1;if(characters[last].sentenceEnd)lastSentence=last+1;}
-                ++last;
-            }
-            if(qint64(ranges.size())+1>=maxPages)last=characters.size();
-            else if(last<characters.size()){if(lastSentence>first)last=lastSentence;else if(lastWord>first)last=lastWord;}
-            // Keep sentence endings/closing quotes with the preceding page.
-            // The small allowance cannot turn a punctuation-only input into
-            // one unbounded presentation page.
-            static const QString closing=QString::fromUtf8("。，、！？!?;；:：,.)]}」』】〉》〕”’»…");
-            for(int extra=0;last<characters.size() && extra<4 && closing.contains(cue.text.at(characters[last].start));++extra)++last;
-            while(timed && last<characters.size()){
-                const auto boundary=characters[last-1].end;
-                bool expanded=false;
-                for(const auto &token:cue.tokens)if(token.textStart<boundary && token.textStart+token.textLength>boundary){
-                    const auto tokenEnd=token.textStart+token.textLength;
-                    while(last<characters.size() && characters[last-1].end<tokenEnd)++last;
-                    expanded=true;
-                    break;
-                }
-                if(!expanded)break;
-            }
-            ranges.append({first,last});first=last;
-        }
         QVector<qint64> cumulative{0};for(const auto &character:characters)cumulative.append(cumulative.last()+character.units);
         const auto timeAt=[&](qsizetype index){return index==characters.size()?cue.endMs:cue.startMs+qint64((static_cast<long double>(cue.endMs-cue.startMs)*cumulative[index])/cumulative.last());};
+        QVector<qsizetype> alignedTokens;
+        if(timed){
+            alignedTokens.fill(-1,characters.size()+1);
+            alignedTokens[0]=0;
+            qsizetype boundary=1;
+            for(qsizetype token=0;token<cue.tokens.size();++token){
+                const auto textEnd=cue.tokens[token].textStart+cue.tokens[token].textLength;
+                while(boundary<=characters.size() && characters[boundary-1].end<textEnd)++boundary;
+                if(boundary<=characters.size() && characters[boundary-1].end==textEnd)alignedTokens[boundary]=token+1;
+            }
+        }
+        const auto canEndAt=[&](qsizetype index){return !timed || alignedTokens[index]>=0;};
         const auto startAt=[&](qsizetype index){
-            if(timed){const auto boundary=characters[index].start;for(const auto &token:cue.tokens)if(token.textStart+token.textLength>boundary)return token.startMs;}
+            if(!timed)return timeAt(index);
+            if(canEndAt(index))return cue.tokens[alignedTokens[index]].startMs;
+            // Legacy projects allowed a boundary inside a token if the token
+            // itself began within the preceding combining grapheme.
+            const auto offset=characters[index].start;
+            for(const auto &token:cue.tokens)if(token.textStart+token.textLength>offset)return token.startMs;
             return timeAt(index);
         };
         const auto endAt=[&](qsizetype index){
-            if(timed){const auto boundary=characters[index-1].end;for(auto token=cue.tokens.crbegin();token!=cue.tokens.crend();++token)if(token->textStart<boundary)return token->endMs;}
+            if(!timed)return timeAt(index);
+            if(canEndAt(index))return cue.tokens[alignedTokens[index]-1].endMs;
+            const auto offset=characters[index-1].end;
+            for(auto token=cue.tokens.crbegin();token!=cue.tokens.crend();++token)if(token->textStart<offset)return token->endMs;
             return timeAt(index);
         };
+        const auto naturalBreaks=[&]{
+            QVector<CaptionBreak> result(characters.size()+1,CaptionBreak::None);
+            QTextBoundaryFinder sentences(QTextBoundaryFinder::Sentence,cue.text);
+            qsizetype significant=0,afterSpace=0;
+            for(qsizetype i=1;i<characters.size();++i){
+                const auto boundary=characters[i-1].end;
+                const auto left=cue.text.at(characters[i-1].start),right=cue.text.at(boundary);
+                if(!cue.text.at(boundary-1).isSpace())significant=boundary;
+                if(significant==0)continue;
+                if(!canEndAt(i) || closingCaptionPunctuation(right))continue;
+                const auto lastChar=cue.text.at(significant-1);
+                if(lastChar.category()==QChar::Punctuation_Open || lastChar.category()==QChar::Punctuation_InitialQuote)continue;
+                const auto tail=QStringView(cue.text).sliced(std::max<qsizetype>(0,significant-6),std::min<qsizetype>(significant,6));
+                sentences.setPosition(boundary);
+                bool sentenceEnd=sentences.isAtBoundary();
+                if(!sentenceEnd && right.isSpace()){
+                    if(afterSpace<=boundary){
+                        afterSpace=boundary+1;
+                        while(afterSpace<cue.text.size() && cue.text.at(afterSpace).isSpace())++afterSpace;
+                    }
+                    sentences.setPosition(afterSpace);
+                    sentenceEnd=sentences.isAtBoundary();
+                }
+                if(sentenceEnd)result[i]=CaptionBreak::Sentence;
+                else if(QStringView(u"。！？!?").contains(lastChar))result[i]=CaptionBreak::Sentence;
+                else if(QStringView(u"、，；;：:").contains(lastChar) || (lastChar==u',' && (left.isSpace() || right.isSpace())))result[i]=CaptionBreak::Clause;
+                else if(timed && startAt(i)-endAt(i)>=450 && (left.isSpace() || right.isSpace() || japaneseWordStart(right)))
+                    result[i]=CaptionBreak::Pause;
+                else if(left.isSpace() || right.isSpace())result[i]=CaptionBreak::Word;
+                else result[i]=japanesePhraseBreak(tail,left,right);
+            }
+            return result;
+        };
+        const auto breaks=legacy?QVector<CaptionBreak>{}:naturalBreaks();
+        QVector<QPair<qsizetype,qsizetype>> ranges;qsizetype first=0;
+        const qint64 maxPages=std::max<qint64>(1,(cue.endMs-cue.startMs)/minPageMs);
+        while(first<characters.size()){
+            qsizetype last=first,lastWord=-1,lastSentence=-1;
+            qint64 used=0;
+            while(last<characters.size() && (last==first || used+characters[last].units<=maxUnits)){
+                used+=characters[last].units;
+                if(legacy && used>=maxUnits/2){if(characters[last].wordEnd)lastWord=last+1;if(characters[last].sentenceEnd)lastSentence=last+1;}
+                ++last;
+            }
+            if(qint64(ranges.size())+1>=maxPages)last=characters.size();
+            else if(legacy && last<characters.size()){if(lastSentence>first)last=lastSentence;else if(lastWord>first)last=lastWord;}
+            else if(!legacy){
+                qsizetype best=-1;
+                CaptionBreak preferred=CaptionBreak::None;
+                for(auto cut=first+1;cut<=last && cut<characters.size();++cut){
+                    const auto kind=breaks[cut];
+                    if(kind==CaptionBreak::None || endAt(cut)-startAt(first)<minPageMs || endAt(characters.size())-startAt(cut)<minPageMs)continue;
+                    if(kind!=CaptionBreak::Sentence && (last==characters.size() || cumulative[cut]-cumulative[first]<maxUnits/2))continue;
+                    if(kind>=preferred){preferred=kind;best=cut;}
+                    if(kind==CaptionBreak::Sentence && !cue.text.at(characters[cut].start).isSpace())break;
+                }
+                if(best>first)last=best;
+            }
+            // Keep sentence endings/closing quotes with the preceding page.
+            // The small allowance cannot turn a punctuation-only input into
+            // one unbounded presentation page.
+            for(int extra=0;last<characters.size() && extra<4 && closingCaptionPunctuation(cue.text.at(characters[last].start));++extra)++last;
+            if(legacy && timed){
+                while(last<characters.size()){
+                    const auto boundary=characters[last-1].end;
+                    bool expanded=false;
+                    for(const auto &token:cue.tokens)if(token.textStart<boundary && token.textStart+token.textLength>boundary){
+                        const auto tokenEnd=token.textStart+token.textLength;
+                        while(last<characters.size() && characters[last-1].end<tokenEnd)++last;
+                        expanded=true;
+                        break;
+                    }
+                    if(!expanded)break;
+                }
+            }else while(!canEndAt(last))++last;
+            if(!legacy && last<characters.size() && closingCaptionPunctuation(cue.text.at(characters[last].start))){
+                ++last;
+                while(!canEndAt(last))++last;
+            }
+            ranges.append({first,last});first=last;
+        }
         // A short tail is merged with its neighbor rather than becoming a flash.
         for(qsizetype index=0;index<ranges.size() && ranges.size()>1;){
             if(endAt(ranges[index].second)-startAt(ranges[index].first)>=minPageMs){++index;continue;}
@@ -140,14 +232,25 @@ QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,
             while(begin<finish && cue.text[begin].isSpace())++begin;while(finish>begin && cue.text[finish-1].isSpace())--finish;
             if(begin==finish)continue;
             SubtitleCue page{startAt(range.first),endAt(range.second),cue.text.mid(begin,finish-begin)};
-            if(timed)for(const auto &token:cue.tokens){
-                const auto tokenStart=std::max(begin,token.textStart),tokenEnd=std::min(finish,token.textStart+token.textLength);
-                if(tokenEnd>tokenStart)page.tokens.append({tokenStart-begin,tokenEnd-tokenStart,token.startMs,token.endMs});
+            if(timed){
+                const auto firstToken=canEndAt(range.first)?alignedTokens[range.first]:0;
+                const auto lastToken=canEndAt(range.second)?alignedTokens[range.second]:cue.tokens.size();
+                for(auto i=firstToken;i<lastToken;++i){
+                    const auto &token=cue.tokens[i];
+                    const auto tokenStart=std::max(begin,token.textStart),tokenEnd=std::min(finish,token.textStart+token.textLength);
+                    if(tokenEnd>tokenStart)page.tokens.append({tokenStart-begin,tokenEnd-tokenStart,token.startMs,token.endMs});
+                }
             }
             result.append(std::move(page));
         }
     }
     return result;
+}
+QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits,qint64 minPageMs){
+    return makeCaptionPages(cues,maxUnits,minPageMs,false);
+}
+QVector<SubtitleCue> preparedCaptionPages(const QVector<SubtitleCue> &cues){
+    return makeCaptionPages(cues,60,900,true);
 }
 quint64 SubtitleTimeline::reset() { cues_.clear(); maximumEnds_.clear(); return ++generation_; }
 bool SubtitleTimeline::attach(quint64 generation, QVector<SubtitleCue> cues) {

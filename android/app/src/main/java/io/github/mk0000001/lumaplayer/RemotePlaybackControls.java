@@ -23,6 +23,8 @@ import java.util.Locale;
 
 @UnstableApi
 final class RemotePlaybackControls {
+    private static final float[] PLAYBACK_SPEEDS = {.25f, .5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f};
+
     interface Actions {
         long positionMs();
         long bufferedPositionMs();
@@ -35,6 +37,7 @@ final class RemotePlaybackControls {
         void showPlaybackInfo();
         void showUsageNotice();
         void showPcControls();
+        void showCaptions();
     }
 
     private final Activity activity;
@@ -51,6 +54,7 @@ final class RemotePlaybackControls {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable tick = this::refresh;
     private final View chapterPanel;
+    private final TextView chapterHeading;
     private final ListView chapterList;
     private LanSession session;
     private long appliedRevision = -1;
@@ -73,6 +77,7 @@ final class RemotePlaybackControls {
         panel = activity.findViewById(R.id.playback_navigation);
         settings = new PlaybackSettingsPanel(activity, this::showSettings);
         chapterPanel = activity.findViewById(R.id.portrait_chapters);
+        chapterHeading = activity.findViewById(R.id.playback_chapter_heading);
         chapterList = activity.findViewById(R.id.portrait_chapter_list);
         chapterList.setOnItemClickListener((parent, view, index, id) -> {
             if (session != null && index < session.chaptersMs.size()) {
@@ -143,6 +148,7 @@ final class RemotePlaybackControls {
             settings.close();
         }
         selectedChapter = -1;
+        chapterHeading.setText(R.string.chapters_title);
         List<String> chapterRows = new ArrayList<>();
         if (session != null) {
             for (int index = 0; index < session.chaptersMs.size(); ++index) {
@@ -233,7 +239,12 @@ final class RemotePlaybackControls {
     }
 
     int subtitleDelayMs() {
-        return session != null && session.supportsCaptionOffset && !session.subtitles.isEmpty() ? subtitleDelayMs : 0;
+        return subtitleDelayMs;
+    }
+
+    int legacySubtitleDelayMs() {
+        return session != null && !session.liveCaptions && session.supportsCaptionOffset && !session.subtitles.isEmpty()
+                ? subtitleDelayMs : 0;
     }
 
     String selectedProfile() {
@@ -278,18 +289,15 @@ final class RemotePlaybackControls {
             return;
         }
         long current = actions.positionMs();
-        if (chaptersVisible) {
-            int chapter = Collections.binarySearch(session.chaptersMs, current);
-            if (chapter < 0) {
-                chapter = -chapter - 2;
+        int chapter = chapterAt(current);
+        if (chapter != selectedChapter) {
+            chapterList.clearChoices();
+            if (chapter >= 0) {
+                chapterList.setItemChecked(chapter, true);
             }
-            if (chapter != selectedChapter) {
-                chapterList.clearChoices();
-                if (chapter >= 0) {
-                    chapterList.setItemChecked(chapter, true);
-                }
-                selectedChapter = chapter;
-            }
+            chapterHeading.setText(chapter >= 0 ? chapterLabel(chapter) : activity.getText(R.string.chapters_title));
+            selectedChapter = chapter;
+            displayedPositionSeconds = -1;
         }
         if (controlsVisible) {
             boolean seekable = canSeek();
@@ -319,12 +327,26 @@ final class RemotePlaybackControls {
         return session.durationMs > 0 ? (int) Math.round((double) timeMs * seek.getMax() / session.durationMs) : 0;
     }
 
+    private int chapterAt(long timeMs) {
+        int index = Collections.binarySearch(session.chaptersMs, timeMs);
+        return index < 0 ? -index - 2 : index;
+    }
+
+    private CharSequence chapterLabel(int chapter) {
+        String name = session.chapterTitles.get(chapter);
+        return name.isEmpty() ? activity.getString(R.string.current_chapter, chapter + 1)
+                : activity.getString(R.string.format_with_detail, activity.getString(R.string.current_chapter, chapter + 1), name);
+    }
+
     private void showTime(long time) {
         long seconds = Math.max(0, time / 1000);
         if (displayedPositionSeconds != seconds) {
             displayedPositionSeconds = seconds;
             String current = timeLabel(time);
-            position.setText(durationLabel == null ? current : current + " / " + durationLabel);
+            String timing = durationLabel == null ? current : current + " / " + durationLabel;
+            int chapter = session == null ? -1 : chapterAt(time);
+            position.setText(chapter < 0 ? timing : activity.getString(R.string.format_with_detail, timing,
+                    activity.getString(R.string.current_chapter, chapter + 1)));
         }
     }
 
@@ -372,6 +394,7 @@ final class RemotePlaybackControls {
         settings.addRow(R.string.playback_speed, activity.getString(R.string.settings_speed_value, speed),
                 this::showSpeed);
         settings.addRow(R.string.skip_title, activity.getString(R.string.interval_seconds, skipSeconds), this::showSkip);
+        settings.addRow(R.string.playback_captions, null, actions::showCaptions);
         String delay = canAdjustSubtitleDelay() ? activity.getString(R.string.subtitle_delay_value, subtitleDelayMs / 1000.0)
                 : activity.getString(R.string.settings_option_unavailable);
         settings.addRow(R.string.subtitle_delay_title, delay, this::showSubtitleDelay);
@@ -385,6 +408,10 @@ final class RemotePlaybackControls {
 
     boolean handleSettingsBack() {
         return settings.handleBack();
+    }
+
+    PlaybackSettingsPanel captionSettings() {
+        return settings;
     }
 
     void closeSettings() {
@@ -415,13 +442,38 @@ final class RemotePlaybackControls {
         if (player == null) {
             return;
         }
-        List<Float> speeds = Arrays.asList(.5f, .75f, 1f, 1.25f, 1.5f, 1.75f, 2f);
-        String[] labels = speeds.stream().map(speed -> speedLabel(speed) + "×").toArray(String[]::new);
-        settings.choose(R.string.playback_speed, labels, speeds.indexOf(player.getPlaybackParameters().speed), choice -> {
+        String[] labels = new String[PLAYBACK_SPEEDS.length];
+        int selected = -1;
+        for (int index = 0; index < labels.length; index++) {
+            labels[index] = speedLabel(PLAYBACK_SPEEDS[index]) + "×";
+            if (PLAYBACK_SPEEDS[index] == player.getPlaybackParameters().speed) selected = index;
+        }
+        settings.choose(R.string.playback_speed, labels, selected, choice -> {
             if (actions.player() == player) {
-                player.setPlaybackSpeed(speeds.get(choice));
+                player.setPlaybackSpeed(PLAYBACK_SPEEDS[choice]);
             }
         });
+    }
+
+    void changeSpeed(boolean faster) {
+        Player player = actions.player();
+        if (player == null) return;
+        float current = player.getPlaybackParameters().speed;
+        if (faster) {
+            for (float rate : PLAYBACK_SPEEDS) {
+                if (rate > current) {
+                    player.setPlaybackSpeed(rate);
+                    return;
+                }
+            }
+        } else {
+            for (int index = PLAYBACK_SPEEDS.length - 1; index >= 0; index--) {
+                if (PLAYBACK_SPEEDS[index] < current) {
+                    player.setPlaybackSpeed(PLAYBACK_SPEEDS[index]);
+                    return;
+                }
+            }
+        }
     }
 
     private void showAudioTracks() {
@@ -526,6 +578,6 @@ final class RemotePlaybackControls {
     }
 
     private boolean canAdjustSubtitleDelay() {
-        return session != null && session.supportsCaptionOffset && !session.subtitles.isEmpty();
+        return session != null;
     }
 }

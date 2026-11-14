@@ -34,7 +34,6 @@
                 app:show_next_button="false"
                 app:show_previous_button="false"
                 app:show_rewind_button="false"
-                app:show_subtitle_button="true"
                 app:surface_type="surface_view" />
 
             <io.github.mk0000001.lumaplayer.SeekFeedbackView
@@ -151,6 +150,7 @@
             android:visibility="gone">
 
             <TextView
+                android:id="@+id/playback_chapter_heading"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:accessibilityHeading="true"

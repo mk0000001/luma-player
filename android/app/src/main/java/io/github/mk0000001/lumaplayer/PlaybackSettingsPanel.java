@@ -27,7 +27,9 @@ final class PlaybackSettingsPanel {
     private final ScrollView scroll;
     private final LinearLayout rows;
     private final Runnable showRoot;
+    private Runnable returnAction;
     private int previousAccessibility;
+    private int heading;
     private boolean subpage;
 
     PlaybackSettingsPanel(Activity activity, Runnable showRoot) {
@@ -40,7 +42,7 @@ final class PlaybackSettingsPanel {
         back = activity.findViewById(R.id.playback_settings_back);
         scroll = activity.findViewById(R.id.playback_settings_scroll);
         rows = activity.findViewById(R.id.playback_settings_rows);
-        back.setOnClickListener(view -> showRoot.run());
+        back.setOnClickListener(view -> { if (returnAction != null) returnAction.run(); });
         activity.findViewById(R.id.playback_settings_scrim).setOnClickListener(view -> close());
         activity.findViewById(R.id.playback_settings_close).setOnClickListener(view -> close());
         overlay.addOnLayoutChangeListener((view, left, top, right, bottom,
@@ -48,6 +50,17 @@ final class PlaybackSettingsPanel {
     }
 
     void show(int heading, boolean subpage) {
+        open(heading, subpage ? showRoot : null);
+    }
+
+    void showPage(int heading, Runnable backAction) {
+        open(heading, backAction);
+    }
+
+    private void open(int heading, Runnable backAction) {
+        this.heading = heading;
+        returnAction = backAction;
+        boolean subpage = backAction != null;
         this.subpage = subpage;
         title.setText(heading);
         sheet.setAccessibilityPaneTitle(title.getText());
@@ -69,17 +82,21 @@ final class PlaybackSettingsPanel {
     }
 
     void addRow(int label, String value, Runnable action) {
+        addRow(label, value, action, true);
+    }
+
+    Row addRow(int label, String value, Runnable action, boolean enabled) {
         LinearLayout row = new LinearLayout(activity);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setMinimumHeight(dp(50));
         row.setPadding(dp(12), dp(8), dp(12), dp(8));
         row.setBackground(rowBackground());
-        row.setFocusable(true);
         row.setScreenReaderFocusable(true);
         TextView name = text(activity.getString(label), 14, R.color.luma_text, true);
         row.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 3));
+        TextView current = null;
         if (value != null) {
-            TextView current = text(value, 13, R.color.luma_muted, false);
+            current = text(value, 13, R.color.luma_muted, false);
             current.setGravity(Gravity.END);
             current.setPaddingRelative(dp(8), 0, 0, 0);
             row.addView(current, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2));
@@ -90,12 +107,33 @@ final class PlaybackSettingsPanel {
         row.addView(arrow);
         row.setOnClickListener(view -> action.run());
         rows.addView(row);
+        Row result = new Row(row, current);
+        result.setEnabled(enabled);
+        return result;
+    }
+
+    record Row(View container, TextView value) {
+        void setEnabled(boolean enabled) {
+            container.setEnabled(enabled);
+            container.setFocusable(enabled);
+            container.setAlpha(enabled ? 1f : .6f);
+        }
+
+        void setValue(CharSequence text) {
+            if (value != null && !text.equals(value.getText())) value.setText(text);
+        }
     }
 
     void addHint(int message) {
-        TextView hint = text(activity.getString(message), 14, R.color.luma_muted, false);
+        addHint(activity.getText(message));
+    }
+
+    TextView addHint(CharSequence message) {
+        TextView hint = text(message.toString(), 14, R.color.luma_muted, false);
         hint.setPadding(dp(12), dp(10), dp(12), dp(12));
+        hint.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         rows.addView(hint);
+        return hint;
     }
 
     void choose(int heading, String[] labels, int selected, IntConsumer select) {
@@ -124,7 +162,7 @@ final class PlaybackSettingsPanel {
             return false;
         }
         if (subpage) {
-            showRoot.run();
+            returnAction.run();
         } else {
             close();
         }
@@ -137,6 +175,14 @@ final class PlaybackSettingsPanel {
             playback.setImportantForAccessibility(previousAccessibility);
             rows.removeAllViews();
         }
+    }
+
+    boolean isShowing(int heading) {
+        return this.heading == heading && isOpen();
+    }
+
+    boolean isOpen() {
+        return overlay.getVisibility() == View.VISIBLE;
     }
 
     void setInsets(int left, int top, int right, int bottom) {

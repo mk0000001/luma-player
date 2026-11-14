@@ -148,6 +148,43 @@ private slots:
         const auto words=captionPages({{0,9000,"Keep every word in this very long sentence."}},14,900);QStringList text;
         for(const auto &page:words)text.append(page.text);QCOMPARE(text.join(' '),QString("Keep every word in this very long sentence."));
     }
+    void captionPagesPreferCompleteSentencesEvenBelowTheWidthLimit(){
+        const auto check=[](const QString &text,const QStringList &expected){
+            QStringList actual;
+            for(const auto &page:captionPages({{0,16000,text}}))actual.append(page.text);
+            QCOMPARE(actual,expected);
+        };
+        check(QString::fromUtf8("「そうですね。」次に進みましょう。"),{QString::fromUtf8("「そうですね。」"),QString::fromUtf8("次に進みましょう。")});
+        check(QString::fromUtf8("조금 기다려요. 이제 다시 시작해요."),{QString::fromUtf8("조금 기다려요."),QString::fromUtf8("이제 다시 시작해요.")});
+        check("It is 12.5 seconds. Then start again.",{"It is 12.5 seconds.","Then start again."});
+    }
+    void captionPagesKeepJapaneseTransitionWithItsSpokenPhrase(){
+        const auto pages=captionPages({{0,10000,QString::fromUtf8("公園で写真を撮ってから駅まで歩きました")}},27,600);
+        QCOMPARE(pages.size(),2);
+        QCOMPARE(pages[0].text,QString::fromUtf8("公園で写真を撮ってから"));
+        QCOMPARE(pages[1].text,QString::fromUtf8("駅まで歩きました"));
+    }
+    void captionPagesUseTokenTimesForBothSidesOfASentencePause(){
+        SubtitleCue cue{0,8000,QString::fromUtf8("그래요. 기다릴게요.")};
+        cue.tokens={{0,4,500,1500},{4,7,3700,6200}};
+        const auto pages=captionPages({cue});
+        QCOMPARE(pages.size(),2);
+        QCOMPARE(pages[0].text,QString::fromUtf8("그래요."));
+        QCOMPARE(pages[0].startMs,qint64(500));
+        QCOMPARE(pages[0].endMs,qint64(1500));
+        QCOMPARE(pages[1].text,QString::fromUtf8("기다릴게요."));
+        QCOMPARE(pages[1].startMs,qint64(3700));
+        QCOMPARE(pages[1].endMs,qint64(6200));
+    }
+    void preparedCaptionPagesKeepExistingTranslationCueBoundaries(){
+        const QVector<SubtitleCue> stored{{1000,7000,QString::fromUtf8("기다려요. 이제 시작해요.")}};
+        QCOMPARE(captionPages(stored).size(),2);
+        const auto prepared=preparedCaptionPages(stored);
+        QCOMPARE(prepared.size(),1);
+        QCOMPARE(prepared[0].text,stored[0].text);
+        QCOMPARE(prepared[0].startMs,stored[0].startMs);
+        QCOMPARE(prepared[0].endMs,stored[0].endMs);
+    }
     void captionPagesPreserveEmojiAndCombiningCharacters(){
         const auto pages=captionPages({{0,7000,QString::fromUtf8("A👩‍💻BがC")}},3,100);
         QCOMPARE(pages.size(),3);QCOMPARE(pages[0].text,QString::fromUtf8("A👩‍💻"));QCOMPARE(pages[1].text,QString::fromUtf8("Bが"));QCOMPARE(pages[2].text,QString("C"));

@@ -23,6 +23,38 @@ class TranslationServiceTests:public QObject{
     }
     QByteArray contents(const QString &name){QFile f(name);if(!f.open(QIODevice::ReadOnly))return {};return f.readAll();}
 private slots:
+    void liveWindowReplacesExpiredQueuedAndRunningCues(){
+        QTemporaryDir dir;const auto model=prepare(dir);
+        TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translatedCue),skips(&service,&TranslationService::skippedCue),errors(&service,&TranslationService::failed);
+        const SubtitleCue running{0,200,"遅い"},old{200,400,"過ぎた"},near{800,1040,"今から"},later{1040,1250,"次は"};
+        service.setContextCues({running,old,near,later});service.requestCues({running,old,near,later},0);
+        QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
+        service.requestCues({near,later},750);
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,2000);
+        QCOMPARE(results[0][1].toString(),translationCueKey(near));
+        QCOMPARE(results[1][1].toString(),translationCueKey(later));
+        QTest::qWait(400);
+        QCOMPARE(results.count(),2);QCOMPARE(skips.count(),0);QCOMPARE(errors.count(),0);
+        QCOMPARE(contents(model+".requests").count('\n'),3);
+    }
+    void liveContextCanImproveFutureCuesWithoutRepeatingInFlightTranslation(){
+        QTemporaryDir dir;const auto model=prepare(dir);
+        TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
+        QSignalSpy results(&service,&TranslationService::translatedCue),errors(&service,&TranslationService::failed);
+        const SubtitleCue running{400,1800,"遅い"},next{2100,3000,"次の字幕"},context{3400,3800,"新しい文脈"};
+        service.setContextCues({running,next});service.requestCues({running,next},0);
+        QTRY_COMPARE_WITH_TIMEOUT(contents(model+".requests").count('\n'),1,2000);
+        service.setContextCues({running,next,context});service.requestCues({running,next},500);
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,2000);
+        QCOMPARE(errors.count(),0);QCOMPARE(contents(model+".requests").count('\n'),2);
+        QCOMPARE(results[0][1].toString(),translationCueKey(running));
+        QCOMPARE(results[1][1].toString(),translationCueKey(next));
+        const auto request=QJsonDocument::fromJson(contents(model+".requests").trimmed().split('\n').last()).object();
+        const auto neighbors=request.value("data").toObject().value("context").toArray();
+        QVERIFY(std::any_of(neighbors.begin(),neighbors.end(),[&](const auto &cue){return cue.toObject().value("text").toString()==context.text;}));
+        QVERIFY(service.needsTranslation(running));QVERIFY(!service.needsTranslation(next));
+    }
     void contextCannotExpandAcceptedTargetLengthOrBlockFollowingCue(){
         QTemporaryDir dir;const auto model=prepare(dir);TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
         QSignalSpy results(&service,&TranslationService::translatedCue),skips(&service,&TranslationService::skippedCue),errors(&service,&TranslationService::failed);

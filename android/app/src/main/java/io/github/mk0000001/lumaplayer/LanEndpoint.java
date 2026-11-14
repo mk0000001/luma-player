@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import okhttp3.HttpUrl;
 
 final class LanEndpoint {
+    static final String LIVE_CAPTION_PATH = "/v1/captions";
     static final String SESSION_PATH = "/v1/session";
     static final String MEDIA_PATH = "/v1/media";
     static final String PLAYBACK_START_PATH = "/v1/playback/start";
@@ -130,7 +131,7 @@ final class LanEndpoint {
     }
 
     private static boolean permitsPath(String path) {
-        return isMediaPath(path) || PLAYER_FILES_PATH.equals(path) || PLAYER_CONTROL_PATH.equals(path) || DISC_MENU_PATH.equals(path) || PLAYBACK_START_PATH.equals(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
+        return isMediaPath(path) || LIVE_CAPTION_PATH.equals(path) || PLAYER_FILES_PATH.equals(path) || PLAYER_CONTROL_PATH.equals(path) || DISC_MENU_PATH.equals(path) || PLAYBACK_START_PATH.equals(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
                 || PAIR_REVEAL_PATH.equals(path) || PAIR_POLL_PATH.equals(path) || PAIR_LOGIN_PATH.equals(path);
     }
 

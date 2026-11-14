@@ -51,6 +51,7 @@ type config struct {
 	VideoRange    string           `json:"videoRange,omitempty"`
 	Title         string           `json:"title"`
 	Subtitles     []subtitleConfig `json:"subtitles"`
+	LiveCaptions  bool             `json:"liveCaptions,omitempty"`
 }
 
 type subtitleConfig struct {

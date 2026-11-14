@@ -23,6 +23,7 @@ import androidx.media3.session.SessionCommands;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.util.Collections;
+import java.util.function.Consumer;
 
 @UnstableApi
 public final class PlaybackService extends MediaSessionService {
@@ -46,7 +47,7 @@ public final class PlaybackService extends MediaSessionService {
     private ControlsPlayer controls;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    static boolean attach(Context context, ExoPlayer player, Runnable onStopped) {
+    static boolean attach(Context context, ExoPlayer player, Consumer<Boolean> requestPlayback, Runnable onStopped) {
         if (Looper.myLooper() != Looper.getMainLooper() || player.getApplicationLooper() != Looper.getMainLooper()) {
             throw new IllegalStateException("Playback service requires the main player looper");
         }
@@ -54,7 +55,7 @@ public final class PlaybackService extends MediaSessionService {
             return pending.player == player;
         }
         Context app = context.getApplicationContext();
-        pending = new Attachment(player, onStopped);
+        pending = new Attachment(player, requestPlayback, onStopped);
         try {
             player.setWakeMode(C.WAKE_MODE_NETWORK);
             if (app.startService(new Intent(app, PlaybackService.class).setAction(ATTACH)) != null) {
@@ -119,7 +120,7 @@ public final class PlaybackService extends MediaSessionService {
     }
 
     private void addPlaybackSession(Attachment attachment) {
-        controls = new ControlsPlayer(attachment.player, getString(R.string.app_name),
+        controls = new ControlsPlayer(attachment.player, getString(R.string.app_name), attachment.requestPlayback,
                 () -> main.post(() -> finishPlayback(attachment)));
         Intent reopen = new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -202,7 +203,7 @@ public final class PlaybackService extends MediaSessionService {
         }
     }
 
-    private record Attachment(ExoPlayer player, Runnable onStopped) {
+    private record Attachment(ExoPlayer player, Consumer<Boolean> requestPlayback, Runnable onStopped) {
         void stopAndNotify() {
             player.pause();
             player.setWakeMode(C.WAKE_MODE_NONE);
@@ -214,6 +215,7 @@ public final class PlaybackService extends MediaSessionService {
     private static final class ControlsPlayer extends SimpleBasePlayer {
         private final ExoPlayer player;
         private final MediaItem displayItem;
+        private final Consumer<Boolean> requestPlayback;
         private final Runnable onStop;
         private final Player.Listener listener = new Player.Listener() {
             @Override
@@ -222,9 +224,10 @@ public final class PlaybackService extends MediaSessionService {
             }
         };
 
-        ControlsPlayer(ExoPlayer player, String title, Runnable onStop) {
+        ControlsPlayer(ExoPlayer player, String title, Consumer<Boolean> requestPlayback, Runnable onStop) {
             super(player.getApplicationLooper());
             this.player = player;
+            this.requestPlayback = requestPlayback;
             this.onStop = onStop;
             displayItem = new MediaItem.Builder().setMediaId("luma-playback")
                     .setMediaMetadata(new MediaMetadata.Builder().setTitle(title).build()).build();
@@ -249,7 +252,7 @@ public final class PlaybackService extends MediaSessionService {
 
         @Override
         protected ListenableFuture<?> handleSetPlayWhenReady(boolean playWhenReady) {
-            player.setPlayWhenReady(playWhenReady);
+            requestPlayback.accept(playWhenReady);
             return Futures.immediateVoidFuture();
         }
 

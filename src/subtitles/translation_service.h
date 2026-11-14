@@ -23,7 +23,11 @@ public:
     void setContextCues(const QVector<SubtitleCue> &originals);
     // Read-only: a completed timed result is reusable only for the current bounded payload.
     bool needsTranslation(const SubtitleCue &cue)const;
-    void requestCues(const QVector<SubtitleCue> &nearestFirst);
+    // A playback position makes this the complete live window, replacing pending work.
+    // Offline preparation omits it and retains the ordered queue.
+    void requestCues(const QVector<SubtitleCue> &nearestFirst,std::optional<qint64> playbackPositionMs={});
+    void warmUp();
+    void shutdown();
     void cancel();
     quint64 generation()const;
     QString selectedBackend()const;

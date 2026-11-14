@@ -34,7 +34,7 @@ struct PlaybackState {
     qint64 positionMs=0, durationMs=0;
     qint64 bufferedUntilMs=-1;
     int discBufferPercent=-1;
-    bool playing=false, failed=false, navigationTitle=false, buffering=false;
+    bool playing=false, failed=false, ended=false, navigationTitle=false, buffering=false;
     bool timelineReady=false,discMenus=true;
     bool lanSubtitleCueActive=false;
     int currentTitle=-1,currentChapter=-1;
@@ -49,6 +49,7 @@ struct PlaybackState {
     bool losslessAudio=false;
     QString audioFormat, audioLayout, audioSettingsError;
     bool audioBitstreamRequested=false, audioBitstreamActive=false, audioVolumeExternal=false;
+    int audioVolumePercent=-1;
     QString motionStatus;
     double sourceFps=0,filteredFps=0,displayFps=0;
     bool discStatisticsAvailable=false, fileCacheHolding=false;
@@ -67,7 +68,8 @@ class PlaybackEngine : public QObject {
     Q_OBJECT
 public:
     enum class Kind { Disc, File };
-    explicit PlaybackEngine(Kind kind, const QString &runtimeRoot={}, QObject *parent=nullptr);
+    explicit PlaybackEngine(Kind kind, const QString &runtimeRoot={}, QObject *parent=nullptr,
+                            std::optional<QString> videoAdapter=std::nullopt);
     ~PlaybackEngine() override;
     bool available() const;
     QString lastError() const;
@@ -84,11 +86,13 @@ public:
     void setVideoColorOutput(VideoOverrides::Color color,bool forceHdr);
     void setAudioOutputOptions(AudioOutputOptions options);
     void setFrameInterpolation(const QString &mode,int targetFps);
+    bool stepFrame(int direction);
     void seek(qint64 positionMs);
     void setVolume(int volume);
     void setRate(double rate);
     void setAudio(int id);
     void setSubtitle(int id);
+    void setSubtitlesVisible(bool visible);
     void setChapter(int id);
     void setTitle(int id);
     void navigate(int mode);

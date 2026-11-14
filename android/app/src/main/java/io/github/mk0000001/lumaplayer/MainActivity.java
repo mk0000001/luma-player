@@ -22,6 +22,7 @@ import android.provider.Settings;
 import android.text.method.LinkMovementMethod;
 import android.util.Rational;
 import android.view.Display;
+import android.view.KeyEvent;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,8 +30,10 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.TextView;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 import android.window.OnBackInvokedDispatcher;
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
@@ -56,6 +59,7 @@ import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -67,6 +71,7 @@ import java.util.concurrent.TimeUnit;
 public final class MainActivity extends Activity {
     private static final int CONTROLS_TIMEOUT_MS = 5000;
     private static final int REWIND_BUFFER_MS = 15_000;
+    private static final int OPEN_CAPTION_DOCUMENT = 4310;
     private static final int NO_ORIENTATION_OVERRIDE = Integer.MIN_VALUE;
     private static final long DISPLAY_PICKER_TIMEOUT_MS = 120_000L;
     private final ScheduledThreadPoolExecutor connectionExecutor = new ScheduledThreadPoolExecutor(1);
@@ -89,6 +94,7 @@ public final class MainActivity extends Activity {
     private TextView sourceSummary;
     private PlayerView playerView;
     private RemotePlaybackControls navigation;
+    private PlaybackCaptions captions;
     private PlaybackGestures gestures;
 
     private LanClient client;
@@ -102,6 +108,8 @@ public final class MainActivity extends Activity {
     private int beforeFullscreenOrientation = NO_ORIENTATION_OVERRIDE;
     private boolean returningToPortrait;
     private boolean displayPickerOpen, playAfterPicker, playedSinceLoad;
+    private boolean captionPickerOpen;
+    private LanSession captionPickerSession;
     private long streamBaseMs, bufferingSinceMs;
     private long bufferedSeekTarget = -1, latestStreamPosition;
     private String streamProfile = "original";
@@ -211,6 +219,18 @@ public final class MainActivity extends Activity {
             public void showPcControls() {
                 if (client != null) connectionScreen.showPcControls(client);
             }
+
+            @Override
+            public void showCaptions() {
+                MainActivity.this.showCaptions(true);
+            }
+        });
+        captions = new PlaybackCaptions(this, playerView, navigation.captionSettings(), new PlaybackCaptions.Actions() {
+            @Override public Player player() { return player; }
+            @Override public long positionMs() { return absolutePosition(); }
+            @Override public int delayMs() { return navigation.subtitleDelayMs(); }
+            @Override public void chooseFile() { openCaptionDocument(); }
+            @Override public void openPlaybackSettings() { navigation.showSettings(); }
         });
         gestures = new PlaybackGestures(playerView, findViewById(R.id.skip_feedback), new PlaybackGestures.Actions() {
             @Override public long positionMs() { return absolutePosition(); }
@@ -240,8 +260,15 @@ public final class MainActivity extends Activity {
         });
         playerView.setFullscreenButtonClickListener(this::setFullscreen);
         playerView.setControllerShowTimeoutMs(CONTROLS_TIMEOUT_MS);
-        playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener)
-                visibility -> navigation.setVisible(visibility == View.VISIBLE));
+        playerView.findViewById(androidx.media3.ui.R.id.exo_play_pause).setOnClickListener(view -> {
+            if (player != null) togglePlayback();
+            playerView.showController();
+        });
+        playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
+            boolean shown = visibility == View.VISIBLE;
+            navigation.setVisible(shown);
+            captions.controlsVisible(shown);
+        });
     }
 
 
@@ -278,7 +305,9 @@ public final class MainActivity extends Activity {
                         .setTargetBufferBytes(128 * 1024 * 1024)
                         .setBackBuffer(REWIND_BUFFER_MS, true).build()).build();
         player = active;
-        backgroundPlaybackReady = PlaybackService.attach(this, active, () -> {
+        backgroundPlaybackReady = PlaybackService.attach(this, active, playing -> {
+            if (player == active) setPlaybackRequested(playing);
+        }, () -> {
             if (player == active) {
                 disconnect();
             }
@@ -298,6 +327,7 @@ public final class MainActivity extends Activity {
                     updatePlaybackStatus(source);
                 }
                 if (player == active) {
+                    captions.onPlayerChanged();
                     updatePictureInPicture();
                 }
             }
@@ -361,6 +391,7 @@ public final class MainActivity extends Activity {
         applyVideoAspect();
         playerView.showController();
         navigation.setVisible(true);
+        captions.attach(attempt, session);
         loadStream(session.startMs, navigation.selectedProfile(), true);
         scheduleSessionCheck(attempt, 0);
     }
@@ -419,23 +450,121 @@ public final class MainActivity extends Activity {
 
     boolean applyStreamingControl(LanClient media, String action) {
         if (client != media || player == null || playbackSession == null) return false;
+        if (action.startsWith("caption-") && captions.showForPcCommand(action)) {
+            connectionScreen.closePcControls();
+            return true;
+        }
         switch (action) {
-            case "play-pause" -> player.setPlayWhenReady(!player.getPlayWhenReady());
+            case "play-pause" -> togglePlayback();
             case "seek-back" -> seekPlayback(absolutePosition() - 10_000);
             case "seek-forward" -> seekPlayback(absolutePosition() + 10_000);
             case "previous-chapter" -> navigation.selectChapter(false);
             case "next-chapter" -> navigation.selectChapter(true);
-            case "volume-down" -> player.setVolume(Math.max(0f, player.getVolume() - .05f));
-            case "volume-up" -> player.setVolume(Math.min(1f, player.getVolume() + .05f));
-            case "mute" -> {
-                if (player.getVolume() > 0f) {
-                    unmutedVolume = player.getVolume();
-                    player.setVolume(0f);
-                } else {
-                    player.setVolume(unmutedVolume);
+            case "volume-down" -> changePlayerVolume(-.05f);
+            case "volume-up" -> changePlayerVolume(.05f);
+            case "mute" -> toggleMute();
+            default -> { return false; }
+        }
+        return true;
+    }
+
+    private void togglePlayback() {
+        setPlaybackRequested(player.getPlayerError() != null || player.getPlaybackState() == Player.STATE_ENDED
+                || !player.getPlayWhenReady());
+    }
+
+    private void setPlaybackRequested(boolean playing) {
+        if (playing && playbackSession != null) {
+            if (player.getPlaybackState() == Player.STATE_ENDED) {
+                loadStream(0, streamProfile, true);
+                return;
+            }
+            if (player.getPlayerError() != null) {
+                loadStream(absolutePosition(), streamProfile, true);
+                return;
+            }
+            if (player.getPlaybackState() == Player.STATE_IDLE) player.prepare();
+        }
+        player.setPlayWhenReady(playing);
+    }
+
+    private void changePlayerVolume(float delta) {
+        player.setVolume(Math.max(0f, Math.min(1f, player.getVolume() + delta)));
+    }
+
+    private void toggleMute() {
+        if (player.getVolume() > 0f) {
+            unmutedVolume = player.getVolume();
+            player.setVolume(0f);
+        } else {
+            player.setVolume(unmutedVolume);
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        View focus = getCurrentFocus();
+        if (player == null || isInPictureInPictureMode() || navigation.captionSettings().isOpen()
+                || connectionScreen.pcControlsOverlayVisible() || (focus instanceof EditText && focus.isShown())
+                || event.isSystem()) {
+            return super.dispatchKeyEvent(event);
+        }
+        if ((event.getAction() == KeyEvent.ACTION_DOWN || event.getAction() == KeyEvent.ACTION_UP)
+                && handlePlaybackShortcut(event)) return true;
+        return super.dispatchKeyEvent(event);
+    }
+
+    private boolean handlePlaybackShortcut(KeyEvent event) {
+        int key = event.getKeyCode();
+        boolean pressed = event.getAction() == KeyEvent.ACTION_DOWN;
+        boolean firstPress = pressed && event.getRepeatCount() == 0;
+        if (event.hasModifiers(KeyEvent.META_SHIFT_ON) && (key == KeyEvent.KEYCODE_COMMA || key == KeyEvent.KEYCODE_PERIOD)) {
+            if (pressed) navigation.changeSpeed(key == KeyEvent.KEYCODE_PERIOD);
+            return true;
+        }
+        if (!event.hasNoModifiers()) return false;
+        // Leave non-keyboard directional navigation to Android accessibility and D-pad devices.
+        if (key >= KeyEvent.KEYCODE_DPAD_UP && key <= KeyEvent.KEYCODE_DPAD_RIGHT
+                && !event.isFromSource(android.view.InputDevice.SOURCE_KEYBOARD)) return false;
+        switch (key) {
+            case KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_K -> {
+                if (firstPress) togglePlayback();
+            }
+            case KeyEvent.KEYCODE_F, KeyEvent.KEYCODE_F11, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                if (firstPress) setFullscreen(!fullscreen);
+            }
+            case KeyEvent.KEYCODE_ESCAPE -> {
+                if (firstPress && fullscreen) setFullscreen(false);
+            }
+            case KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_J, KeyEvent.KEYCODE_L -> {
+                if (pressed) {
+                    int offset = switch (key) {
+                        case KeyEvent.KEYCODE_DPAD_LEFT -> -5_000;
+                        case KeyEvent.KEYCODE_DPAD_RIGHT -> 5_000;
+                        case KeyEvent.KEYCODE_J -> -10_000;
+                        default -> 10_000;
+                    };
+                    seekPlayback(absolutePosition() + offset);
                 }
             }
-            default -> { return false; }
+            case KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_UP -> {
+                if (pressed) changePlayerVolume(key == KeyEvent.KEYCODE_DPAD_UP ? .05f : -.05f);
+            }
+            case KeyEvent.KEYCODE_M -> {
+                if (firstPress) toggleMute();
+            }
+            case KeyEvent.KEYCODE_C -> {
+                if (firstPress) captions.toggleVisibility();
+            }
+            case KeyEvent.KEYCODE_I -> {
+                if (firstPress && supportsPictureInPicture() && canAutoEnterPictureInPicture()) {
+                    enterPictureInPictureMode(pictureInPictureParams());
+                }
+            }
+            default -> {
+                if (key < KeyEvent.KEYCODE_0 || key > KeyEvent.KEYCODE_9) return false;
+                if (firstPress && seekLimitMs() > 0) seekPlayback(playbackSession.durationMs * (key - KeyEvent.KEYCODE_0) / 10);
+            }
         }
         return true;
     }
@@ -444,8 +573,9 @@ public final class MainActivity extends Activity {
         if (player == null || playbackSession == null) {
             return;
         }
+        captions.onPlayerChanged();
         String profile = navigation.selectedProfile();
-        if (!profile.equals(streamProfile) || navigation.subtitleDelayMs() != streamSubtitleDelayMs) {
+        if (!profile.equals(streamProfile) || navigation.legacySubtitleDelayMs() != streamSubtitleDelayMs) {
             long position = absolutePosition();
             if (playbackSession.restartable || playbackSession.seekable) {
                 loadStream(position, profile, player.getPlayWhenReady());
@@ -461,9 +591,10 @@ public final class MainActivity extends Activity {
         long base = directFile ? 0 : start;
         boolean variant = !"original".equals(profile) || (base > 0 && session.restartable);
         String path = variant ? LanEndpoint.mediaVariantPath(profile, base) : LanEndpoint.MEDIA_PATH;
-        long subtitleOrigin = base - navigation.subtitleDelayMs();
+        long subtitleOrigin = base - navigation.legacySubtitleDelayMs();
         List<MediaItem.SubtitleConfiguration> subtitles = new ArrayList<>();
-        for (LanSession.Subtitle track : session.subtitles) {
+        List<LanSession.Subtitle> sidecars = session.liveCaptions ? Collections.emptyList() : session.subtitles;
+        for (LanSession.Subtitle track : sidecars) {
             String subtitlePath = session.supportsCaptionOffset && subtitleOrigin != 0
                     ? LanEndpoint.subtitleAtPath(track.id, subtitleOrigin) : track.path;
             subtitles.add(new MediaItem.SubtitleConfiguration.Builder(Uri.parse(client.url(subtitlePath).toString()))
@@ -502,7 +633,7 @@ public final class MainActivity extends Activity {
         latestStreamPosition = 0;
         bufferedSeekTarget = -1;
         streamProfile = profile;
-        streamSubtitleDelayMs = navigation.subtitleDelayMs();
+        streamSubtitleDelayMs = navigation.legacySubtitleDelayMs();
         playedSinceLoad = false;
         bufferingSinceMs = 0;
         player.setMediaSource(sources.createMediaSource(media), directFile ? start : 0);
@@ -564,6 +695,7 @@ public final class MainActivity extends Activity {
             message = source.isPlaying() ? R.string.status_playing : R.string.status_paused;
         } else if (state == Player.STATE_ENDED) {
             message = R.string.status_ended;
+            if (source.getPlayWhenReady()) source.setPlayWhenReady(false);
         } else if (state == Player.STATE_BUFFERING && playedSinceLoad && source.getPlayWhenReady()
                 && playbackSession != null && !playbackSession.isBluRay()
                 && bufferingSinceMs == 0 && !navigation.lowerAutomaticProfile(streamProfile).equals(streamProfile)) {
@@ -610,6 +742,8 @@ public final class MainActivity extends Activity {
     private void releasePlayback() {
         lifecycleHandler.removeCallbacks(expireDisplayPicker);
         displayPickerOpen = playAfterPicker = false;
+        captionPickerSession = null;
+        captions.clear();
         gestures.cancel();
         if (sessionCheck != null) {
             sessionCheck.cancel(false);
@@ -618,11 +752,7 @@ public final class MainActivity extends Activity {
         closeMediaRequests();
         if (player != null) {
             ExoPlayer previous = player;
-            var counters = previous.getVideoDecoderCounters();
-            if (counters != null) {
-                counters.ensureUpdated();
-                android.util.Log.i("LumaPlayback", "Presented video frames: " + counters.renderedOutputBufferCount);
-            }
+            PlaybackInfo.logPresentedFrames(previous);
             player = null;
             backgroundPlaybackReady = false;
             PlaybackService.detach(this, previous);
@@ -694,6 +824,43 @@ public final class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle(R.string.wireless_display).setMessage(R.string.smart_view_help)
                     .setPositiveButton(android.R.string.ok, null).show();
         }
+    }
+
+    private void showCaptions(boolean fromSettings) {
+        connectionScreen.closePcControls();
+        captions.show(fromSettings);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void openCaptionDocument() {
+        if (playbackSession == null || captionPickerOpen) return;
+        Intent request = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        request.addCategory(Intent.CATEGORY_OPENABLE);
+        // Providers often report subtitle files as application/octet-stream.
+        request.setType("*/*");
+        captionPickerSession = playbackSession;
+        captionPickerOpen = true;
+        updatePictureInPicture();
+        try {
+            startActivityForResult(request, OPEN_CAPTION_DOCUMENT);
+        } catch (ActivityNotFoundException | SecurityException error) {
+            captionPickerSession = null;
+            captionPickerOpen = false;
+            updatePictureInPicture();
+            Toast.makeText(this, R.string.captions_picker_unavailable, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != OPEN_CAPTION_DOCUMENT) return;
+        captionPickerOpen = false;
+        boolean sameSession = playbackSession != null && playbackSession == captionPickerSession;
+        captionPickerSession = null;
+        updatePictureInPicture();
+        if (sameSession && resultCode == RESULT_OK && data != null) captions.importFile(data.getData());
     }
 
     @SuppressWarnings("deprecation")
@@ -868,7 +1035,7 @@ public final class MainActivity extends Activity {
         return player != null && player.getPlayWhenReady() && player.getPlayerError() == null
                 && player.getPlaybackState() != Player.STATE_ENDED && player.getVideoSize().width > 0
                 && player.getVideoSize().height > 0
-                && !displayPickerOpen && !isFinishing();
+                && !displayPickerOpen && !captionPickerOpen && !isFinishing();
     }
 
     private PictureInPictureParams pictureInPictureParams() {
@@ -971,7 +1138,7 @@ public final class MainActivity extends Activity {
         if (client != null) {
             if (displayPickerOpen) {
                 lifecycleHandler.postDelayed(expireDisplayPicker, DISPLAY_PICKER_TIMEOUT_MS);
-            } else if (!isInPictureInPictureMode() && !(backgroundPlaybackReady && player != null
+            } else if (!captionPickerOpen && !isInPictureInPictureMode() && !(backgroundPlaybackReady && player != null
                     && player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED
                     && player.getPlayerError() == null)) {
                 disconnect();
@@ -996,6 +1163,7 @@ public final class MainActivity extends Activity {
             disconnect(0, false);
         }
         gestures.cancel();
+        captions.close();
         connectionScreen.close();
         connectionExecutor.shutdownNow();
         super.onDestroy();

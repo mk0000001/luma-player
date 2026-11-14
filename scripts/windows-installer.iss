@@ -31,7 +31,7 @@ CloseApplications=no
 RestartApplications=no
 SetupMutex=LumaPlayer.Setup.C6A16658
 DisableProgramGroupPage=yes
-SetupLogging=yes
+SetupLogging=no
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"

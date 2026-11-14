@@ -3,6 +3,8 @@
 #include "lan_receiver_dialog.h"
 #include "player_controls.h"
 #include "video_surface.h"
+#include "media/platform_features.h"
+#include "subtitles/translation_service.h"
 
 #include <QFileInfo>
 #include <QBuffer>
@@ -13,6 +15,7 @@
 #include <QScopedValueRollback>
 #include <QSlider>
 #include <QTimer>
+#include <QUuid>
 #include <algorithm>
 #include <iterator>
 #include <utility>
@@ -26,7 +29,7 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
         connect(lanPlaybackDialog_, &LanPlaybackDialog::remoteControlRequested, this, &MainWindow::applyLanRemoteControl);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::discMenuFrameRequested, this, [this] {
             QByteArray png;
-            if (active_ && active_ == discEngine_.get() && !lanDiscSharing_ && active_->state().discMenus &&
+            if (!captureGuard_->enabled() && active_ && active_ == discEngine_.get() && !lanDiscSharing_ && active_->state().discMenus &&
                 active_->state().navigationTitle && active_->state().currentTitle >= 0 && !active_->state().failed) {
                 const auto frame = static_cast<VideoSurface *>(surface_)->remoteDiscMenuFrame();
                 QBuffer buffer(&png);
@@ -40,6 +43,11 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
         });
         connect(lanPlaybackDialog_, &LanPlaybackDialog::receiveRequested, this, &MainWindow::showLanReceiver);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareStopped, this, &MainWindow::finishLanShare);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::captionClockChanged, this, &MainWindow::receiveLanCaptionClock);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::captionAudioReceived, this, &MainWindow::receiveLanCaptionAudio);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::sharingChanged, this, [this](bool sharing) {
+            if(sharing)publishLanCaptions();
+        });
         updateLanPlaybackAvailability();
     }
     return lanPlaybackDialog_;
@@ -72,12 +80,21 @@ void MainWindow::applyLanRemoteControl(const QString &action,const QString &file
     if (action == "fullscreen") { toggleFullScreen(); return; }
     if (action == "picture-in-picture") { togglePictureInPicture(); return; }
     if (action == "mute") { toggleMute(); return; }
+    if (action=="caption-ai-on" || action=="caption-ai-off" || action=="caption-retry") {
+        if(!active_ || !lanPlaybackDialog_->isSharing() ||
+            (action!="caption-ai-off" && !captionTimelineAvailable()))return;
+        if(action=="caption-retry")retryCaptions();
+        else aiEnabled_->setChecked(action=="caption-ai-on");
+        publishLanCaptions();
+        return;
+    }
     const QHash<QString,QCheckBox *> captionChoices{
         {"caption-ai",aiEnabled_}, {"caption-original",originalEnabled_},
         {"caption-reading",readingEnabled_}, {"caption-translation",translationEnabled_}
     };
     if (auto *check = captionChoices.value(action)) {
         if (check->isEnabled()) check->toggle();
+        publishLanCaptions();
         return;
     }
     if (action == "speed-next") {
@@ -195,6 +212,7 @@ void MainWindow::finishLanReceive(const QString &message) {
     welcome_->show();
     seek_->setEnabled(true);
     static_cast<SeekSlider *>(seek_)->setBuffer(-1);
+    updateChapterDisplay({});
     nowTitle_->setText("재생할 미디어를 선택하세요");
     status_->setText(message.isEmpty() ? "PC 연결을 종료했습니다." : message);
     applyCapturePolicy();
@@ -236,6 +254,7 @@ void MainWindow::startLanShare() {
     if (lanSourceChanging_ || !lanPlaybackDialog_->canShare() || !lanSourceAvailable())
         return;
     if (active_ != discEngine_.get()) {
+        releaseCaptionBuffer(true);
         sendLanMedia();
         return;
     }
@@ -284,6 +303,7 @@ bool MainWindow::sendLanMedia() {
         }
     }
     media.videoRange = state.sourceVideoRange;
+    media.liveCaptions = true;
     if (media.disc) {
         media.playlist = matchDiscPlaylist(discInfo_, state.durationMs);
         int ordinal = 0;
@@ -305,6 +325,10 @@ bool MainWindow::sendLanMedia() {
 
 void MainWindow::finishLanShare(bool cleanupConfirmed) {
     lanSelectedPositionMs_ = 0;
+    lanCaptionPositionMs_=-1;
+    lanCaptionClock_.invalidate();
+    lanAudioRequest_.clear();
+    if(lanDiscSharing_){job_.cancel();coverage_.cancel();}
     const auto file=std::exchange(pendingLanFile_,QString{});
     const bool openDisc=std::exchange(pendingLanDiscOpen_,false);
     if(cleanupConfirmed && openDisc){
@@ -330,6 +354,7 @@ void MainWindow::finishLanShare(bool cleanupConfirmed) {
     }
     if (resume && active_ && active_ == discEngine_.get() && !active_->state().failed) {
         requestedPlaying_ = true;
+        captionPrefillPending_=true;
         if (liveCaptioningActive())
             holdForCaptionBuffer();
         if (!bufferHolding_)
@@ -352,6 +377,70 @@ bool MainWindow::stopLanShareForSourceChange() {
         lanDiscResume_ = resume;
     status_->setText("모바일 공유 종료를 확인할 수 없습니다.");
     return false;
+}
+
+qint64 MainWindow::captionPosition()const{
+    if(lanCaptionPositionMs_>=0 && lanPlaybackDialog_ && lanPlaybackDialog_->isSharing())
+        return lanCaptionPositionMs_;
+    return pendingSeek_>=0?pendingSeek_:active_?active_->state().positionMs:0;
+}
+
+void MainWindow::receiveLanCaptionClock(qint64 positionMs){
+    if(!active_ || positionMs<0 || positionMs>active_->state().durationMs)return;
+    const auto previous=lanCaptionPositionMs_;
+    const auto elapsed=lanCaptionClock_.isValid()?lanCaptionClock_.restart():0;
+    if(!lanCaptionClock_.isValid())lanCaptionClock_.start();
+    lanCaptionPositionMs_=positionMs;
+    if(previous>=0 && (positionMs<previous-1'200 || positionMs>previous+std::max<qint64>(2'500,elapsed*2+1'000))){
+        lanAudioRequest_.clear();
+        job_.cancel();
+        coverage_.cancel();
+        aiFailed_=false;
+        nextAiAttemptMs_=0;
+        aiRetryCount_=0;
+    }
+    scheduleSubtitles();
+    scheduleTranslations();
+    publishLanCaptions();
+}
+
+void MainWindow::receiveLanCaptionAudio(const QString &id,const QString &state,const QByteArray &pcm){
+    if(lanAudioRequest_.isEmpty() || id!=lanAudioRequest_)return;
+    const auto start=lanAudioStartMs_,duration=lanAudioDurationMs_;
+    lanAudioRequest_.clear();
+    if(!lanDiscSharing_ || !liveCaptioningActive()){coverage_.cancel();return;}
+    if(state=="ready" && pcm.size()==duration*32){
+        job_.startPcm(start,pcm,language_->currentData().toString(),model_);
+        return;
+    }
+    coverage_.cancel();
+    if(state=="ended"){
+        aiFailed_=true;
+        aiStatus_->setText("현재 송출에서 자막용 음성을 읽을 수 없습니다.");
+    }
+}
+
+void MainWindow::publishLanCaptions(){
+    if(!lanPlaybackDialog_ || !lanPlaybackDialog_->isSharing() || !active_)return;
+    const auto position=captionPosition();
+    const auto ahead=coverage_.bufferedAhead(position,active_->state().durationMs);
+    const bool canAI=captionTimelineAvailable();
+    const bool enabled=liveCaptioningActive();
+    const QString state=preparedApplied_?"prepared":!externalCues_.isEmpty()?"file":
+        !enabled?"off":aiFailed_ && nextAiAttemptMs_<=0?"failed":!canAI?"waiting":
+        job_.busy()?"processing":ahead>0?"ready":"waiting";
+    const auto nearby=displayCues(position-30'000,position+90'000);
+    const auto activeBackend=job_.selectedBackend();
+    const QString backend=activeBackend.startsWith("NPU",Qt::CaseInsensitive)?"NPU":
+        activeBackend.startsWith("GPU",Qt::CaseInsensitive)?"GPU":
+        activeBackend.startsWith("CPU",Qt::CaseInsensitive)?"CPU":QString{};
+    lanPlaybackDialog_->publishCaptions({{"state",state},{"enabled",enabled},{"canAI",canAI},
+        {"original",originalEnabled_->isChecked()},{"reading",readingEnabled_->isChecked()},
+        {"translation",translationEnabled_->isChecked()},
+        {"aheadMs",std::min<qint64>(ahead,120'000)},{"backend",backend},
+        {"translationState",!translationEnabled_->isChecked()?"off":translationFailed_?"failed":
+            !translations_.isEmpty()?"ready":translation_->busy()?"processing":"waiting"},
+        {"vtt",lanCaptionTrack(nearby)}});
 }
 
 }

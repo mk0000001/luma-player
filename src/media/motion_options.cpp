@@ -25,7 +25,7 @@ MotionPlan motionPlan(MotionOptions options,bool fileBackend){
     if(!fileBackend && plan.options.mode!=MotionMode::Off){
         plan.supported=false;
         plan.options.mode=MotionMode::Off;
-        plan.status=QStringLiteral("Blu-ray 메뉴 재생(libVLC)에서는 프레임 보간을 지원하지 않습니다.");
+        plan.status=QStringLiteral("Blu-ray 재생(libVLC)에서는 원본 프레임을 표시합니다. 프레임 보간은 파일 재생에서 사용할 수 있습니다.");
         return plan;
     }
     switch(plan.options.mode){

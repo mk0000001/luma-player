@@ -30,6 +30,7 @@
 #include <QTime>
 #include <QTimer>
 #include <QWindow>
+#include <algorithm>
 
 namespace luma {
 
@@ -49,11 +50,22 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     connectDeveloperDiagnostics();
     connect(translation_,&TranslationService::translatedCue,this,[this](quint64 generation,const QString &key,const QString &,const QString &korean){
         if(generation!=translation_->generation() || !translationEnabled_->isChecked())return;
-        translationPending_.remove(key);translations_.insert(key,korean);rebuildManagedCaptions();translationStatus_->setText(QString("문맥을 참고한 한국어 번역 %1개 준비됨").arg(translations_.size()));
+        translationRetryCount_=0;translationRetryAt_=0;
+        translationPending_.remove(key);
+        translationRefresh_.remove(key);
+        // A refresh that finishes after the cue appears must not replace text
+        // already visible. An otherwise missing Korean line can still appear.
+        if(translations_.contains(key)){
+            const auto position=captionPosition();
+            const auto cue=std::find_if(presentationCues_.cbegin(),presentationCues_.cend(),[&](const SubtitleCue &item){return translationCueKey(item)==key;});
+            if(cue==presentationCues_.cend() || cue->startMs<=position){scheduleTranslations();return;}
+        }
+        translations_.insert(key,korean);rebuildManagedCaptions();translationStatus_->setText(QString("문맥을 참고한 한국어 번역 %1개 준비됨").arg(translations_.size()));
     });
     connect(translation_,&TranslationService::skippedCue,this,[this](quint64 generation,const QString &key,const QString &,const QString &message){
         if(generation!=translation_->generation() || !translationEnabled_->isChecked())return;
         translationPending_.remove(key);
+        translationRefresh_.remove(key);
         if(!translationSkipped_.contains(key)){
             translationSkipped_.insert(key);translationSkippedOrder_.append(key);
             while(translationSkippedOrder_.size()>256)translationSkipped_.remove(translationSkippedOrder_.takeFirst());
@@ -66,9 +78,16 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         const QString compatibility=translation_->selectedVulkanCompatibility()?" · 저VRAM":QString{};
         translationBackend_->setText("번역 · "+backend+compatibility);
     });
-    connect(translation_,&TranslationService::failed,this,[this](const QString &message){translationPending_.clear();translationFailed_=true;translationStatus_->setText(message);appendLog("번역: "+message);});
+    connect(translation_,&TranslationService::failed,this,[this](const QString &message){
+        translationPending_.clear();translationFailed_=true;
+        const bool retry=translationRetryCount_++<2 && !message.contains("모델이 없습니다");
+        translationRetryAt_=retry?QDateTime::currentMSecsSinceEpoch()+3'000:0;
+        translationStatus_->setText(retry?message+" 잠시 뒤 자동으로 다시 시도합니다.":message);
+        appendLog("번역: "+message);
+    });
     discEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::Disc,QString{},this);
-    fileEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::File,QString{},this);bindEngine(discEngine_.get());bindEngine(fileEngine_.get());
+    fileVideoAdapter_=effectiveVideoAdapter();
+    fileEngine_=std::make_unique<PlaybackEngine>(PlaybackEngine::Kind::File,QString{},this,fileVideoAdapter_);bindEngine(discEngine_.get());bindEngine(fileEngine_.get());
     subtitleFileLoader_=new SubtitleFileLoader({},this);
     connect(subtitleFileLoader_,&SubtitleFileLoader::ready,this,[this](quint64 generation,QVector<SubtitleCue> cues){if(generation==subtitleFileLoader_->generation() && active_)applyExternalCaptions(std::move(cues));});
     connect(subtitleFileLoader_,&SubtitleFileLoader::failed,this,[this](quint64 generation,const QString &message){if(generation==subtitleFileLoader_->generation() && active_)subtitleImportFailed(message);});
@@ -86,9 +105,10 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
             aiStatus_->setText(message+QString("\n%1초 후 다시 시도합니다. (%2/3)").arg(delay/1000).arg(aiRetryCount_));
             bufferStatus_->setText("자막 준비 재시도 중 · ‘자막 없이 계속’으로 바로 재생할 수 있습니다.");
         }else{
-            nextAiAttemptMs_=0;holdForCaptionBuffer();
+            nextAiAttemptMs_=0;
+            releaseCaptionBuffer(true);
             aiStatus_->setText(message+"\n자동 재시도를 마쳤습니다. 모델·오디오를 확인하고 다시 시도하세요.");
-            bufferStatus_->setText("최소 자막 버퍼를 기다립니다. 다시 시도하거나 ‘자막 없이 계속’을 선택하세요.");
+            bufferStatus_->setText("현재 자막을 준비하지 못했습니다. 재생을 계속합니다.");
         }
         status_->setText(bufferStatus_->text());
     });
@@ -110,7 +130,9 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         recordDeveloperEvent("asr_device_probe_failed","device_enumeration_failed");
         appendLog("AI 기기 검색: "+message);aiGpu_->setToolTip(message);
     });
-    auto *timer=new QTimer(this);timer->setInterval(500);connect(timer,&QTimer::timeout,this,[this]{scheduleSubtitles();scheduleTranslations();});timer->start();
+    auto *timer=new QTimer(this);timer->setInterval(500);
+    connect(timer,&QTimer::timeout,this,[this]{scheduleSubtitles();scheduleTranslations();publishLanCaptions();});
+    timer->start();
     translationDeviceProbe_=new TranslationDeviceProbe({},this);
     connect(translationDeviceProbe_,&TranslationDeviceProbe::devicesReady,this,[this](const QJsonArray &devices){
         const auto saved=QSettings().value("translation/gpu").toString();QSignalBlocker blocked(translationGpu_);translationGpu_->clear();translationGpu_->addItem("자동 GPU 선택",QString{});
@@ -124,14 +146,24 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
     });
     QTimer::singleShot(0,this,[this]{
         if(QSettings().value("disc/scanAutomatically",true).toBool())discoverDisc();
-        deviceProbe_->start();translationDeviceProbe_->start();updateDisplayStatus();applyTheme();
+        updateDisplayStatus();applyTheme();
         if(auto *window=windowHandle())connect(window,&QWindow::screenChanged,this,&MainWindow::updateDisplayStatus,Qt::QueuedConnection);
     });
 }
 
+void MainWindow::requestComputeDeviceInventory(){
+    if(computeDeviceInventoryRequested_)return;
+    computeDeviceInventoryRequested_=true;
+    deviceProbe_->start();
+    translationDeviceProbe_->start();
+}
+
 MainWindow::~MainWindow(){discProbeClosing_=true;discPlayPending_=false;stopLanReceiver();delete lanReceiverDialog_;lanReceiverDialog_=nullptr;delete lanPlaybackDialog_;lanPlaybackDialog_=nullptr;performance_->setMonitoring(false);setDeveloperDiagnosticCollection(false);savePlaybackProgress(true);qApp->removeEventFilter(this);subtitleFileLoader_->cancel();captions_->hide();static_cast<VideoSurface*>(surface_)->setVideoActive(false);job_.shutdown();translation_->cancel();active_=nullptr;fileEngine_.reset();discEngine_.reset();}
 
-void MainWindow::appendLog(const QString &message){log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);}
+void MainWindow::appendLog(const QString &message){
+    if(!developerApproved_ || !diagnosticCollectionEnabled_->isChecked())return;
+    log_->appendPlainText(QTime::currentTime().toString("HH:mm:ss")+"  "+message);
+}
 
 QJsonObject MainWindow::diagnostics()const{
     QJsonObject result{{"version",LUMA_VERSION},{"playingSamples",decodedSamples_},{"discRuntime",discEngine_->available()},{"fileRuntime",fileEngine_->available()},{"aiCueCount",generatedCues_.size()},{"aiBackend",job_.selectedBackend()},{"aiEnabled",aiEnabled_->isChecked()},{"aiRetryCount",aiRetryCount_},{"aiRetryAt",nextAiAttemptMs_},{"captionBufferHolding",bufferHolding_},{"captionResumeRequested",bufferResume_},{"captionBufferBypass",bufferBypass_},{"hangulReadings",readingEnabled_->isChecked()},{"readingRuntime",reading_.available()},{"originalCaptions",originalEnabled_->isChecked()},{"koreanTranslations",translationEnabled_->isChecked()},{"translationCount",translations_.size()},{"translationBackend",translation_?translation_->selectedBackend():QString{}},{"bundledFonts",qApp->property("lumaFontsLoaded").toBool()},{"externalCueCount",externalCues_.size()},{"theme",playerUsesDarkTheme()?"dark":"light"},{"fullscreen",full_},{"transportVisible",transport_->isVisible()},{"transportHeight",transport_->height()},{"developerMode",developerApproved_},{"captureAllowed",captureApproved_},{"videoRecoveryCount",videoRecoveryCount_},{"videoRecoveryExhausted",videoRecoveryExhausted_}};
@@ -150,6 +182,8 @@ QJsonObject MainWindow::diagnostics()const{
     if(active_)result.insert("discMenus",active_->state().discMenus);
     result.insert("pendingAudioTrack",pendingAudio_);result.insert("pendingChapter",pendingChapter_);result.insert("pendingTitle",pendingTitle_);
     result.insert("jobBusy",job_.busy());result.insert("requestedAudioTrack",request.audioTrackId);result.insert("requestedAudioIndex",request.audioIndex);result.insert("requestedPlaying",wantsPlayback());
+    result.insert("captionPhase",!lanAudioRequest_.isEmpty()?QStringLiteral("reading"):job_.currentPhase());
+    if(active_)result.insert("ended",active_->state().ended);
     result.insert("asrModel",QFileInfo(model_).fileName());result.insert("requestedCaptionStartMs",request.startMs);result.insert("requestedCaptionDurationMs",request.durationMs);result.insert("resumePending",pendingResume_.has_value());
     if(active_)result.insert("timelineReady",active_->state().timelineReady);
     result.insert("discRoot",discInfo_.root);result.insert("discValid",discInfo_.valid);result.insert("discProtected",discInfo_.aacs || discInfo_.bdplus);
@@ -174,6 +208,7 @@ QJsonObject MainWindow::diagnostics()const{
         result.insert("audioBitstreamRequested",state.audioBitstreamRequested);
         result.insert("audioBitstreamActive",state.audioBitstreamActive);
         result.insert("audioVolumeExternal",state.audioVolumeExternal);
+        result.insert("audioVolumePercent",state.audioVolumePercent>=0?QJsonValue(state.audioVolumePercent):QJsonValue());
         result.insert("audioSettingsError",state.audioSettingsError);
         result.insert("mediaBuffering",state.buffering);
         result.insert("droppedVideoFrames",state.droppedVideoFrames);

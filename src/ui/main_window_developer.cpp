@@ -236,8 +236,9 @@ QByteArray serializeTesterReport(QJsonObject report){
 
 void MainWindow::setDeveloperDiagnosticCollection(bool enabled){
     performance_->setDiagnosticCollection(enabled);
-    if(discEngine_)discEngine_->setPerformanceMetricsEnabled(enabled);
-    if(fileEngine_)fileEngine_->setPerformanceMetricsEnabled(enabled);
+    const bool metrics=developerApproved_ && (enabled || performanceEnabled_->isChecked());
+    if(discEngine_)discEngine_->setPerformanceMetricsEnabled(metrics);
+    if(fileEngine_)fileEngine_->setPerformanceMetricsEnabled(metrics);
     if(!enabled){
         developerEvents_={};
         droppedDeveloperEvents_=0;
@@ -245,7 +246,7 @@ void MainWindow::setDeveloperDiagnosticCollection(bool enabled){
 }
 
 void MainWindow::recordDeveloperEvent(const char *code,const char *reason,const QString &device,QJsonObject detail){
-    if(!developerApproved_)return;
+    if(!developerApproved_ || !diagnosticCollectionEnabled_->isChecked())return;
     const auto elapsed=performance_->elapsedMs();
     if(elapsed<0)return;
     QJsonObject entry{{"elapsedMs",elapsed},{"code",code},{"reason",reason}};
@@ -349,7 +350,7 @@ QJsonObject MainWindow::testerDiagnosticReport() const{
         {"kernelVersion",kernelVersion.match(QSysInfo::kernelVersion()).captured(0)},
         {"architecture",QSysInfo::buildCpuArchitecture()}};
     const auto preferences=videoOutputPreferences();
-    const auto selectedAdapter=QSettings().value("video/adapter").toString();
+    const auto selectedAdapter=effectiveVideoAdapter();
     constexpr std::array hardware{"auto","software","d3d11va","dxva2","vaapi","d3d11va-copy","vulkan-copy"};
     constexpr std::array codecs{"auto","h264","hevc","vp9","av1","libdav1d"};
     QJsonObject configured{{"hardware",hardware.at(static_cast<size_t>(preferences.hardware))},
@@ -513,6 +514,10 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
     performanceEnabled_->setObjectName("performanceEnabled");
     performanceEnabled_->setToolTip("Ctrl+Shift+D");
     layout->addWidget(performanceEnabled_);
+    diagnosticCollectionEnabled_ = new QCheckBox("상세 진단 수집");
+    diagnosticCollectionEnabled_->setObjectName("diagnosticCollectionEnabled");
+    diagnosticCollectionEnabled_->setToolTip("켠 동안 최근 5분의 시스템 성능과 재생·AI 진단을 메모리에 수집합니다.");
+    layout->addWidget(diagnosticCollectionEnabled_);
     auto *options = new QFormLayout;
     options->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     auto *view = new ChoiceBox;
@@ -546,15 +551,9 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
     auto *clearLog = addButton("재생 로그 지우기", "clearDeveloperLog");
     layout->addWidget(feedback);
 
-    QSettings settings;
-    view->setCurrentIndex(std::max(0, view->findData(settings.value("developer/performanceView", "both"))));
-    corner->setCurrentIndex(std::max(0, corner->findData(settings.value("developer/performanceCorner", "right"))));
     const auto applyOptions = [this, view, corner] {
         const auto style = view->currentData().toString();
         const auto position = corner->currentData().toString();
-        QSettings preferences;
-        preferences.setValue("developer/performanceView", style);
-        preferences.setValue("developer/performanceCorner", position);
         performance_->setView(style == "text" ? PerformanceOverlay::View::Text :
                               style == "graph" ? PerformanceOverlay::View::Graph : PerformanceOverlay::View::Both);
         performance_->setLeftAligned(position == "left");
@@ -563,12 +562,14 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
     connect(view, &QComboBox::currentIndexChanged, this, applyOptions);
     connect(corner, &QComboBox::currentIndexChanged, this, applyOptions);
     connect(performanceEnabled_, &QCheckBox::toggled, this, [this](bool enabled) {
-        const bool allowed = developerApproved_ && enabled;
-        QSettings().setValue("developer/performanceEnabled", allowed);
-        performance_->setMonitoring(allowed);
+        performance_->setMonitoring(developerApproved_ && enabled);
+        setDeveloperDiagnosticCollection(developerApproved_ && diagnosticCollectionEnabled_->isChecked());
     });
-    setDeveloperDiagnosticCollection(developerApproved_);
-    performanceEnabled_->setChecked(developerApproved_ && settings.value("developer/performanceEnabled", false).toBool());
+    connect(diagnosticCollectionEnabled_, &QCheckBox::toggled, this, [this](bool enabled) {
+        const bool collecting=developerApproved_ && enabled;
+        setDeveloperDiagnosticCollection(collecting);
+        if(collecting)requestComputeDeviceInventory();
+    });
 
     connect(copy, &QPushButton::clicked, this, [this, feedback] {
         if (!developerApproved_)
@@ -595,7 +596,7 @@ void MainWindow::buildDeveloperTools(QVBoxLayout *layout) {
         }
         const auto history = performance_->csv();
         const auto path = QFileDialog::getSaveFileName(this, "성능 기록 저장", "LumaPlayer-performance.csv", "CSV (*.csv)");
-        if (path.isEmpty())
+        if (path.isEmpty() || !developerApproved_)
             return;
         QSaveFile output(path);
         const bool saved = output.open(QIODevice::WriteOnly) && output.write(history) == history.size() && output.commit();
@@ -670,15 +671,10 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
     layout->addWidget(force);
 
     const std::array boxes{hardware,codec,color,dolby};
-    QSettings settings;
-    force->setChecked(settings.value("developer/forceHdr",false).toBool());
-    for(auto *box:boxes)
-        box->setCurrentIndex(std::max(0,box->findData(settings.value("developer/"+box->objectName(),0).toInt())));
     const auto read=[hardware,codec,color,dolby,force]{
         return VideoOverrides{Hardware(hardware->currentData().toInt()),Codec(codec->currentData().toInt()),
                               Color(color->currentData().toInt()),Dolby(dolby->currentData().toInt()),force->isChecked()};
     };
-    developerVideoOptions_=read();
     auto *note=new QLabel("출력 형식과 HDR 강제는 현재 파일에 적용합니다. 디코더와 Dolby Vision 설정은 다음에 열 때 적용합니다.");
     note->setWordWrap(true);
     layout->addWidget(note);
@@ -690,23 +686,20 @@ void MainWindow::buildDeveloperVideoTools(QVBoxLayout *layout) {
     developerVideoStatus_->setWordWrap(true);
     developerVideoStatus_->setTextFormat(Qt::PlainText);
     layout->addWidget(developerVideoStatus_);
-    const auto save=[this,boxes,read,force]{
+    const auto applyOptions=[this,read]{
         if(!developerApproved_)return;
         developerVideoOptions_=read();
-        QSettings preferences;
-        for(auto *box:boxes)preferences.setValue("developer/"+box->objectName(),box->currentData());
-        preferences.setValue("developer/forceHdr",force->isChecked());
         applyVideoOutputPreferences();
     };
-    for(auto *box:boxes)connect(box,&QComboBox::currentIndexChanged,this,save);
-    connect(force,&QCheckBox::toggled,this,save);
-    connect(reset,&QPushButton::clicked,this,[boxes,save,force]{
+    for(auto *box:boxes)connect(box,&QComboBox::currentIndexChanged,this,applyOptions);
+    connect(force,&QCheckBox::toggled,this,applyOptions);
+    connect(reset,&QPushButton::clicked,this,[boxes,applyOptions,force]{
         for(auto *box:boxes){
             const QSignalBlocker block(box);
             box->setCurrentIndex(0);
         }
         const QSignalBlocker block(force);force->setChecked(false);
-        save();
+        applyOptions();
     });
 #ifdef Q_OS_WIN
     buildHardwareTestProfiles(layout,hardware);
@@ -762,17 +755,21 @@ void MainWindow::buildHardwareTestProfiles(QVBoxLayout *layout,QComboBox *hardwa
         }
 
         const auto decoder=automatic?Hardware::Auto:video?Hardware::D3D11:Hardware::Software;
+        if(automatic){
+            developerHardwareTest_.reset();
+        }else{
+            DeveloperHardwareTest selection;
+            if(video)selection.videoAdapter=videoGpu_->itemData(videoIndex).toString();
+            selection.recognition=asr?AiPreferences{"gpu",aiGpu_->itemData(asrIndex).toString()}:AiPreferences{"cpu",{}};
+            selection.translation=translation?AiPreferences{"gpu",translationGpu_->itemData(translationIndex).toString()}:AiPreferences{"cpu",{}};
+            developerHardwareTest_=std::move(selection);
+        }
         hardware->setCurrentIndex(hardware->findData(int(decoder)));
-        if(automatic || video)videoGpu_->setCurrentIndex(automatic?0:videoIndex);
-        if(automatic || asr)aiGpu_->setCurrentIndex(automatic?0:asrIndex);
-        if(automatic || translation)translationGpu_->setCurrentIndex(automatic?0:translationIndex);
-        aiMode_->setCurrentIndex(aiMode_->findData(automatic?"auto":asr?"gpu":"cpu"));
-        translationMode_->setCurrentIndex(translationMode_->findData(automatic?"auto":translation?"gpu":"cpu"));
 
         if(liveCaptioningActive())resetSubtitleSession(true);
         applyFileVideoSelection(true);
-        updateTranslationPreferences();
-        updateAiPreferences();
+        applyTranslationPreferences(false);
+        applyAiPreferences(false);
         recordDeveloperEvent("hardware_test_profile","applied",{},
             {{"profile",id},{"video",automatic?"auto":video?"d3d11va":"software"},
              {"asr",requestedAi(job_.preferences())},{"translation",requestedAi(translation_->preferences())}});

@@ -20,7 +20,8 @@ public:
     explicit SubtitleJob(QString runtime={},QObject *parent=nullptr);
     ~SubtitleJob() override;
     quint64 start(const RecognitionRequest &request,const QString &model={});
-    void cancel();
+    quint64 startPcm(qint64 positionMs,const QByteArray &pcm,const QString &language,const QString &model);
+    void cancel(bool keepDiscAudio=false);
     void warmUp(const QString &model={});
     void shutdown();
     void setStageTimeouts(int extractionMs,int recognitionMs);
@@ -33,6 +34,7 @@ public:
     AiPreferences preferences()const{return preferences_;}
     RecognitionRequest currentRequest()const{return request_;}
     bool busy() const;
+    QString currentPhase() const;
     quint64 generation() const { return generation_; }
 signals:
     void progress(QString message);
@@ -73,5 +75,6 @@ private:
     void completed(int code,QProcess::ExitStatus status);
     void nextRecognition(const QString &reason={});
     void audioPrepared();
+    bool begin(const RecognitionRequest &request,const QString &model);
 };
 }

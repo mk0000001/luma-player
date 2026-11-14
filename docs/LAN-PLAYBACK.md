@@ -2,7 +2,7 @@
 
 ## 한국어
 
-Windows PC가 Blu-ray를 읽고 같은 사설 네트워크의 Android나 다른 Windows PC에서 재생합니다. PC에서 이미 준비했거나 불러온 자막은 현재 표시 중인 원문·독음·번역 줄을 기준으로 함께 보낼 수 있습니다.
+Windows PC가 Blu-ray를 읽고 같은 사설 네트워크의 Android나 다른 Windows PC에서 재생합니다. Android의 **자막** 버튼에서 PC의 실시간 AI 상태를 확인하고, 제어 권한이 있으면 켜거나 다시 시도할 수 있습니다. 준비한 자막과 불러온 자막도 받을 수 있고, Android 기기에서 SRT·VTT·ASS·SSA 파일을 직접 열 수 있습니다.
 
 1. 송출 PC에서 **LumaPlayer 0.2**를 실행합니다. 재생할 기기를 같은 사설 네트워크에 연결하세요.
 2. Android 9 이상에서 APK를 설치하고 앱을 엽니다. Windows에서 받으려면 **내부망 재생 → PC에서 받기**를 엽니다. 검색된 PC를 선택하거나 송출 PC의 **내부망 재생**에 표시된 사설 IP를 입력합니다. 기본 포트는 `48762`입니다.
@@ -33,7 +33,7 @@ PC가 목록에 없으면 Wi‑Fi와 PC 주소를 확인하고 직접 입력으�
 
 ## English
 
-The Windows PC reads Blu-ray discs. Android and other Windows PCs on the same private network can receive playback. Captions already prepared or opened on the PC can accompany playback, using the original, reading, and translation lines selected in the player.
+The Windows PC reads Blu-ray discs. Android and other Windows PCs on the same private network can receive playback. Android's caption button shows the host's live caption status. Devices with playback control can start or retry automatic captions. Android also receives prepared and imported PC subtitles and can open SRT, VTT, ASS, or SSA files stored on the device.
 
 1. Open LumaPlayer 0.2 on the host PC. Connect the receiving device to the same private network.
 2. Install and open the APK on Android 9 or later, or open **내부망 재생 → PC에서 받기** on Windows. Select a discovered PC or enter the private IP shown under **내부망 재생** on the host. The default port is `48762`.

@@ -7,6 +7,7 @@
 // Only the native boundary is replaced. The tests below run the real engine,
 // queued log delivery, generation checks, timer polling and error signals.
 struct libvlc_instance_t { libvlc_log_cb callback=nullptr;void *opaque=nullptr; };
+struct vlc_log_t { const char *object; };
 struct libvlc_media_t { std::string location;bool menus=true,startPaused=false; };
 struct libvlc_media_player_t {
     libvlc_instance_t *instance;
@@ -14,6 +15,8 @@ struct libvlc_media_player_t {
     libvlc_state_t state=libvlc_Stopped;
     bool playing=false;
     int title=-1,pendingTitle=-1,ackReads=0,metadataReads=0;bool premature=false;
+    bool audioReady=false;
+    int volume=100,volumeChanges=0;
 };
 static libvlc_media_player_t *currentPlayer=nullptr;
 static bool preparedFixture(const libvlc_media_player_t *p){return p->media && p->media->location.find("/prepared/")!=std::string::npos;}
@@ -27,6 +30,13 @@ static void nativeLog(libvlc_instance_t *instance,const char *format,...){
     if(!instance->callback)return;
     va_list args;va_start(args,format);
     instance->callback(instance->opaque,LIBVLC_ERROR,nullptr,format,args);
+    va_end(args);
+}
+static void nativeAudioOutput(libvlc_instance_t *instance,const char *format,...){
+    if(!instance->callback)return;
+    const libvlc_log_t context{"audio output"};
+    va_list args;va_start(args,format);
+    instance->callback(instance->opaque,LIBVLC_DEBUG,&context,format,args);
     va_end(args);
 }
 #define FIXTURE_API extern "C"
@@ -45,16 +55,29 @@ FIXTURE_API void luma_fixture_failure(const char *detail,int genericFirst){
 FIXTURE_API void luma_fixture_video_log(const char *message){
     if(currentPlayer)nativeLog(currentPlayer->instance,"%s",message);
 }
+FIXTURE_API void luma_fixture_audio_output(const char *fourcc){
+    if(!currentPlayer)return;
+    currentPlayer->audioReady=true;
+    currentPlayer->volume=100;
+    nativeAudioOutput(currentPlayer->instance,"%s '%4.4s' %d Hz %s frame=%d samples/%d bytes","output",fourcc,48000,"Stereo",1,8);
+}
+FIXTURE_API int luma_fixture_volume(){return currentPlayer && currentPlayer->audioReady?currentPlayer->volume:-1;}
+FIXTURE_API int luma_fixture_volume_changes(){return currentPlayer?currentPlayer->volumeChanges:0;}
 FIXTURE_API libvlc_instance_t *libvlc_new(int,const char *const *){return new libvlc_instance_t;}
 FIXTURE_API void libvlc_release(libvlc_instance_t *p){delete p;}
 FIXTURE_API void libvlc_log_set(libvlc_instance_t *p,libvlc_log_cb callback,void *opaque){p->callback=callback;p->opaque=opaque;}
 FIXTURE_API void libvlc_log_unset(libvlc_instance_t *p){p->callback=nullptr;}
+FIXTURE_API void libvlc_log_get_object(const libvlc_log_t *context,const char **name,const char **header,uintptr_t *id){
+    if(name)*name=context?context->object:nullptr;
+    if(header)*header=nullptr;
+    if(id)*id=0;
+}
 FIXTURE_API libvlc_media_t *libvlc_media_new_location(libvlc_instance_t *,const char *location){return new libvlc_media_t{location};}
 FIXTURE_API void libvlc_media_add_option(libvlc_media_t *p,const char *option){const std::string value=option;if(value==":no-bluray-menu")p->menus=false;if(value==":start-paused")p->startPaused=true;}
 FIXTURE_API void libvlc_media_release(libvlc_media_t *p){delete p;}
 FIXTURE_API libvlc_media_player_t *libvlc_media_player_new(libvlc_instance_t *p){currentPlayer=new libvlc_media_player_t{p};return currentPlayer;}
 FIXTURE_API void libvlc_media_player_release(libvlc_media_player_t *p){if(currentPlayer==p)currentPlayer=nullptr;delete p;}
-FIXTURE_API void libvlc_media_player_set_media(libvlc_media_player_t *p,libvlc_media_t *media){p->media=media;p->title=preparedFixture(p)?(media->menus?3:1):-1;p->pendingTitle=-1;p->metadataReads=0;p->premature=false;}
+FIXTURE_API void libvlc_media_player_set_media(libvlc_media_player_t *p,libvlc_media_t *media){p->media=media;p->title=preparedFixture(p)?(media->menus?3:1):-1;p->pendingTitle=-1;p->metadataReads=0;p->premature=false;p->audioReady=false;}
 FIXTURE_API int libvlc_media_player_play(libvlc_media_player_t *p){p->playing=!p->media->startPaused;p->state=p->media->location.find("poll-only")!=std::string::npos?libvlc_Error:p->playing?libvlc_Playing:libvlc_Paused;if(preparedFixture(p) && !p->media->menus && p->playing && p->title!=0)p->premature=true;return 0;}
 FIXTURE_API void libvlc_media_player_stop(libvlc_media_player_t *p){p->playing=false;p->state=libvlc_Stopped;}
 FIXTURE_API void libvlc_media_player_pause(libvlc_media_player_t *p){p->playing=!p->playing;}
@@ -65,7 +88,8 @@ FIXTURE_API void libvlc_media_player_set_time(libvlc_media_player_t *,libvlc_tim
 FIXTURE_API libvlc_state_t libvlc_media_player_get_state(libvlc_media_player_t *p){return p->state;}
 FIXTURE_API int libvlc_media_player_is_playing(libvlc_media_player_t *p){return p->playing?1:0;}
 FIXTURE_API int libvlc_media_player_set_rate(libvlc_media_player_t *,float){return 0;}
-FIXTURE_API int libvlc_audio_set_volume(libvlc_media_player_t *,int){return 0;}
+FIXTURE_API int libvlc_audio_get_volume(libvlc_media_player_t *p){return p->audioReady?p->volume:-1;}
+FIXTURE_API int libvlc_audio_set_volume(libvlc_media_player_t *p,int volume){if(!p->audioReady)return -1;p->volume=volume;++p->volumeChanges;return 0;}
 FIXTURE_API libvlc_track_description_t *libvlc_audio_get_track_description(libvlc_media_player_t *){return nullptr;}
 FIXTURE_API int libvlc_audio_set_track(libvlc_media_player_t *,int){return 0;}
 FIXTURE_API libvlc_track_description_t *libvlc_video_get_spu_description(libvlc_media_player_t *){return nullptr;}
@@ -100,7 +124,7 @@ FIXTURE_API int libvlc_media_player_add_slave(libvlc_media_player_t *,libvlc_med
 FIXTURE_API unsigned libvlc_media_tracks_get(libvlc_media_t *,libvlc_media_track_t ***tracks){*tracks=nullptr;return 0;}
 FIXTURE_API void libvlc_media_tracks_release(libvlc_media_track_t **,unsigned){}
 FIXTURE_API int libvlc_media_get_stats(libvlc_media_t *,libvlc_media_stats_t *stats){*stats={};return 1;}
-FIXTURE_API int libvlc_audio_get_track(libvlc_media_player_t *){return -1;}
+FIXTURE_API int libvlc_audio_get_track(libvlc_media_player_t *p){return p->audioReady?4352:-1;}
 FIXTURE_API int libvlc_video_get_spu(libvlc_media_player_t *){return -1;}
 FIXTURE_API void libvlc_media_player_set_hwnd(libvlc_media_player_t *,void *){}
 #else
@@ -117,7 +141,9 @@ class PlaybackTests:public QObject {
     QLibrary fixture_;
     Failure failure_=nullptr;
     VideoLog videoLog_=nullptr;
+    VideoLog audioOutput_=nullptr;
     using Query=int (*)();Query discMenus_=nullptr,premature_=nullptr;
+    Query volume_=nullptr,volumeChanges_=nullptr;
     QString runtime()const{return QString::fromUtf8(LUMA_PLAYBACK_FIXTURE_RUNTIME);}
 private slots:
     void initTestCase(){
@@ -127,7 +153,51 @@ private slots:
         QVERIFY(failure_);
         videoLog_=reinterpret_cast<VideoLog>(fixture_.resolve("luma_fixture_video_log"));
         QVERIFY(videoLog_);
+        audioOutput_=reinterpret_cast<VideoLog>(fixture_.resolve("luma_fixture_audio_output"));
+        volume_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_volume"));
+        volumeChanges_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_volume_changes"));
+        QVERIFY(audioOutput_);QVERIFY(volume_);QVERIFY(volumeChanges_);
         discMenus_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_disc_menus"));premature_=reinterpret_cast<Query>(fixture_.resolve("luma_fixture_premature_playback"));QVERIFY(discMenus_);QVERIFY(premature_);
+    }
+    void pcmFallbackUsesAppVolumeDespiteBitstreamPreference(){
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());
+        engine.setAudioOutputOptions({true});
+        QVERIFY(engine.open("bluray:///fixture/audio",0));
+        QVERIFY(engine.state().audioBitstreamRequested);
+        engine.setVolume(27);
+        QCOMPARE(volume_(),-1);
+
+        audioOutput_("f32l");
+        QTRY_COMPARE_WITH_TIMEOUT(volume_(),27,1500);
+        QVERIFY(!engine.state().audioVolumeExternal);
+        engine.setVolume(0);
+        QCOMPARE(volume_(),0);
+        engine.setVolume(27);
+        QCOMPARE(volume_(),27);
+
+        audioOutput_("spdi");
+        QTRY_VERIFY_WITH_TIMEOUT(engine.state().audioBitstreamActive && engine.state().audioVolumeExternal,1500);
+        const auto before=volumeChanges_();
+        engine.setVolume(34);
+        QCOMPARE(volumeChanges_(),before);
+
+        audioOutput_("s16l");
+        QTRY_COMPARE_WITH_TIMEOUT(volume_(),34,1500);
+        QVERIFY(!engine.state().audioBitstreamActive);
+        QVERIFY(!engine.state().audioVolumeExternal);
+    }
+    void volumeSurvivesDiscAudioOutputRecreation(){
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());
+        QVERIFY(engine.open("bluray:///fixture/audio",0));
+        engine.setVolume(0);
+        audioOutput_("f32l");
+        QTRY_COMPARE_WITH_TIMEOUT(volume_(),0,1500);
+        audioOutput_("f32l");
+        QTRY_COMPARE_WITH_TIMEOUT(volume_(),0,1500);
+        engine.stop();
+        QVERIFY(engine.open("bluray:///fixture/next-audio",0));
+        audioOutput_("f32l");
+        QTRY_COMPARE_WITH_TIMEOUT(volume_(),0,1500);
     }
     void interactiveDiscUsesCompatibleDecodingUnlessHardwareIsRequested(){
         const bool hadOverride=qEnvironmentVariableIsSet("LUMA_DISC_DECODER");

@@ -63,12 +63,6 @@
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
-    void restorePerformancePreferences(){
-        QSettings settings;
-        settings.setValue("ui/developerMode",true);
-        settings.setValue("privacy/developerConsentVersion",1);
-        settings.setValue("developer/performanceEnabled",true);
-    }
     bool answerConsent(luma::MainWindow &window,const QString &name,bool accept){
         bool seen=false;
         QTimer::singleShot(0,&window,[&]{
@@ -85,6 +79,19 @@ class UiTests:public QObject {
         auto *check=window.findChild<QCheckBox*>(name=="developerConsentDialog"?"developerMode":"captureAllowed");
         if(!check)return false;
         check->setChecked(true);QCoreApplication::processEvents();return seen;
+    }
+    bool enablePerformance(luma::MainWindow &window){
+        if(!answerConsent(window,"developerConsentDialog",true))return false;
+        auto *enabled=window.findChild<QCheckBox*>("performanceEnabled");
+        if(!enabled)return false;
+        enabled->setChecked(true);
+        return true;
+    }
+    bool enableDetailedDiagnostics(luma::MainWindow &window){
+        auto *enabled=window.findChild<QCheckBox*>("diagnosticCollectionEnabled");
+        if(!enabled || !answerConsent(window,"developerConsentDialog",true))return false;
+        enabled->setChecked(true);
+        return true;
     }
 private slots:
     void initTestCase(){
@@ -167,6 +174,7 @@ private slots:
         QTest::keyClick(&window,Qt::Key_D,Qt::ControlModifier|Qt::ShiftModifier);
         QVERIFY(!enabled->isChecked() && !overlay->isVisible());
         QVERIFY(answerConsent(window,"developerConsentDialog",true));
+        QVERIFY(!overlay->summary().value("collecting").toBool());
         QTest::keyClick(&window,Qt::Key_D,Qt::ControlModifier|Qt::ShiftModifier);
         QTRY_VERIFY_WITH_TIMEOUT(overlay->summary().value("sampleCount").toInt()>=2,6000);
         QVERIFY(overlay->testAttribute(Qt::WA_TransparentForMouseEvents));
@@ -238,11 +246,16 @@ private slots:
         auto *overlay=dynamic_cast<luma::PerformanceOverlay*>(window.findChild<QWidget*>("performanceOverlay"));
         auto *developer=window.findChild<QCheckBox*>("developerMode");
         auto *enabled=window.findChild<QCheckBox*>("performanceEnabled");
+        auto *collection=window.findChild<QCheckBox*>("diagnosticCollectionEnabled");
         const auto engines=window.findChildren<luma::PlaybackEngine*>();
-        QVERIFY(save && job && translation && overlay && developer && enabled && !engines.isEmpty());
+        QVERIFY(save && job && translation && overlay && developer && enabled && collection && !engines.isEmpty());
         QCOMPARE(overlay->summary().value("sampleCount").toInt(),0);
         QVERIFY(answerConsent(window,"developerConsentDialog",true));
-        QVERIFY(!enabled->isChecked() && !overlay->isVisible());
+        QVERIFY(!enabled->isChecked() && !overlay->isVisible() && !collection->isChecked());
+        QVERIFY(!overlay->summary().value("collecting").toBool());
+        engines.front()->logMessage("Diagnostic message before explicit opt-in");
+        QVERIFY(!QJsonDocument(window.diagnostics()).toJson().contains("Diagnostic message before explicit opt-in"));
+        collection->setChecked(true);
         QTRY_VERIFY_WITH_TIMEOUT(overlay->summary().value("sampleCount").toInt()>=2,6000);
         const auto before=overlay->summary().value("sampleCount").toInt();
         enabled->setChecked(true);
@@ -778,8 +791,10 @@ private slots:
         translation->devicesReady(QJsonArray{radeon,intel});
         QCOMPARE(service->preferences().gpuDevice,QString("Vulkan0"));
     }
-    void radeonProfileUsesIndependentVulkanDevices(){
+    void radeonProfileUsesIndependentVulkanDevicesForTheCurrentSession(){
         QSettings settings;
+        settings.setValue("ai/mode","auto");settings.setValue("ai/gpu","Vulkan9");
+        settings.setValue("translation/mode","auto");settings.setValue("translation/gpu","Vulkan8");
         luma::MainWindow window;
         QVERIFY(answerConsent(window,"developerConsentDialog",true));
         auto *profile=window.findChild<QComboBox*>("hardwareTestProfile");
@@ -787,7 +802,10 @@ private slots:
         auto *video=window.findChild<QComboBox*>("videoGpu");
         auto *asr=window.findChild<QComboBox*>("aiGpu");
         auto *translation=window.findChild<QComboBox*>("translationGpu");
-        QVERIFY(profile && apply && video && asr && translation);
+        auto *hardware=window.findChild<QComboBox*>("developerHardware");
+        auto *job=window.findChild<luma::SubtitleJob*>();
+        auto *service=window.findChild<luma::TranslationService*>();
+        QVERIFY(profile && apply && video && asr && translation && hardware && job && service);
         video->clear();video->addItem("자동",QString{});video->addItem("AMD Radeon RX fixture","AMD Radeon RX fixture");
         asr->clear();asr->addItem("자동",QString{});asr->addItem("AMD Radeon RX fixture · Vulkan","Vulkan2");
         translation->clear();translation->addItem("자동",QString{});translation->addItem("Vulkan · AMD Radeon RX fixture","Vulkan0");
@@ -795,37 +813,47 @@ private slots:
 
         profile->setCurrentIndex(profile->findData("radeon-all"));
         apply->click();
-        QCOMPARE(settings.value("video/adapter").toString(),QString("AMD Radeon RX fixture"));
-        QCOMPARE(settings.value("ai/gpu").toString(),QString("Vulkan2"));
-        QCOMPARE(settings.value("translation/gpu").toString(),QString("Vulkan0"));
-        QCOMPARE(settings.value("ai/mode").toString(),QString("gpu"));
-        QCOMPARE(settings.value("translation/mode").toString(),QString("gpu"));
+        QCOMPARE(job->preferences().gpuDevice,QString("Vulkan2"));
+        QCOMPARE(service->preferences().gpuDevice,QString("Vulkan0"));
+        QCOMPARE(job->preferences().mode,QString("gpu"));
+        QCOMPARE(service->preferences().mode,QString("gpu"));
+        QCOMPARE(hardware->currentData().toInt(),int(luma::VideoOverrides::Hardware::D3D11));
 
         profile->setCurrentIndex(profile->findData("cpu"));
         apply->click();
-        QCOMPARE(settings.value("ai/mode").toString(),QString("cpu"));
-        QCOMPARE(settings.value("translation/mode").toString(),QString("cpu"));
-        QCOMPARE(settings.value("developer/developerHardware").toInt(),int(luma::VideoOverrides::Hardware::Software));
+        QCOMPARE(job->preferences().mode,QString("cpu"));
+        QCOMPARE(service->preferences().mode,QString("cpu"));
+        QCOMPARE(hardware->currentData().toInt(),int(luma::VideoOverrides::Hardware::Software));
 
         translation->setCurrentIndex(0);
         translation->addItem("Vulkan · AMD Radeon 2 fixture","Vulkan1");
         profile->setCurrentIndex(profile->findData("radeon-translation"));
         apply->click();
-        QCOMPARE(settings.value("translation/mode").toString(),QString("cpu"));
+        QCOMPARE(service->preferences().mode,QString("cpu"));
         translation->setCurrentIndex(translation->findData("Vulkan1"));
         apply->click();
-        QCOMPARE(settings.value("translation/gpu").toString(),QString("Vulkan1"));
-        QCOMPARE(settings.value("translation/mode").toString(),QString("gpu"));
-        QCOMPARE(settings.value("ai/mode").toString(),QString("cpu"));
+        QCOMPARE(service->preferences().gpuDevice,QString("Vulkan1"));
+        QCOMPARE(service->preferences().mode,QString("gpu"));
+        QCOMPARE(job->preferences().mode,QString("cpu"));
+        QVERIFY(!settings.contains("video/adapter"));
+        QCOMPARE(settings.value("ai/mode").toString(),QString("auto"));
+        QCOMPARE(settings.value("ai/gpu").toString(),QString("Vulkan9"));
+        QCOMPARE(settings.value("translation/mode").toString(),QString("auto"));
+        QCOMPARE(settings.value("translation/gpu").toString(),QString("Vulkan8"));
+        QVERIFY(!settings.contains("developer/developerHardware"));
+        luma::MainWindow restored;
+        QVERIFY(!restored.diagnostics().value("developerMode").toBool());
+        QCOMPARE(restored.findChild<luma::SubtitleJob*>()->preferences().mode,QString("auto"));
+        QCOMPARE(restored.findChild<luma::TranslationService*>()->preferences().mode,QString("auto"));
     }
 #endif
     void developerVideoOverridesReachFileEngine(){
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
             QSKIP("Requires native Windows output and a local H.264 fixture");
-        restorePerformancePreferences();
         luma::MainWindow window;
         window.show();
+        QVERIFY(answerConsent(window,"developerConsentDialog",true));
         auto *hardware=window.findChild<QComboBox*>("developerHardware");
         auto *codec=window.findChild<QComboBox*>("developerCodec");
         auto *color=window.findChild<QComboBox*>("developerColor");
@@ -917,9 +945,9 @@ private slots:
         const auto media=qEnvironmentVariable("LUMA_UI_TEST_PIP_MEDIA");
         if(QGuiApplication::platformName()!="windows" || !QFileInfo::exists(media))
             QSKIP("Requires the native Windows Qt backend and a local media fixture");
-        restorePerformancePreferences();
         luma::MainWindow window;
         window.show();
+        QVERIFY(enablePerformance(window));
         auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
         auto *pip=window.findChild<QPushButton*>("pictureInPicture");
         auto *overlay=window.findChild<QWidget*>("performanceOverlay");
@@ -949,9 +977,9 @@ private slots:
         BOOL fullDrag=FALSE;
         if(!SystemParametersInfoW(SPI_GETDRAGFULLWINDOWS,0,&fullDrag,0)||!fullDrag)
             QSKIP("Requires Windows to show contents while dragging");
-        restorePerformancePreferences();
         luma::MainWindow window;
         window.show();
+        QVERIFY(enablePerformance(window));
         auto *surface=window.findChild<luma::VideoSurface*>("videoSurface");
         auto *caption=window.findChild<luma::CaptionOverlay*>("captionOverlay");
         auto *transport=window.findChild<QWidget*>("transport");
@@ -1040,8 +1068,9 @@ private slots:
         QString error;const auto project=luma::CaptionPreparationService::loadProject(path,&error);QVERIFY2(project.has_value(),qPrintable(error));QVERIFY(project->request.source.disc);
         QSettings().setValue("subtitles/aiEnabled",true);QSettings().setValue("ai/model",project->request.model);QSettings().setValue("translation/model",project->request.translationModel);
         const bool verifyPerformance=qEnvironmentVariableIsSet("LUMA_UI_DISC_OVERLAY");
-        if(verifyPerformance)restorePerformancePreferences();
-        luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));
+        luma::MainWindow window;window.show();
+        if(verifyPerformance)QVERIFY(enablePerformance(window));
+        QVERIFY(window.loadPreparedCaptionProject(path));
         const auto report=qScopeGuard([&]{const auto output=qEnvironmentVariable("LUMA_UI_PREPARED_DISC_REPORT");if(!output.isEmpty()){QSaveFile file(output);if(file.open(QIODevice::WriteOnly)){file.write(QJsonDocument(window.diagnostics()).toJson());file.commit();}}});
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),25000);
         QCOMPARE(window.diagnostics()["durationMs"].toInteger(),project->request.durationMs);QVERIFY(!window.diagnostics()["navigationTitle"].toBool());QVERIFY(window.diagnostics().contains("discMenus"));QVERIFY(!window.diagnostics()["discMenus"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),project->translations.size());QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());
@@ -1091,7 +1120,7 @@ private slots:
         luma::MainWindow window;window.show();QVERIFY(window.loadPreparedCaptionProject(path));QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["preparedCaptionsApplied"].toBool(),20000);QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics()["playing"].toBool(),5000);
         const auto count=window.diagnostics()["translationCount"].toInt();auto *surface=window.findChild<QWidget*>("videoSurface");QVERIFY(surface);surface->setFocus();QTest::keyClick(surface,Qt::Key_Right);QTest::qWait(500);
         QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());QVERIFY(window.diagnostics()["aiEnabled"].toBool());QVERIFY(!window.diagnostics()["jobBusy"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),count);
-        if(window.diagnostics()["chapterCount"].toInt()>1){QPushButton *next=nullptr;for(auto *candidate:window.findChildren<QPushButton*>())if(candidate->accessibleName()=="다음 챕터"){next=candidate;break;}QVERIFY(next);next->click();QTest::qWait(500);QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),count);}
+        if(window.diagnostics()["chapterCount"].toInt()>1){QPushButton *next=nullptr;for(auto *candidate:window.findChildren<QPushButton*>())if(candidate->accessibleName().startsWith("다음 챕터")){next=candidate;break;}QVERIFY(next);next->click();QTest::qWait(500);QVERIFY(!window.diagnostics()["captionBufferHolding"].toBool());QCOMPARE(window.diagnostics()["translationCount"].toInt(),count);}
         QTemporaryDir missing;QVERIFY(!window.loadCaptionFile(missing.filePath("missing.srt")));QVERIFY(window.diagnostics()["aiEnabled"].toBool());QCOMPARE(window.diagnostics()["externalCueCount"].toInt(),0);QVERIFY(!window.diagnostics()["preparedCaptionsApplied"].toBool());
     }
     void failedOpenDoesNotKeepPauseIntent(){
@@ -1184,8 +1213,45 @@ private slots:
         auto *volume=window.findChild<QSlider*>("volumeSlider");QVERIFY(volume);volume->setValue(65);window.setFocus();
         QTest::keyClick(&window,Qt::Key_Up);QCOMPARE(volume->value(),70);QTest::keyClick(&window,Qt::Key_Down);QCOMPARE(volume->value(),65);
         QTest::keyClick(&window,Qt::Key_M);QCOMPARE(volume->value(),0);QTest::keyClick(&window,Qt::Key_M);QCOMPARE(volume->value(),65);
-        QTest::keyClick(&window,Qt::Key_F);QVERIFY(window.isFullScreen());QTest::keyClick(&window,Qt::Key_Return);QVERIFY(!window.isFullScreen());
-        QLineEdit input(&window);input.show();input.setFocus();QTest::keyClicks(&input,"fm");QCOMPARE(input.text(),QString("fm"));QCOMPARE(volume->value(),65);
+        auto *rate=window.findChild<QComboBox*>("playbackRate");QVERIFY(rate);
+        QTest::keyClick(&window,Qt::Key_Greater,Qt::ShiftModifier);QCOMPARE(rate->currentData().toDouble(),1.25);
+        QTest::keyClick(&window,Qt::Key_Less,Qt::ShiftModifier);QCOMPARE(rate->currentData().toDouble(),1.0);
+        auto *caption=window.findChild<QPushButton*>("captionQuick");QVERIFY(caption);
+        QTest::keyClick(&window,Qt::Key_C);QCOMPARE(caption->text(),QString("자막 끔"));
+        QTest::keyClick(&window,Qt::Key_C);QCOMPARE(caption->text(),QString("자막"));
+        window.showMaximized();QTest::qWait(40);
+        QTest::keyClick(&window,Qt::Key_F);QVERIFY(window.isFullScreen());QTest::keyClick(&window,Qt::Key_Return);QVERIFY(!window.isFullScreen());QVERIFY(window.isMaximized());
+        QTest::keyClick(&window,Qt::Key_F);QVERIFY(window.isFullScreen());QTest::keyClick(&window,Qt::Key_Escape);QVERIFY(!window.isFullScreen());
+        QLineEdit input(&window);input.show();input.setFocus();QTest::keyClicks(&input,"fmklc");QCOMPARE(input.text(),QString("fmklc"));QCOMPARE(volume->value(),65);
+    }
+    void nativeReplayButtonRestartsAnEndedFile(){
+        const auto media=qEnvironmentVariable("LUMA_UI_REPLAY_FIXTURE");
+        if(media.isEmpty())QSKIP("Set LUMA_UI_REPLAY_FIXTURE to a short owned video");
+        luma::MainWindow window;window.show();window.openSource(media);
+        auto *play=window.findChild<QPushButton*>("playButton");QVERIFY(play);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("ended").toBool(),15000);
+        QVERIFY(!window.diagnostics().value("playing").toBool());
+        QCOMPARE(play->accessibleName(),QString("처음부터 다시 재생 · K / Space"));
+        play->click();
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool() &&
+            !window.diagnostics().value("ended").toBool() &&
+            window.diagnostics().value("positionMs").toInteger()>250 &&
+            window.diagnostics().value("positionMs").toInteger()<2000,5500);
+    }
+    void nativeChapterHighlightAndKeyboardSeekFollowActualPlayback(){
+        const auto media=qEnvironmentVariable("LUMA_UI_CHAPTER_FIXTURE");
+        if(media.isEmpty())QSKIP("Set LUMA_UI_CHAPTER_FIXTURE to an owned video with three chapters");
+        luma::MainWindow window;window.show();window.openSource(media);
+        auto *chapters=window.findChild<QListWidget*>("chapterList");QVERIFY(chapters);
+        auto *current=window.findChild<QLabel*>("currentChapter");QVERIFY(current);
+        auto *seek=window.findChild<QSlider*>("seekSlider");QVERIFY(seek);
+        QTRY_VERIFY_WITH_TIMEOUT(chapters->count()==3 && current->text().contains("1 / 3"),10000);
+        seek->setFocus();QTest::keyClick(seek,Qt::Key_Right,Qt::ControlModifier);
+        QTRY_VERIFY_WITH_TIMEOUT(current->text().contains("2 / 3"),6000);
+        QTRY_VERIFY_WITH_TIMEOUT(chapters->item(1)->text().startsWith("▶"),6000);
+        const auto before=window.diagnostics().value("positionMs").toInteger();
+        QTest::keyClick(seek,Qt::Key_L);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>=before+9000,6000);
     }
     void unreadableSubtitleEnablesAutomaticCaptions(){
         QSettings().setValue("ai/mode","cpu");QTemporaryDir folder;luma::MainWindow window;window.openSource(folder.filePath("owned-video.mkv"));
@@ -1266,21 +1332,70 @@ private slots:
         QTemporaryDir folder;QSettings().setValue("ai/mode","cpu");QSettings().setValue("translation/model",folder.filePath("missing-fixture.gguf"));
         luma::MainWindow window;window.openSource(folder.filePath("synthetic-video.mkv"));window.enableAutomaticSubtitles("ja");
         auto *service=window.findChild<luma::TranslationService*>();auto *job=window.findChild<luma::SubtitleJob*>();auto *overlay=window.findChild<luma::CaptionOverlay*>();auto *enabled=window.findChild<QCheckBox*>("translationEnabled");QVERIFY(service);QVERIFY(job);QVERIFY(overlay);QVERIFY(enabled);enabled->setChecked(true);
-        job->ready(job->generation(),{{0,1000,"Current synthetic source"},{2000,3000,"Future synthetic source"}});
-        const auto generation=service->generation();const auto current=luma::translationCueKey({0,1000,"Current synthetic source"}),future=luma::translationCueKey({2000,3000,"Future synthetic source"});
+        job->ready(job->generation(),{{0,1000,"Current synthetic source"},{4000,5000,"Future synthetic source"}});
+        const auto generation=service->generation();const auto current=luma::translationCueKey({0,1000,"Current synthetic source"}),future=luma::translationCueKey({4000,5000,"Future synthetic source"});
         service->translatedCue(generation,current,"Current synthetic source","현재 문장");service->translatedCue(generation,future,"Future synthetic source","문맥 전 문장");
         QCOMPARE(window.diagnostics()["translationCount"].toInt(),2);QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),0);
-        job->ready(job->generation(),{{4000,5000,"New neighboring original source"}});
-        QCOMPARE(window.diagnostics()["translationCount"].toInt(),1);QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),2);
+        job->ready(job->generation(),{{6000,7000,"New neighboring original source"}});
+        QCOMPARE(window.diagnostics()["translationCount"].toInt(),2);QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),2);
         overlay->setPosition(100);QVERIFY(overlay->captionText().contains("현재 문장"));
+        overlay->setPosition(4100);QVERIFY(overlay->captionText().contains("문맥 전 문장"));
         service->translatedCue(generation,future,"Future synthetic source","새 문맥을 반영한 문장");QCOMPARE(window.diagnostics()["translationPendingCount"].toInt(),1);
-        overlay->setPosition(2100);QVERIFY(overlay->captionText().contains("새 문맥을 반영한 문장"));
+        overlay->setPosition(4100);QVERIFY(overlay->captionText().contains("새 문맥을 반영한 문장"));
     }
-    void diagnosticsRequirePersistedDeveloperMode(){
-        luma::MainWindow window;auto *mode=window.findChild<QCheckBox*>("developerMode");auto *details=window.findChild<QWidget*>("developerDiagnostics");
-        QVERIFY(mode);QVERIFY(details);QVERIFY(!mode->isChecked());QVERIFY(details->isHidden());
-        QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!details->isHidden());QVERIFY(QSettings().value("ui/developerMode").toBool());
-        luma::MainWindow restored;auto *restoredMode=restored.findChild<QCheckBox*>("developerMode");QVERIFY(restoredMode);QVERIFY(restoredMode->isChecked());
+    void developerSettingsResetAfterRestartAndUpgrade(){
+        QSettings settings;
+        settings.setValue("ui/developerMode",true);
+        settings.setValue("privacy/developerConsentVersion",1);
+        settings.setValue("privacy/captureAllowed",true);
+        settings.setValue("privacy/captureConsentVersion",1);
+        settings.setValue("developer/performanceEnabled",true);
+        settings.setValue("developer/diagnosticCollectionEnabled",true);
+        settings.setValue("developer/performanceView","graph");
+        settings.setValue("developer/performanceCorner","left");
+        settings.setValue("developer/developerHardware",int(luma::VideoOverrides::Hardware::Software));
+        settings.setValue("developer/developerCodec",int(luma::VideoOverrides::Codec::AV1));
+        settings.setValue("developer/developerColor",int(luma::VideoOverrides::Color::HDR10));
+        settings.setValue("developer/developerDolby",int(luma::VideoOverrides::DolbyVision::Ignore));
+        settings.setValue("developer/forceHdr",true);
+        settings.setValue("playback/volume",37);
+        settings.setValue("audio/output","bitstream");
+        for(int launch=0;launch<2;++launch){
+            luma::MainWindow window;
+            auto *mode=window.findChild<QCheckBox*>("developerMode");
+            auto *details=window.findChild<QWidget*>("developerDiagnostics");
+            auto *capture=window.findChild<QCheckBox*>("captureAllowed");
+            auto *performance=window.findChild<QCheckBox*>("performanceEnabled");
+            auto *collection=window.findChild<QCheckBox*>("diagnosticCollectionEnabled");
+            auto *forceHdr=window.findChild<QCheckBox*>("developerForceHdr");
+            auto *volume=window.findChild<QSlider*>("volumeSlider");
+            auto *audio=window.findChild<QComboBox*>("audioOutputMode");
+            QVERIFY(mode && details && capture && performance && collection && forceHdr && volume && audio);
+            QVERIFY(!mode->isChecked() && details->isHidden());
+            QVERIFY(!capture->isChecked() && capture->isHidden());
+            QVERIFY(!performance->isChecked() && !collection->isChecked() && !forceHdr->isChecked());
+            QVERIFY(!window.diagnostics().value("performanceOverlay").toObject().value("collecting").toBool());
+            QCOMPARE(volume->value(),37);
+            QCOMPARE(audio->currentData().toString(),QString("bitstream"));
+            QVERIFY(enablePerformance(window));
+            QVERIFY(!details->isHidden());
+            collection->setChecked(true);
+            QVERIFY(answerConsent(window,"captureConsentDialog",true));
+            forceHdr->setChecked(true);
+            for(const auto *id:{"performanceView","performanceCorner","developerHardware","developerCodec","developerColor","developerDolby"}){
+                auto *choice=window.findChild<QComboBox*>(id);
+                QVERIFY(choice);
+                QCOMPARE(choice->currentIndex(),0);
+                choice->setCurrentIndex(1);
+            }
+            QVERIFY(!QSettings().contains("ui/developerMode"));
+            QVERIFY(!QSettings().contains("privacy/developerConsentVersion"));
+            QVERIFY(!QSettings().contains("privacy/captureAllowed"));
+            QVERIFY(!QSettings().contains("privacy/captureConsentVersion"));
+            settings.beginGroup("developer");
+            QVERIFY(settings.allKeys().isEmpty());
+            settings.endGroup();
+        }
     }
     void discPlayQueuesPreparationAndAFileOpenCancelsIt(){
         luma::MainWindow window;
@@ -1325,7 +1440,6 @@ private slots:
         QVERIFY(!capture->isHidden());QVERIFY(!capture->isChecked());
         QVERIFY(answerConsent(window,"captureConsentDialog",false));QVERIFY(!capture->isChecked());
         QVERIFY(answerConsent(window,"captureConsentDialog",true));QVERIFY(capture->isChecked());
-        {luma::MainWindow restored;QVERIFY(restored.findChild<QCheckBox*>("developerMode")->isChecked());QVERIFY(restored.findChild<QCheckBox*>("captureAllowed")->isChecked());}
         mode->setChecked(false);QVERIFY(!capture->isChecked());QVERIFY(!QSettings().value("privacy/captureAllowed").toBool());
         QVERIFY(answerConsent(window,"developerConsentDialog",true));QVERIFY(!capture->isChecked());QVERIFY(capture->isHidden());
     }
@@ -1434,7 +1548,7 @@ private slots:
     void physicalDiscRecoveryPreservesImportedCaptions(){
         const auto disc=qEnvironmentVariable("LUMA_UI_TEST_DISC");if(disc.isEmpty())QSKIP("Set LUMA_UI_TEST_DISC for native title/caption recovery verification.");
         QSettings().setValue("subtitles/aiEnabled",false);QSettings().setValue("subtitles/translation",false);QSettings().setValue("subtitles/hangul",false);
-        luma::MainWindow window;window.show();window.openSource(disc);auto *titles=window.findChild<QComboBox*>("discTitles");
+        luma::MainWindow window;window.show();QVERIFY(enableDetailedDiagnostics(window));window.openSource(disc);auto *titles=window.findChild<QComboBox*>("discTitles");
         if(!titles)for(auto *box:window.findChildren<QComboBox*>())if(box->objectName()=="titles")titles=box;
         QVERIFY(titles);QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("title").toInt(-1)==0 && window.diagnostics().value("playing").toBool(),45000);
         const auto overlayReady=[&window]{for(const auto &message:window.diagnostics().value("recentMessages").toArray())if(message.toString().contains("Initializing overlay"))return true;return false;};QTRY_VERIFY_WITH_TIMEOUT(overlayReady(),15000);QTest::qWait(300);
@@ -1634,7 +1748,7 @@ private slots:
     void physicalDiscCaptionSeekSurvivesClockCorrection(){
         const auto disc=qEnvironmentVariable("LUMA_UI_TEST_DISC");if(disc.isEmpty())QSKIP("Set LUMA_UI_TEST_DISC for physical seek/caption-clock validation.");
         QSettings().setValue("ai/mode",qEnvironmentVariable("LUMA_UI_TEST_AI_MODE","auto"));QSettings().setValue("subtitles/translation",false);
-        luma::MainWindow window;window.show();window.openSource(disc);
+        luma::MainWindow window;window.show();QVERIFY(enableDetailedDiagnostics(window));window.openSource(disc);
         auto *play=window.findChild<QPushButton*>("playButton");auto *seek=window.findChild<QSlider*>("seekSlider");auto *job=window.findChild<luma::SubtitleJob*>();QVERIFY(play);QVERIFY(seek);QVERIFY(job);
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("title").toInt(-1)==0 && window.diagnostics().value("playing").toBool(),45000);
         const auto overlayReady=[&window]{for(const auto &message:window.diagnostics().value("recentMessages").toArray())if(message.toString().contains("Initializing overlay"))return true;return false;};

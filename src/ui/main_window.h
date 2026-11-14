@@ -1,5 +1,6 @@
 #pragma once
 #include <QDeadlineTimer>
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QTemporaryDir>
 #include <QSet>
@@ -7,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QPointer>
+#include <limits>
 #include "core/disc.h"
 #include "core/resume_history.h"
 #include "media/playback.h"
@@ -40,6 +42,7 @@ private:
     QWidget *surface_=nullptr,*welcome_=nullptr,*sidebar_=nullptr,*panel_=nullptr,*header_=nullptr,*transport_=nullptr,*transportTitleRow_=nullptr;
     QLabel *nowTitle_=nullptr,*status_=nullptr,*clock_=nullptr,*discLabel_=nullptr,*discDetails_=nullptr,*aiStatus_=nullptr,*codec_=nullptr,*accelerator_=nullptr;
     QLabel *translationStatus_=nullptr,*translationBackend_=nullptr,*captureStatus_=nullptr,*displayStatus_=nullptr,*menuStatus_=nullptr,*bufferStatus_=nullptr,*motionStatus_=nullptr,*npuStatus_=nullptr;
+    QLabel *chapterStatus_=nullptr;
     QPushButton *play_=nullptr,*discButton_=nullptr,*themeButton_=nullptr,*fullButton_=nullptr,*resumeButton_=nullptr;
     QPushButton *pipButton_=nullptr,*volumeButton_=nullptr;
     LanPlaybackDialog *lanPlaybackDialog_=nullptr;
@@ -53,13 +56,23 @@ private:
     QListWidget *chapters_=nullptr;
     QPlainTextEdit *log_=nullptr;
     QCheckBox *aiEnabled_=nullptr,*originalEnabled_=nullptr,*readingEnabled_=nullptr,*translationEnabled_=nullptr,*developerEnabled_=nullptr,*captureAllowed_=nullptr;
+    QCheckBox *captionVramSaving_=nullptr;
     CaptionOverlay *captions_=nullptr;
     PerformanceOverlay *performance_=nullptr;
     QCheckBox *performanceEnabled_=nullptr;
+    QCheckBox *diagnosticCollectionEnabled_=nullptr;
     QLabel *developerVideoStatus_=nullptr;
     QLabel *audioOutputStatus_=nullptr,*hdrPlaybackStatus_=nullptr;
     QComboBox *hdrOutputMode_=nullptr,*audioOutputMode_=nullptr,*audioProfile_=nullptr;
     VideoOverrides developerVideoOptions_;
+#ifdef Q_OS_WIN
+    struct DeveloperHardwareTest {
+        std::optional<QString> videoAdapter;
+        std::optional<AiPreferences> recognition, translation;
+    };
+    std::optional<DeveloperHardwareTest> developerHardwareTest_;
+#endif
+    QString fileVideoAdapter_;
     FullscreenControls *fullscreenControls_=nullptr;
     CaptureGuard *captureGuard_=nullptr;
     AiDeviceProbe *deviceProbe_=nullptr;
@@ -79,36 +92,49 @@ private:
     QTemporaryDir subtitleCache_;
     QVector<SubtitleCue> generatedCues_,externalCues_;
     QVector<SubtitleCue> presentationCues_;
-    bool presentationDirty_=true;
+    bool presentationDirty_=true,captionsVisible_=true;
     std::optional<CaptionPreparationResult> preparedCaptions_;
     bool preparedApplied_=false;
     QPointer<CaptionPreparationDialog> preparationDialog_;
     QHash<QString,QString> readings_,translations_;
     QSet<QString> translationPending_;
+    QSet<QString> translationRefresh_;
     QSet<QString> translationSkipped_;
     QStringList translationSkippedOrder_;
     CaptionCoverage coverage_;
     DiscInfo discInfo_;
     QString source_,model_,discPath_;
+    QStringList playbackQueue_;
     quint64 discPlayRequest_=0,discProbeRevision_=0;
     bool discProbeRunning_=false,discPlayPending_=false,discProbeClosing_=false;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
+    bool fullscreenWasMaximized_=false;
+    bool captionPrefillPending_=true;
+    QDeadlineTimer captionHoldDeadline_;
     bool lanDiscSharing_=false,lanDiscAwaitingPause_=false,lanDiscResume_=false,lanSourceChanging_=false;
     bool lanRemotePlayback_=false,lanRemoteSeekable_=false;
     bool lanReturnToDiscMenu_=false;
     bool pendingLanDiscOpen_=false;
     QDeadlineTimer lanMenuSelectionDeadline_;
     qint64 lanSelectedPositionMs_=0;
+    qint64 lanCaptionPositionMs_=-1,lanAudioStartMs_=0,lanAudioDurationMs_=0;
+    QString lanAudioRequest_;
+    QDeadlineTimer lanAudioDeadline_;
+    QElapsedTimer lanCaptionClock_;
     QDeadlineTimer lanDiscPauseDeadline_;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;
+    int translationRetryCount_=0;
+    qint64 translationRetryAt_=0;
     int lastUnmutedVolume_=70;
     int pendingAudio_=-2,pendingChapter_=-2,pendingTitle_=-2,lastAudio_=-2;
+    int pendingEndedTitle_=-1;
     qint64 pendingControlAt_=0;
     std::optional<bool> requestedPlaying_;
     int videoRecoveryCount_=0;
     quint64 sourceGeneration_=0;
     bool developerApproved_=false,captureApproved_=false,videoRecoveryExhausted_=false;
+    bool computeDeviceInventoryRequested_=false;
     std::optional<bool> recoveryPlayback_;
     int recoveryAudio_=-1,recoverySubtitle_=-1;
     QVector<SubtitleCue> recoveryExternalCues_;
@@ -116,6 +142,9 @@ private:
     bool liveCaptioningActive()const;
     bool captionTimelineAvailable()const;
     void selectChapter(int id);
+    void selectAdjacentChapter(int direction);
+    void selectAdjacentMedia(int direction);
+    void updateChapterDisplay(const PlaybackState &state);
     void selectAudio(int id);
     void selectTitle(int id);
     void buildUi();
@@ -131,6 +160,11 @@ private:
     void advanceLanDiscShare();
     bool sendLanMedia();
     void finishLanShare(bool cleanupConfirmed);
+    void publishLanCaptions();
+    void receiveLanCaptionClock(qint64 positionMs);
+    void receiveLanCaptionAudio(const QString &id,const QString &state,const QByteArray &pcm);
+    qint64 captionPosition() const;
+    void warmTranslationForCaptions();
     bool stopLanShareForSourceChange();
     void buildDeveloperTools(QVBoxLayout *layout);
     void buildDeveloperVideoTools(QVBoxLayout *layout);
@@ -164,11 +198,14 @@ private:
     bool shareSelectedLanFile_=false;
     void applyAiPreferences(bool save);
     void applyTranslationPreferences(bool save);
+    void requestComputeDeviceInventory();
     void clearDiscPlayRequest();
     void refresh();
     void appendLog(const QString &message);
     void toggleFullScreen();
     void togglePictureInPicture();
+    void setCaptionsVisible(bool visible);
+    void showPlaybackShortcuts();
     void updatePresentationLayout();
     void editTranslationGlossary();
     void applyTheme();
@@ -179,6 +216,7 @@ private:
     void updateNpuStatus();
     void updateTranslationPreferences();
     void changeVideoAdapter();
+    QString effectiveVideoAdapter() const;
     void applyFileVideoSelection(bool reloadCurrentFile);
     void updateMotionSettings();
     void togglePlayback();
@@ -186,6 +224,7 @@ private:
     void seekTo(qint64 position);
     void retryCaptions();
     void holdForCaptionBuffer();
+    void startCaptionHold(bool resume);
     void updateCaptionBuffer();
     void releaseCaptionBuffer(bool continuePlayback);
     void scheduleSubtitles();
@@ -199,12 +238,13 @@ private:
     void updateResumeButton();
     void resumeLatest();
     void openDroppedUrls(const QList<QUrl> &urls);
-    void cancelSubtitleWork();
+    void openMediaSelection(const QStringList &paths);
+    void cancelSubtitleWork(bool keepDiscAudio=false);
     void rebuildManagedCaptions();
     void showCaptionPreparation();
     bool playPreparedCaptions(CaptionPreparationResult result);
     void applyPreparedCaptions();
     QVector<SubtitleCue> originalCues()const;
-    QVector<SubtitleCue> displayCues()const;
+    QVector<SubtitleCue> displayCues(qint64 start=0,qint64 end=std::numeric_limits<qint64>::max())const;
 };
 }

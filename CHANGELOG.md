@@ -2,6 +2,14 @@
 
 ## 한국어
 
+### 0.2.12
+
+- Blu-ray가 PCM으로 출력하면 음량 조절과 음소거를 사용할 수 있습니다. 실제 비트스트림 출력 중에는 리시버에서 조절합니다.
+- 영상 끝에서 재생하면 처음부터 시작합니다. 재생바와 챕터 목록에 현재 챕터를 표시하고 유튜브 방식 재생 단축키를 추가했습니다.
+- 원문 자막의 버퍼 대기에 상한을 두고, 계속 재생하는 동안 준비된 자막을 갱신합니다. 대사가 몰리면 곧 표시될 줄부터 번역합니다.
+- Android에 실시간 AI 자막 상태와 기기 자막 파일 불러오기를 추가했습니다. PC의 라이브 자막 갱신은 영상 송출과 별도로 전달합니다.
+- 개발자 모드, 영상 캡처 허용, 성능 오버레이, 상세 진단 설정을 실행마다 초기화합니다. 상세 진단과 설치 로그는 요청 시에만 사용합니다.
+
 ### 0.2.11
 
 - 챕터 위치가 디스크의 영상 인덱스와 일치하는 Blu-ray에서 갤탭 챕터 이동을 앞당겼습니다. 인덱스를 적용할 수 없는 디스크에서는 시간 기준 탐색을 사용합니다.
@@ -183,6 +191,14 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.12
+
+- Restore volume and mute controls when Blu-ray plays through PCM. Active bitstream output uses receiver volume.
+- Replay from the beginning after playback ends. See the current chapter in the timeline and chapter list and use YouTube-style playback shortcuts.
+- Limit how long playback waits for original captions and update cues as playback continues. Translate imminent captions first when dialogue gets dense.
+- See live AI caption progress and import device subtitle files on Android. Live host captions update independently of the video stream.
+- Reset Developer Mode, video capture allowance, performance overlay, and detailed diagnostics at every launch. Detailed diagnostics and installer logs are opt-in.
 
 ### 0.2.11
 

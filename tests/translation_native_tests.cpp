@@ -1,12 +1,83 @@
 #include <QtTest>
 #include <QElapsedTimer>
 #include <QRegularExpression>
+#include <QSet>
+#include <algorithm>
 #include "subtitles/translation_service.h"
 #include "subtitles/translation_support.h"
 using namespace luma;
 class TranslationNativeTests:public QObject{
     Q_OBJECT
 private slots:
+    void denseLiveCuesUseActualLocalBackend(){
+        const auto runtime=qEnvironmentVariable("LUMA_TRANSLATION_RUNTIME");
+        const auto model=qEnvironmentVariable("LUMA_TRANSLATION_MODEL");
+        if(runtime.isEmpty() || model.isEmpty())QSKIP("Set the local model and runtime for a generated live-caption throughput check.");
+        TranslationService service(runtime);
+        service.setModel(model);
+        service.setPreferences({qEnvironmentVariable("LUMA_TRANSLATION_MODE","gpu"),qEnvironmentVariable("LUMA_TRANSLATION_DEVICE","Vulkan0")});
+        QSignalSpy results(&service,&TranslationService::translatedCue),errors(&service,&TranslationService::failed);
+        const SubtitleCue warm{0,1500,"今日は晴れです。"};
+        service.requestCues({warm});
+        QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty() || !errors.isEmpty(),120000);
+        QVERIFY(errors.isEmpty());
+        const auto expected=qEnvironmentVariable("LUMA_TRANSLATION_EXPECT_BACKEND");
+        if(!expected.isEmpty())QVERIFY2(service.selectedBackend().startsWith(expected),qPrintable(service.selectedBackend()));
+        results.clear();
+
+        const QVector<SubtitleCue> dense{
+            {10000,10600,"電話して。"},{10600,11200,"今は出られない。"},
+            {11200,11800,"駅に向かってる。"},{11800,12400,"切符は買ったよ。"},
+            {12400,13000,"先に乗らないで。"},{13000,13600,"ここで待つね。"},
+            {13600,14200,"傘は持った？"},{14200,14800,"まだ雨は降ってない。"},
+            {14800,15400,"店の前にいるよ。"},{15400,16000,"すぐに着く。"},
+            {16000,16600,"急がなくていい。"},{16600,17200,"ありがとう。"}
+        };
+        service.setContextCues(dense);
+        QElapsedTimer contextual;
+        contextual.start();
+        service.requestCues({dense.front()},0);
+        QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty() || !errors.isEmpty() || !service.busy(),45000);
+        QVERIFY(errors.isEmpty());
+        QVERIFY(results.size()==1);
+        qInfo()<<"single_contextual_ms="<<contextual.elapsed();
+        // Clear completed translations before timing the full window.
+        service.cancel();
+        service.setContextCues(dense);
+        results.clear();
+        bool leadSet=false;
+        const auto requestedLead=qEnvironmentVariableIntValue("LUMA_TRANSLATION_DENSE_LEAD_MS",&leadSet);
+        const qint64 lead=leadSet?qBound(0,requestedLead,10000):3000;
+        const qint64 start=dense.front().startMs-lead;
+        QElapsedTimer wall;
+        QSet<QString> onTime;
+        int late=0;
+        connect(&service,&TranslationService::translatedCue,this,[&](quint64,const QString &key,const QString &,const QString &){
+            for(const auto &cue:dense)if(translationCueKey(cue)==key){
+                if(start+wall.elapsed()<=cue.startMs)onTime.insert(key);else ++late;
+                break;
+            }
+        });
+        wall.start();
+        while(start+wall.elapsed()<dense.back().endMs){
+            const auto position=start+wall.elapsed();
+            auto work=nearbyTranslationCues(dense,position,[&](const QString &key){
+                return std::any_of(results.cbegin(),results.cend(),[&](const QList<QVariant> &result){return result[1].toString()==key;});
+            });
+            service.requestCues(work,position);
+            QTest::qWait(150);
+            if(results.size()>=dense.size() || !errors.isEmpty())break;
+        }
+        service.requestCues({},dense.back().endMs);
+        QVERIFY(errors.isEmpty());
+        QVERIFY(!service.busy());
+        qInfo().noquote()<<"backend="<<service.selectedBackend()<<"lead_ms="<<lead<<"cues="<<dense.size()<<"before_start="<<onTime.size()<<"after_start="<<late<<"completed="<<results.size()<<"elapsed_ms="<<wall.elapsed();
+        if(qEnvironmentVariableIsSet("LUMA_TRANSLATION_MIN_DENSE_ON_TIME"))
+            QVERIFY(onTime.size()>=qEnvironmentVariableIntValue("LUMA_TRANSLATION_MIN_DENSE_ON_TIME"));
+        // Release the backend while the event loop can observe process exit.
+        service.shutdown();
+        QTest::qWait(250);
+    }
     void timedContextCaptionsUseActualLocalBackend(){
         const auto runtime=qEnvironmentVariable("LUMA_TRANSLATION_RUNTIME");
         if(runtime.isEmpty())QSKIP("Set LUMA_TRANSLATION_RUNTIME for native synthetic context translation verification.");

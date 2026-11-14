@@ -14,6 +14,7 @@ import android.os.Build;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.style.StyleSpan;
+import android.util.Log;
 import android.view.Display;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
@@ -27,6 +28,7 @@ import java.util.Set;
 
 @UnstableApi
 final class PlaybackInfo implements AnalyticsListener {
+    private static final String FRAME_LOG_TAG = "LumaPlayback";
     private String videoDecoder;
     private AudioSink.AudioTrackConfig audioTrack;
     private boolean firstVideoFrame;
@@ -59,7 +61,18 @@ final class PlaybackInfo implements AnalyticsListener {
     @Override
     public void onRenderedFirstFrame(EventTime time, Object output, long renderTimeMs) {
         firstVideoFrame = true;
-        android.util.Log.i("LumaPlayback", "Video frame rendered at stream position " + time.currentPlaybackPositionMs);
+        if (Log.isLoggable(FRAME_LOG_TAG, Log.DEBUG)) {
+            Log.d(FRAME_LOG_TAG, "Video frame rendered at stream position " + time.currentPlaybackPositionMs);
+        }
+    }
+
+    static void logPresentedFrames(ExoPlayer player) {
+        if (!Log.isLoggable(FRAME_LOG_TAG, Log.DEBUG)) return;
+        var counters = player.getVideoDecoderCounters();
+        if (counters != null) {
+            counters.ensureUpdated();
+            Log.d(FRAME_LOG_TAG, "Presented video frames: " + counters.renderedOutputBufferCount);
+        }
     }
 
     static CharSequence report(Activity activity, ExoPlayer player, PlaybackInfo playback) {

@@ -23,16 +23,31 @@ class TranslationTests : public QObject {
     Q_OBJECT
 private slots:
     void nearestTranslationWorkRemainsBoundedAndStable(){
-        const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"};
-        QVector<SubtitleCue> cues{{200000,201000,"too far"},past,{0,2000,"expired"},future,past,cached};
+        const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"},late{9900,10500,"visible late"};
+        QVector<SubtitleCue> cues{{200000,201000,"too far"},past,{0,2000,"expired"},future,past,cached,late};
         for(int index=0;index<22;++index)cues.append({12000+1000*index,12900+1000*index,QString::number(index)});
         const auto cachedKey=translationCueKey(cached);
         const auto result=nearbyTranslationCues(cues,10000,[&](const QString &key){return key==cachedKey;});
         QCOMPARE(result.size(),16);
-        QCOMPARE(result[0].text,past.text);
-        QCOMPARE(result[1].text,future.text);
-        QCOMPARE(result[2].text,QString("0"));
+        QCOMPARE(result[0].text,future.text);
+        QCOMPARE(result[1].text,QString("0"));
+        QCOMPARE(result[2].text,late.text);
         QCOMPARE(result.last().text,QString("13"));
+        QVERIFY(std::none_of(result.begin(),result.end(),[&](const SubtitleCue &cue){return cue.text==past.text;}));
+    }
+    void compactContextKeepsNearestPastAndFutureOriginals(){
+        const SubtitleCue target{3000,4000,"Translate this"};
+        const QVector<SubtitleCue> cues{
+            {1000,1500,"remote past"},{1500,2500,"past"},{2500,3000,"near past"},
+            {4000,4500,"near future"},{4500,5500,"future"},{5500,6000,"remote future"}
+        };
+        const auto compact=requestData(translationPayload(target,cues,TranslationProfile::LegacyQwenJson,6144,{},4));
+        const auto context=compact.value("context").toArray();
+        QCOMPARE(context.size(),4);
+        QCOMPARE(context.first().toObject().value("text").toString(),QString("past"));
+        QCOMPARE(context.last().toObject().value("text").toString(),QString("future"));
+        QCOMPARE(compact.value("target").toObject().value("text").toString(),target.text);
+        QCOMPARE(requestData(translationPayload(target,cues)).value("context").toArray().size(),6);
     }
     void glossaryOnlyAddsMatchingTermsAndRespectsPromptBudget(){
         const auto glossary=parseTranslationGlossary("青空 → 푸른 하늘\n大雨 → 큰비");

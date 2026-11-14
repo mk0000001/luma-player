@@ -25,8 +25,8 @@ void MainWindow::updatePresentationLayout(){
     else transport_->layout()->setContentsMargins(18,7,18,7);
     transport_->setFixedHeight(pictureInPicture_?60:full_?74:108);
     static_cast<IconButton*>(fullButton_)->setPlayerIcon(full_?PlayerIcon::ExitFullscreen:PlayerIcon::Fullscreen);
-    fullButton_->setToolTip(full_?"전체 화면 나가기 · Esc":"전체 화면 · F11");
-    const QString pipLabel=pictureInPicture_?"작은 화면 나가기 · Esc":"작은 화면 · Ctrl+Shift+P";
+    fullButton_->setToolTip(full_?"전체 화면 나가기 · F / Esc":"전체 화면 · F");
+    const QString pipLabel=pictureInPicture_?"작은 화면 나가기 · I / Esc":"작은 화면 · I";
     pipButton_->setToolTip(pipLabel);
     pipButton_->setAccessibleName(pipLabel);
     fullscreenControls_->setActive(full_ || pictureInPicture_);
@@ -34,9 +34,10 @@ void MainWindow::updatePresentationLayout(){
 
 void MainWindow::toggleFullScreen(){
     if(pictureInPicture_)togglePictureInPicture();
+    if(!full_)fullscreenWasMaximized_=isMaximized();
     full_=!full_;
     updatePresentationLayout();
-    if(full_)showFullScreen();else showNormal();
+    if(full_)showFullScreen();else if(fullscreenWasMaximized_)showMaximized();else showNormal();
     updateDisplayStatus();
 }
 

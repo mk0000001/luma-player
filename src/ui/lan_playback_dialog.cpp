@@ -52,6 +52,7 @@ constexpr int discoveryRefreshMs = 5000;
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
+constexpr qsizetype maxAudioReplyBytes = 660 * 1024;
 constexpr qsizetype maxCaptionBytes = 1024 * 1024;
 constexpr qsizetype maxChapters = 512;
 constexpr int activeDeviceRole = Qt::UserRole + 1;
@@ -828,7 +829,7 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
         {"playlist", media.playlist}, {"audioIndex", media.audioIndex},
         {"audioTrackId", media.audioTrackId}, {"audioMode", audioMode_->currentData().toString()},
         {"ffmpeg", ffmpeg}, {"durationMs", media.durationMs}, {"title", media.title}, {"subtitles", subtitles},
-        {"videoRange", media.videoRange}, {"startMs", media.startMs}
+        {"videoRange", media.videoRange}, {"startMs", media.startMs}, {"liveCaptions",media.liveCaptions}
     };
     if (!chapters.isEmpty())
         configuration.insert("chaptersMs", chapters);
@@ -1041,6 +1042,20 @@ void LanPlaybackDialog::sendDiscMenuFrame(const QByteArray &png) {
     }
 }
 
+bool LanPlaybackDialog::publishCaptions(QJsonObject state){
+    if(mediaState_!=MediaState::Sharing || mediaRevision_.isEmpty() || host_.bytesToWrite()>128*1024)return false;
+    if(state==lastCaptions_)return true;
+    if(!writeMessage({{"command","captionSnapshot"},{"revision",mediaRevision_},{"captions",state}}))return false;
+    lastCaptions_=std::move(state);
+    return true;
+}
+
+bool LanPlaybackDialog::requestCaptionAudio(const QString &id,qint64 positionMs,qint64 durationMs){
+    return mediaState_==MediaState::Sharing && !mediaRevision_.isEmpty() &&
+        writeMessage({{"command","captionAudio"},{"revision",mediaRevision_},{"id",id},
+                      {"positionMs",positionMs},{"durationMs",durationMs}});
+}
+
 void LanPlaybackDialog::readReply() {
     const auto incoming = host_.readAllStandardOutput();
     if (protocolFailed_)
@@ -1048,19 +1063,19 @@ void LanPlaybackDialog::readReply() {
     reply_ += incoming;
     qsizetype end;
     while ((end = reply_.indexOf('\n')) >= 0) {
-        if (end > maxReplyBytes) {
+        if (end > maxAudioReplyBytes) {
             protocolError();
             return;
         }
         const auto document = QJsonDocument::fromJson(reply_.left(end));
         reply_.remove(0, end + 1);
-        if (!document.isObject()) {
+        if (!document.isObject() || (end>maxReplyBytes && document.object().value("status")!="captionAudio")) {
             protocolError();
             return;
         }
         handleReply(document.object());
     }
-    if (reply_.size() > maxReplyBytes)
+    if (reply_.size() > maxAudioReplyBytes)
         protocolError();
 }
 
@@ -1125,17 +1140,30 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
             emit discMenuFrameRequested();
     } else if (event == "remoteControl") {
-        if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
+        const auto revision=message.value("revision").toString();
+        if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_ &&
+            (revision.isEmpty() || (mediaState_==MediaState::Sharing && revision==mediaRevision_)))
             emit remoteControlRequested(message.value("action").toString(),message.value("deviceId").toString());
+    } else if (event == "captionClock" && mediaState_==MediaState::Sharing) {
+        if(!mediaRevision_.isEmpty() && message.value("revision").toString()==mediaRevision_)
+            emit captionClockChanged(message.value("positionMs").toInteger());
+    } else if (event == "captionAudio" && mediaState_==MediaState::Sharing) {
+        if(!mediaRevision_.isEmpty() && message.value("revision").toString()==mediaRevision_){
+            const auto pcm=QByteArray::fromBase64(message.value("pcm").toString().toLatin1(),QByteArray::AbortOnBase64DecodingErrors);
+            emit captionAudioReceived(message.value("id").toString(),message.value("action").toString(),pcm);
+        }
     } else if (event == "devices" && message.value("devices").isArray()) {
         updateDevices(message.value("devices").toArray());
     } else if (event == "sharing" && (mediaState_ == MediaState::Starting || mediaState_ == MediaState::Stopping)) {
-        setSharing(true);
         if (mediaState_ == MediaState::Starting) {
             watchdog_.stop();
             mediaState_ = MediaState::Sharing;
+            static const QRegularExpression revisionPattern("^[A-Za-z0-9_-]{22}$");
+            const auto revision=message.value("revision").toString();
+            if(revisionPattern.match(revision).hasMatch())mediaRevision_=revision;
             status_->setText("기기에 공유 중입니다. 이 창을 닫아도 공유가 계속됩니다.");
         }
+        setSharing(true);
         updateControls();
     } else if (event == "unshared" && mediaState_ == MediaState::Stopping) {
         status_->setText("기기 연결을 유지하고 모바일 공유를 중지했습니다.");
@@ -1278,6 +1306,8 @@ void LanPlaybackDialog::finishShare(bool cleanupConfirmed) {
     watchdog_.stop();
     const bool wasActive = mediaState_ != MediaState::Idle;
     mediaState_ = MediaState::Idle;
+    mediaRevision_.clear();
+    lastCaptions_={};
     setSharing(false);
     if (wasActive) {
         cleanupConfirmed_ = cleanupConfirmed;

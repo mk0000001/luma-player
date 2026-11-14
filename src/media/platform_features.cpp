@@ -1,7 +1,6 @@
 #include "platform_features.h"
 #include <QEvent>
 #include <QScopeGuard>
-#include <QTimer>
 #include <QSet>
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -91,24 +90,23 @@ void CaptureGuard::watch(QWidget *window){
     window=window->window();for(const auto &item:windows_)if(item==window)return;
     windows_.append(window);window->installEventFilter(this);apply();
 }
-void CaptureGuard::setEnabled(bool enabled, QWidget *onlyWindow){
+void CaptureGuard::setEnabled(bool enabled){
     enabled_=enabled;
-    onlyWindow_=onlyWindow?onlyWindow->window():nullptr;
     apply();
 }
 void CaptureGuard::apply(){
 #ifdef Q_OS_WIN
-    for(const auto &window:windows_)if(window && window->testAttribute(Qt::WA_WState_Created))
-        SetWindowDisplayAffinity(reinterpret_cast<HWND>(window->winId()),enabled_ && (!onlyWindow_ || onlyWindow_==window)?0x11:WDA_NONE);
+    for(const auto &window:windows_)if(window && window->internalWinId())
+        SetWindowDisplayAffinity(reinterpret_cast<HWND>(window->internalWinId()),enabled_?WDA_EXCLUDEFROMCAPTURE:WDA_NONE);
 #endif
 }
 bool CaptureGuard::applied()const{
 #ifdef Q_OS_WIN
     BOOL composed=FALSE;if(!enabled_ || FAILED(DwmIsCompositionEnabled(&composed)) || !composed)return false;
     bool checked=false;
-    for(const auto &window:windows_)if(window && window->isVisible() && (!onlyWindow_ || onlyWindow_==window)){
+    for(const auto &window:windows_)if(window && window->isVisible()){
         DWORD affinity=0;checked=true;
-        if(!GetWindowDisplayAffinity(reinterpret_cast<HWND>(window->winId()),&affinity) || affinity!=0x11)return false;
+        if(!GetWindowDisplayAffinity(reinterpret_cast<HWND>(window->internalWinId()),&affinity) || affinity!=WDA_EXCLUDEFROMCAPTURE)return false;
     }
     return checked;
 #else
@@ -125,7 +123,7 @@ QString CaptureGuard::status()const{
 }
 bool CaptureGuard::eventFilter(QObject *object,QEvent *event){
     if(event->type()==QEvent::Show || event->type()==QEvent::WinIdChange || event->type()==QEvent::WindowStateChange)
-        QTimer::singleShot(0,this,[this]{apply();});
+        apply();
     return QObject::eventFilter(object,event);
 }
 }

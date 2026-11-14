@@ -15,6 +15,14 @@
 
 설치기를 빌드하려면 공식 Inno Setup **6.7.4**와 현재 버전의 기본 또는 CUDA 포터블 폴더를 준비하세요. `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`를 실행합니다. 패키지 파일의 크기·해시와 소스 커밋을 확인하고 새 출력 폴더에 설치 EXE를 만듭니다. 모델 URL은 저장소 잠금 파일에서 읽습니다.
 
+### 설치가 차단될 때
+
+1. [공식 릴리스](https://github.com/mk0000001/luma-player/releases/latest)에서 받은 같은 설치 파일의 `.sha256` 값을 `Get-FileHash -Algorithm SHA256 -LiteralPath <설치 파일 경로>`의 결과와 대조하세요. 값이 다르면 파일을 실행하지 말고 다시 받으세요.
+2. Windows 보안의 보호 기록이나 V3의 진단 로그에서 제품명, 탐지명, 실제 차단된 파일명, LumaPlayer 버전을 확인하세요. 설치 파일을 열 때인지, 설치 중 파일을 풀거나 앱을 처음 열 때인지 함께 적어 주세요.
+3. 설치 프로그램 로그가 필요하면 설치 파일에 `/LOG`를 붙여 실행하세요. 공유할 때는 개인 파일 경로와 계정 정보를 가리세요.
+
+스마트스크린의 게시자·평판 경고와 백신의 파일 탐지를 구분합니다. 현재 Windows 설치 파일은 Authenticode 서명이 없으며, 앱의 업데이트 검증 서명은 GitHub에서 받은 파일의 무결성을 확인하는 데 사용합니다. 백신이 정상 파일을 잘못 탐지한 것으로 보이면 [안랩 오진 신고](https://ask.ahnlab.com/hc/ko/articles/900002412366) 또는 [Microsoft 파일 제출](https://www.microsoft.com/en-us/wdsi/filesubmission)에서 실제 차단된 파일의 분석을 요청할 수 있습니다. [Microsoft SmartScreen 게시자 평판 안내](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)
+
 ## English
 
 Choose the standard or NVIDIA CUDA-bundled Windows x64 setup EXE from Releases. Run it and select the language, destination, and components. Installation is per user and needs no administrator rights.
@@ -26,3 +34,11 @@ Launch from the Start Menu. Choose CUDA, Vulkan, or OpenVINO at first launch or 
 Build with official Inno Setup 6.7.4 and the current standard or CUDA payload using `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. The builder verifies the manifest entries and source commit, reads model pins from the repository lock files, and writes the EXE to a new output folder.
 
 Dependencies are installed alongside the application: CUDA 12 runtime (cudart/cuBLAS/cuBLASLt), ASR/translation runners, Qt 6, Visual C++ runtime DLLs, libVLC/libmpv/FFmpeg, OpenVINO runtime and Noto Sans. No separate CUDA Toolkit/Visual Studio or global PATH change is required. NVIDIA GPU and Intel NPU execution still require compatible device drivers; the installer does not replace drivers or reboot the system.
+
+### If installation is blocked
+
+1. Compare the release's `.sha256` file with `Get-FileHash -Algorithm SHA256 -LiteralPath <installer path>`. Download the file again from the [official release](https://github.com/mk0000001/luma-player/releases/latest) if the values differ.
+2. Check Windows Security's Protection History or the V3 detection log. Record the security product, detection name, blocked filename, LumaPlayer version, and whether the block happened before setup, during extraction, or at first launch.
+3. Run setup with `/LOG` if an installer log is needed. Redact personal paths and account information before sharing it.
+
+Windows setup files are currently unsigned by Authenticode. The player verifies update metadata signatures to check downloaded file integrity. Analyze a suspected file detection using [AhnLab's false-positive process](https://ask.ahnlab.com/hc/en-us/articles/900003237626-To-Submit-a-Malware-related-Inquiry) or [Microsoft's file submission portal](https://www.microsoft.com/en-us/wdsi/filesubmission). [Microsoft SmartScreen publisher reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation)

@@ -224,6 +224,22 @@ final class LanClient implements Closeable {
                 RequestBody.create("{\"action\":" + JSONObject.quote(action) + "}", JSON));
     }
 
+    void controlCaptions(String action, String revision) throws IOException {
+        sendPlayerCommand(LanEndpoint.PLAYER_CONTROL_PATH, RequestBody.create(
+                "{\"action\":" + JSONObject.quote(action) + ",\"revision\":" + JSONObject.quote(revision) + "}", JSON));
+    }
+
+    RemoteCaptionState fetchCaptions(String revision, long positionMs, long captionRevision) throws IOException {
+        try {
+            var request = new JSONObject().put("revision", revision).put("positionMs", positionMs)
+                    .put("captionRevision", captionRevision);
+            // Allow room for JSON escaping around the host's bounded WebVTT.
+            return RemoteCaptionState.parse(readJson(LanEndpoint.LIVE_CAPTION_PATH, request, 2, 8L * 1024 * 1024));
+        } catch (JSONException e) {
+            throw new IOException("Invalid caption status", e);
+        }
+    }
+
     record RemoteFile(String id, String name) {}
 
     List<RemoteFile> remoteFiles() throws IOException {
@@ -439,7 +455,7 @@ final class LanClient implements Closeable {
                 case PLAYBACK -> ("GET".equals(method) && (LanEndpoint.isMediaPath(path)
                         || LanEndpoint.PLAYER_FILES_PATH.equals(path) || LanEndpoint.DISC_MENU_PATH.equals(path)))
                         || ("POST".equals(method) && (LanEndpoint.PLAYBACK_START_PATH.equals(path)
-                                || LanEndpoint.PLAYER_CONTROL_PATH.equals(path)));
+                                || LanEndpoint.PLAYER_CONTROL_PATH.equals(path) || LanEndpoint.LIVE_CAPTION_PATH.equals(path)));
             };
         }
     }

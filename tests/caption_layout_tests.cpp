@@ -106,6 +106,20 @@ private slots:
         window.move(100,80);
         QCOMPARE(overlay.geometry(),QRect(anchor.mapToGlobal(QPoint()),anchor.size()));
     }
+    void refreshingFutureCuesKeepsTheVisibleCaption(){
+        QWidget window;window.resize(640,360);window.show();
+        luma::CaptionOverlay overlay(&window);
+        overlay.setCues({{0,1000,"Current caption"}});
+        overlay.setPosition(450);
+        QVERIFY(overlay.isVisible());
+        overlay.setCues({{0,1000,"Current caption"},{1000,2000,"Next caption"}});
+        QVERIFY(overlay.isVisible());
+        QCOMPARE(overlay.captionText(),QString("Current caption"));
+        overlay.setPosition(1000);
+        QCOMPARE(overlay.captionText(),QString("Next caption"));
+        overlay.setCues({});
+        QVERIFY(!overlay.isVisible());
+    }
 };
 QTEST_MAIN(CaptionLayoutTests)
 #include "caption_layout_tests.moc"

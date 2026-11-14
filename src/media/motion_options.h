@@ -23,7 +23,7 @@ struct MotionPlan {
     QString status;
 };
 MotionOptions normalizeMotionOptions(MotionOptions options);
-// The current libVLC Blu-ray/menu backend has no implemented motion path.
+// The current libVLC Blu-ray backend has no frame interpolation path.
 MotionPlan motionPlan(MotionOptions options,bool fileBackend=true);
 MotionPlan motionPlanForSource(MotionOptions options,bool fileBackend,const QString &gamma,const QString &matrix,double signalPeak);
 QString motionModeLabel(MotionMode mode);
