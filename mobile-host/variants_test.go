@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +14,39 @@ import (
 	"testing"
 	"time"
 )
+
+func TestClipEntryOffsetRequiresMatchingContinuousIndex(t *testing.T) {
+	info := make([]byte, 88)
+	copy(info, "HDMV0200")
+	binary.BigEndian.PutUint32(info[16:], 40)
+	binary.BigEndian.PutUint32(info[40:], 44)
+	cpi := info[44:]
+	cpi[1], cpi[3], cpi[7] = 1, 1, 4
+	binary.BigEndian.PutUint32(cpi[8:], 1<<18|3)
+	binary.BigEndian.PutUint32(cpi[12:], 14)
+	table := cpi[16:]
+	binary.BigEndian.PutUint32(table, 12)
+	binary.BigEndian.PutUint32(table[12:], 12)
+	binary.BigEndian.PutUint32(table[16:], 3<<17|1024)
+	binary.BigEndian.PutUint32(table[20:], 5<<17|2048)
+
+	if got := clipEntryOffset(info, 0, 3*256+100); got != 1024*blurayPacketBytes {
+		t.Fatalf("matching chapter offset = %d", got)
+	}
+	if got := clipEntryOffset(info, 0, 4*256); got != 0 {
+		t.Fatalf("chapter without a matching entry used offset %d", got)
+	}
+	if got := clipEntryOffset(info, 256, 3*256); got != 0 {
+		t.Fatalf("trimmed clip used offset %d", got)
+	}
+	if got := clipEntryOffset(info[:len(info)-1], 0, 3*256); got != 0 {
+		t.Fatalf("truncated index used offset %d", got)
+	}
+	binary.BigEndian.PutUint32(table[20:], 5<<17|1023)
+	if got := clipEntryOffset(info, 0, 3*256); got != 0 {
+		t.Fatalf("discontinuous index used offset %d", got)
+	}
+}
 
 func TestBlurayChapterStreamsFirstFrameAtRequestedPosition(t *testing.T) {
 	fixture := os.Getenv("LUMA_TEST_BLURAY_FIXTURE")
@@ -26,7 +60,10 @@ func TestBlurayChapterStreamsFirstFrameAtRequestedPosition(t *testing.T) {
 		start    int64
 		dominant int
 	}{{0, 0}, {64000, 1}, {128000, 2}} {
-		args := variantArguments(cfg, originalProfile, tc.start, false)
+		args := variantArguments(cfg, originalProfile, tc.start, false, blurayChapterOffset(cfg, tc.start))
+		if tc.start > 0 && (!slices.Contains(args, "-skip_initial_bytes") || slices.Contains(args, "-ss")) {
+			t.Fatalf("chapter at %d ms did not use the clip entry-point map", tc.start)
+		}
 		args = append(args[:len(args)-1], "-t", "0.75", args[len(args)-1])
 		stream := runFixtureFFmpeg(t, ffmpeg, nil, args...)
 		pixel := runFixtureFFmpeg(t, ffmpeg, bytes.NewReader(stream), "-i", "pipe:0",
@@ -102,7 +139,7 @@ func TestHDRVariantProducesEightBitSDR(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer inputFile.Close()
-			encoded := runFixtureFFmpeg(t, ffmpeg, inputFile, variantArguments(cfg, "1080p", 0, false)...)
+			encoded := runFixtureFFmpeg(t, ffmpeg, inputFile, variantArguments(cfg, "1080p", 0, false, 0)...)
 			output := filepath.Join(t.TempDir(), "synthetic-sdr.mkv")
 			if err := os.WriteFile(output, encoded, 0600); err != nil {
 				t.Fatal(err)

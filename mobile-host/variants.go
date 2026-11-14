@@ -92,7 +92,7 @@ func fileVariantDemuxer(mimeType string) string {
 	}
 }
 
-func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool) []string {
+func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool, offset int64) []string {
 	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
 	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
 		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
@@ -103,7 +103,10 @@ func variantArguments(cfg validatedConfig, profile string, start int64, convertP
 	if cfg.SourceKind != "bluray" {
 		args = append(args, "-nostdin")
 	}
-	if start > 0 {
+	if offset > 0 {
+		args = append(args, "-f", "mpegts", "-skip_initial_bytes", strconv.FormatInt(offset, 10),
+			"-skip_estimate_duration_from_pts", "1")
+	} else if start > 0 {
 		// Some Blu-ray inputs return chapter 1 after FFmpeg probes the transport
 		// stream, even though the protocol accepted its chapter number.
 		args = append(args, "-ss", fmt.Sprintf("%d.%03d", start/1000, start%1000))

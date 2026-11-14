@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.2.11
+
+- 챕터 위치가 디스크의 영상 인덱스와 일치하는 Blu-ray에서 갤탭 챕터 이동을 앞당겼습니다. 인덱스를 적용할 수 없는 디스크에서는 시간 기준 탐색을 사용합니다.
+
 ### 0.2.8
 
 - 페어링한 갤럭시 탭에서 PC의 Blu-ray 메뉴를 조작하고 본편 공유를 시작할 수 있습니다.
@@ -179,6 +183,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.11
+
+- Chapter changes on Android start sooner when the Blu-ray chapter matches the disc's video index. Discs that cannot use the index continue to use timestamp-based seeking.
 
 ### 0.2.8
 

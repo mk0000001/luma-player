@@ -34,13 +34,19 @@ func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
 }
 
 func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, profile string, start int64) {
-	args := variantArguments(s.config, profile, start, false)
+	offset := blurayChapterOffset(s.config, start)
+	args := variantArguments(s.config, profile, start, false, offset)
 	optical := s.config.SourceKind == "bluray"
 	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream, optical)
+	if outcome == remuxFailed && ctx.Err() == nil && offset > 0 {
+		offset = 0
+		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
+			variantArguments(s.config, profile, start, false, 0), s.reportStream, optical)
+	}
 	pcm := outcome == remuxNeedsPCM && profile == originalProfile
 	if pcm && ctx.Err() == nil {
 		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
-			variantArguments(s.config, profile, start, true), s.reportStream, optical)
+			variantArguments(s.config, profile, start, true, offset), s.reportStream, optical)
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
 		if s.reportStream != nil {
