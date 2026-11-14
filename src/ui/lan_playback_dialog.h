@@ -91,6 +91,7 @@ private:
     enum class MediaState { Idle, Preparing, Starting, Sharing, Stopping };
     void refreshInterfaces();
     void disarmRemoteControl();
+    void publishRemoteControl(bool enabled);
     void maintainDiscovery();
     bool startHost(const QString &address, const QString &subnet, const QString &peerSubnet = {});
     void restartDiscovery();

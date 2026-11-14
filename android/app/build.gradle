@@ -16,7 +16,7 @@ android {
         applicationId = 'io.github.mk0000001.lumaplayer.app'
         minSdk = 28
         targetSdk = 36
-        versionCode = 20008
+        versionCode = 20009
         versionName = rootProject.file('../VERSION').text.trim()
     }
 

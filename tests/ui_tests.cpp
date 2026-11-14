@@ -429,7 +429,8 @@ private slots:
         auto *status=dialog->findChild<QLabel*>("lanPlaybackStatus");
         auto *start=dialog->findChild<QPushButton*>("lanStart");
         auto *stop=dialog->findChild<QPushButton*>("lanStop");
-        QVERIFY(endpoint && status && start && stop);
+        auto *remoteControl=dialog->findChild<QCheckBox*>("lanRemoteControl");
+        QVERIFY(endpoint && status && start && stop && remoteControl);
         QTRY_VERIFY2_WITH_TIMEOUT(endpoint->text().contains(address),qPrintable(endpoint->text()+" · "+status->text()),12000);
         QVERIFY(!start->isEnabled());
 
@@ -499,6 +500,14 @@ private slots:
         const auto token=approvalReply.value("token").toString().toLatin1();
         QCOMPARE(token.size(),22);
         QVERIFY(approvalReply.value("rememberToken").toString().isEmpty());
+        QVERIFY(remoteControl->isChecked());
+        auto *menu=manager.get(request("/v1/player/disc-menu.png",token));
+        QTRY_VERIFY_WITH_TIMEOUT(menu->isFinished(),12000);
+        QCOMPARE(menu->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),204);
+        remoteControl->click();
+        auto *controlRevoked=manager.get(request("/v1/player/disc-menu.png",token));
+        QTRY_VERIFY_WITH_TIMEOUT(controlRevoked->isFinished(),12000);
+        QCOMPARE(controlRevoked->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);
         auto *beforeShare=manager.get(request("/v1/session",token));
         QTRY_VERIFY_WITH_TIMEOUT(beforeShare->isFinished(),12000);
         QCOMPARE(beforeShare->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);

@@ -61,9 +61,9 @@ final class PcController {
         menuControls = new LinearLayout(activity);
         menuControls.setOrientation(LinearLayout.VERTICAL);
         menuControls.setVisibility(View.GONE);
-        addRow(menuControls, command("↑", "위", "disc-up"), command("↓", "아래", "disc-down"),
-                command("←", "왼쪽", "disc-left"), command("→", "오른쪽", "disc-right"));
-        addRow(menuControls, command("확인", "선택한 메뉴 실행", "disc-confirm"));
+        addRow(menuControls, command("←", "왼쪽", "disc-left"), command("↑", "위", "disc-up"),
+                command("확인", "선택한 메뉴 실행", "disc-confirm"),
+                command("↓", "아래", "disc-down"), command("→", "오른쪽", "disc-right"));
         panel.addView(menuControls);
 
         scroll = new ScrollView(activity);
@@ -155,8 +155,12 @@ final class PcController {
 
     void updateMenu(android.graphics.Bitmap image) {
         menu.update(image);
-        menu.setVisibility(image == null ? View.GONE : View.VISIBLE);
-        menuControls.setVisibility(menu.getVisibility());
+        int visibility = image == null ? View.GONE : View.VISIBLE;
+        if (menu.getVisibility() != visibility) {
+            menu.setVisibility(visibility);
+            menuControls.setVisibility(visibility);
+            position();
+        }
     }
 
     private void hide() {
@@ -209,9 +213,12 @@ final class PcController {
             available -= dp(64);
         }
         FrameLayout.LayoutParams bounds = (FrameLayout.LayoutParams) panel.getLayoutParams();
-        int width = Math.min(dp(300), Math.max(dp(160), availableWidth - dp(24)));
-        int height = Math.min(dp(470), Math.max(dp(100), available));
-        int menuHeight = Math.max(dp(60), Math.min(dp(155), height - dp(172)));
+        boolean showingMenu = menu.getVisibility() == View.VISIBLE;
+        int usableWidth = Math.max(1, availableWidth - dp(24));
+        int width = Math.min(dp(showingMenu ? 800 : 300), usableWidth);
+        int height = Math.min(dp(showingMenu ? 640 : 470), Math.max(dp(100), available));
+        if (showingMenu) end += (usableWidth - width) / 2;
+        int menuHeight = Math.max(1, Math.min((width - dp(20)) * 9 / 16, height - dp(126)));
         if (menu.getLayoutParams().height != menuHeight) {
             menu.getLayoutParams().height = menuHeight;
             menu.requestLayout();
