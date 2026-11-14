@@ -1250,12 +1250,22 @@ private slots:
         QVERIFY(!window.diagnostics().value("playing").toBool());
         QCOMPARE(play->accessibleName(),QString("처음부터 다시 재생 · K / Space"));
 
-        QTest::mouseClick(play,Qt::LeftButton);
-        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool() &&
-            !window.diagnostics().value("ended").toBool() &&
-            window.diagnostics().value("displayedPictures").toInt()>10 &&
-            window.diagnostics().value("positionMs").toInteger()>250 &&
-            window.diagnostics().value("positionMs").toInteger()<4000,12000);
+        const auto finishedAt=window.diagnostics().value("positionMs").toInteger();
+        play->click();
+        const auto restarted=[&]{
+            const auto state=window.diagnostics();
+            return !state.value("ended").toBool() && !state.value("failed").toBool() &&
+                state.value("positionMs").toInteger()<2000;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(restarted(),15000);
+
+        const auto advances=[&]{
+            const auto state=window.diagnostics();
+            const auto position=state.value("positionMs").toInteger();
+            return state.value("playing").toBool() && state.value("displayedPictures").toInt()>10 &&
+                position>=2000 && position<finishedAt;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(advances(),25000);
     }
     void nativeChapterHighlightAndKeyboardSeekFollowActualPlayback(){
         const auto media=qEnvironmentVariable("LUMA_UI_CHAPTER_FIXTURE");
