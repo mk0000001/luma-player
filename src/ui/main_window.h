@@ -139,6 +139,7 @@ private:
     int recoveryAudio_=-1,recoverySubtitle_=-1;
     QVector<SubtitleCue> recoveryExternalCues_;
     bool wantsPlayback()const;
+    void updatePlaybackButton();
     bool liveCaptioningActive()const;
     bool captionTimelineAvailable()const;
     void selectChapter(int id);

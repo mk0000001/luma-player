@@ -216,7 +216,7 @@ void MainWindow::buildUi(){
     transportTitleRow_=new QWidget;auto *titleRow=new QHBoxLayout(transportTitleRow_);titleRow->setContentsMargins(0,0,0,0);nowTitle_=label("재생할 미디어를 선택하세요","nowTitle");nowTitle_->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);titleRow->addWidget(nowTitle_,1);codec_=label({},"muted");titleRow->addWidget(codec_);transportLayout->addWidget(transportTitleRow_);
     seek_=new SeekSlider;seek_->setObjectName("seekSlider");seek_->setAccessibleName("재생 위치");seek_->setRange(0,10000);seek_->setFixedHeight(12);transportLayout->addWidget(seek_);
     auto *buttons=new QHBoxLayout;buttons->setSpacing(6);auto *previous=new IconButton(PlayerIcon::Previous,"이전 챕터 · Ctrl+←");auto *back=new IconButton(PlayerIcon::Rewind,"10초 뒤로 · J");
-    auto *play=new IconButton(PlayerIcon::Play,"재생 / 일시정지 · K");play_=play;play->setObjectName("playButton");play->setFixedSize(38,38);
+    auto *play=new IconButton(PlayerIcon::Play,"재생 · K / Space");play_=play;play->setObjectName("playButton");play->setFixedSize(38,38);
     auto *forward=new IconButton(PlayerIcon::Forward,"10초 앞으로 · L");auto *next=new IconButton(PlayerIcon::Next,"다음 챕터 · Ctrl+→");
     for(auto *control:{previous,back,play,forward,next})buttons->addWidget(control);
     clock_=label("00:00 / 00:00","muted");clock_->setObjectName("playbackClock");clock_->setMinimumWidth(115);buttons->addSpacing(5);buttons->addWidget(clock_);buttons->addStretch();

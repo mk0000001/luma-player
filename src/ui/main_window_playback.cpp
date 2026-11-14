@@ -88,7 +88,14 @@ void MainWindow::bindEngine(PlaybackEngine *engine){
             QTimer::singleShot(0,this,[this,generation]{if(lanRemotePlayback_ && generation==sourceGeneration_)stopLanReceiver("PC에서 받은 미디어를 재생할 수 없습니다.");});
             return;
         }
-        appendLog(message);if(engine==active_){requestedPlaying_.reset();releaseCaptionBuffer(false);status_->setText(message);status_->setProperty("error",true);}
+        appendLog(message);
+        if(engine==active_){
+            requestedPlaying_.reset();
+            releaseCaptionBuffer(false);
+            updatePlaybackButton();
+            status_->setText(message);
+            status_->setProperty("error",true);
+        }
     });
     connect(engine,&PlaybackEngine::videoOutputLost,this,[this,engine](const QString &message){
         const QPointer<PlaybackEngine> target(engine);const auto generation=sourceGeneration_;
@@ -372,7 +379,7 @@ bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     const bool opened=remote ? active_->openLanMedia(remote->source,videoWindow)
         : disc && preparedDiscDurationMs>0 ? active_->openPreparedDisc(source_,videoWindow,preparedDiscDurationMs) : active_->open(source_,videoWindow);
     if(opened){active_->setVolume(volume_->value());active_->setRate(rate_->currentData().toDouble());active_->setSubtitlesVisible(captionsVisible_);if(!disc && (preparedOpen || liveCaptioningActive()))startCaptionHold(true);}
-    else{status_->setText(active_->lastError());welcome_->show();}
+    else{requestedPlaying_.reset();updatePlaybackButton();status_->setText(active_->lastError());welcome_->show();}
     surface->setVideoActive(opened);applyCapturePolicy();updateDisplayStatus();updateMotionSettings();
     updateLanPlaybackAvailability();
     if(opened)QTimer::singleShot(0,this,&MainWindow::warmTranslationForCaptions);
@@ -493,11 +500,9 @@ void MainWindow::refresh(){
     savePlaybackProgress();
     captions_->setPosition(state.positionMs);if(state.playing)++decodedSamples_;
     if(captureGuard_ && captureGuard_->enabled())captureStatus_->setText(captureGuard_->status());
-    const bool playing=wantsPlayback();static_cast<IconButton*>(play_)->setPlayerIcon(playing?PlayerIcon::Pause:PlayerIcon::Play);
+    updatePlaybackButton();
     pipButton_->setEnabled(pictureInPicture_ || (!state.failed && state.timelineReady));
-    const auto playHint=playing?QStringLiteral("일시정지 · K / Space"):state.ended?
-        QStringLiteral("처음부터 다시 재생 · K / Space"):QStringLiteral("재생 · K / Space");
-    play_->setAccessibleName(playHint);play_->setToolTip(playHint);clock_->setText(formatTime(state.positionMs)+" / "+formatTime(state.durationMs));
+    clock_->setText(formatTime(state.positionMs)+" / "+formatTime(state.durationMs));
     auto *timeline=static_cast<SeekSlider *>(seek_);
     const auto toSlider=[&state](qint64 ms) {
         return state.durationMs>0?int(std::clamp(ms,qint64(0),state.durationMs)*10000/state.durationMs):0;
@@ -575,6 +580,16 @@ void MainWindow::updateChapterDisplay(const PlaybackState &state){
     }
     clock_->setToolTip(currentTitle);
     static_cast<SeekSlider *>(seek_)->setChapterMarks(std::move(marks),activeMark);
+}
+
+void MainWindow::updatePlaybackButton(){
+    const bool playing=wantsPlayback();
+    const bool ended=active_ && active_->state().ended && !active_->state().failed;
+    static_cast<IconButton*>(play_)->setPlayerIcon(playing?PlayerIcon::Pause:PlayerIcon::Play);
+    const auto hint=playing?QStringLiteral("일시정지 · K / Space"):ended?
+        QStringLiteral("처음부터 다시 재생 · K / Space"):QStringLiteral("재생 · K / Space");
+    play_->setAccessibleName(hint);
+    play_->setToolTip(hint);
 }
 
 bool MainWindow::wantsPlayback()const{if(videoRecoveryExhausted_ || (active_ && active_->state().failed))return false;if(recoveryPlayback_)return *recoveryPlayback_;if(active_ && active_->state().ended && pendingSeek_<0)return false;return requestedPlaying_.value_or(bufferHolding_?bufferResume_:active_ && active_->state().playing);}
