@@ -93,32 +93,24 @@ func fileVariantDemuxer(mimeType string) string {
 }
 
 func variantArguments(cfg validatedConfig, profile string, start int64, convertPCM bool) []string {
-	return variantArgumentsForSeek(cfg, profile, start, convertPCM, true)
-}
-
-func variantArgumentsForSeek(cfg validatedConfig, profile string, start int64, convertPCM, chapterSeek bool) []string {
 	audioMap := "0:a:" + strconv.Itoa(max(0, cfg.AudioIndex))
 	if cfg.AudioTrackID != nil && *cfg.AudioTrackID >= 0 {
 		audioMap = "0:a:i:" + strconv.Itoa(*cfg.AudioTrackID)
 	} else if cfg.AudioIndex == -1 || cfg.SourceKind == "file" {
 		audioMap += "?"
 	}
-	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error"}
-	chapter := 1
-	if chapterSeek && cfg.SourceKind == "bluray" && start > 0 && len(cfg.ChaptersMS) > 1 && cfg.ChaptersMS[0] == 0 {
-		if index, found := slices.BinarySearch(cfg.ChaptersMS, start); found {
-			chapter = index + 1
-		}
+	args := []string{"-hide_banner", "-loglevel", "error"}
+	if cfg.SourceKind != "bluray" {
+		args = append(args, "-nostdin")
 	}
-	if start > 0 && chapter == 1 {
+	if start > 0 {
+		// Some Blu-ray inputs return chapter 1 after FFmpeg probes the transport
+		// stream, even though the protocol accepted its chapter number.
 		args = append(args, "-ss", fmt.Sprintf("%d.%03d", start/1000, start%1000))
 	}
 	if cfg.SourceKind == "bluray" {
 		playlist, _ := strconv.Atoi(cfg.Playlist)
 		args = append(args, "-protocol_whitelist", "bluray", "-playlist", strconv.Itoa(playlist))
-		if chapter > 1 {
-			args = append(args, "-chapter", strconv.Itoa(chapter))
-		}
 		args = append(args, "-i", "bluray:"+filepath.ToSlash(cfg.Source))
 	} else {
 		demuxer := fileVariantDemuxer(cfg.mimeType)

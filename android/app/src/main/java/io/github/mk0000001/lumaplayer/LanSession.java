@@ -21,6 +21,7 @@ final class LanSession {
     final String mimeType;
     final String sourceKind;
     final long durationMs;
+    final long startMs;
     final boolean seekable;
     final List<Subtitle> subtitles;
     final boolean restartable;
@@ -31,7 +32,7 @@ final class LanSession {
     final String videoRange;
     final RemotePlaybackOptions options;
 
-    private LanSession(String title, String mimeType, String sourceKind, long durationMs,
+    private LanSession(String title, String mimeType, String sourceKind, long durationMs, long startMs,
                        boolean seekable, List<Subtitle> subtitles, boolean restartable, boolean supportsCaptionOffset,
                        List<String> profiles, List<Long> chaptersMs, String videoRange,
                        RemotePlaybackOptions options, String mediaRevision, List<String> chapterTitles) {
@@ -40,6 +41,7 @@ final class LanSession {
         this.mimeType = mimeType;
         this.sourceKind = sourceKind;
         this.durationMs = durationMs;
+        this.startMs = startMs;
         this.seekable = seekable;
         this.subtitles = Collections.unmodifiableList(subtitles);
         this.restartable = restartable;
@@ -88,7 +90,15 @@ final class LanSession {
                 throw new JSONException("Invalid video range");
             }
             var chapters = parseChapters(session, durationMs);
-            return new LanSession(title, mimeType, sourceKind, durationMs, seekable,
+            Object startValue = session.opt("startMs");
+            if (startValue != null && !(startValue instanceof Integer) && !(startValue instanceof Long)) {
+                throw new JSONException("Invalid session start position");
+            }
+            long start = startValue == null ? 0 : ((Number) startValue).longValue();
+            if (start < 0 || (start > 0 && (!"bluray".equals(sourceKind) || !restartable || start >= durationMs))) {
+                throw new JSONException("Session start is outside the playable timeline");
+            }
+            return new LanSession(title, mimeType, sourceKind, durationMs, start, seekable,
                     parseSubtitles(session.getJSONArray("subtitles")), restartable, session.has("profiles"),
                     profiles, chapters, videoRange,
                     session.has("options") ? RemotePlaybackOptions.parse(session.getJSONObject("options")) : null,

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sync/atomic"
 	"time"
 )
@@ -36,11 +35,12 @@ func (s *mediaSession) serveDisc(w *responseWriter, ctx context.Context) {
 
 func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, profile string, start int64) {
 	args := variantArguments(s.config, profile, start, false)
-	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream)
+	optical := s.config.SourceKind == "bluray"
+	outcome := streamMatroska(ctx, w, s.config.FFmpeg, s.file, args, s.reportStream, optical)
 	pcm := outcome == remuxNeedsPCM && profile == originalProfile
-	if outcome != remuxStreamed && ctx.Err() == nil && (pcm || (outcome == remuxFailed && slices.Contains(args, "-chapter"))) {
+	if pcm && ctx.Err() == nil {
 		outcome = streamMatroska(ctx, w, s.config.FFmpeg, s.file,
-			variantArgumentsForSeek(s.config, profile, start, pcm, pcm), s.reportStream)
+			variantArguments(s.config, profile, start, true), s.reportStream, optical)
 	}
 	if outcome != remuxStreamed && ctx.Err() == nil {
 		if s.reportStream != nil {
@@ -54,7 +54,7 @@ func (s *mediaSession) serveProgressive(w *responseWriter, ctx context.Context, 
 	}
 }
 
-func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string, report func(string)) remuxOutcome {
+func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, input *os.File, args []string, report func(string), optical bool) remuxOutcome {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var timedOut atomic.Bool
@@ -81,7 +81,31 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 		return remuxFailed
 	}
 	defer stdout.Close()
-	stopPipeClose := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	processDone := make(chan struct{})
+	defer close(processDone)
+	var stopPipeClose func() bool
+	if optical {
+		stdin, err := command.StdinPipe()
+		if err != nil {
+			return remuxFailed
+		}
+		defer stdin.Close()
+		command.Cancel = func() error {
+			// Let FFmpeg unwind its optical reads before WaitDelay can kill it.
+			_, err := io.WriteString(stdin, "q\n")
+			if errors.Is(err, os.ErrClosed) {
+				return os.ErrProcessDone
+			}
+			return err
+		}
+		stopPipeClose = context.AfterFunc(ctx, func() {
+			timer := time.AfterFunc(command.WaitDelay, func() { _ = stdout.Close() })
+			defer timer.Stop()
+			<-processDone
+		})
+	} else {
+		stopPipeClose = context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	}
 	defer stopPipeClose()
 	var diagnostics ffmpegDiagnostics
 	command.Stderr = &diagnostics
@@ -113,15 +137,20 @@ func streamMatroska(parent context.Context, w *responseWriter, ffmpeg string, in
 		err = w.controller.Flush()
 	}
 	if err == nil {
-		_, err = io.Copy(w, &idleMediaReader{source: stdout, onIdle: func() {
+		copyInput := &idleMediaReader{source: stdout, onIdle: func() {
 			cancel()
 			if report != nil && parent.Err() == nil {
 				report("stream-read-timeout")
 			}
-		}})
+		}}
+		_, err = io.Copy(w, copyInput)
 	}
 	if err != nil {
 		cancel()
+		if optical {
+			// Discard remaining output so FFmpeg can finish its normal shutdown.
+			_, _ = io.Copy(io.Discard, stdout)
+		}
 	}
 	exitTimer := time.AfterFunc(3*time.Second, cancel)
 	defer exitTimer.Stop()

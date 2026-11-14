@@ -45,6 +45,7 @@ type config struct {
 	AudioMode     string           `json:"audioMode"`
 	FFmpeg        string           `json:"ffmpeg"`
 	DurationMS    int64            `json:"durationMs"`
+	StartMS       int64            `json:"startMs,omitempty"`
 	ChaptersMS    []int64          `json:"chaptersMs,omitempty"`
 	ChapterTitles []string         `json:"chapterTitles,omitempty"`
 	VideoRange    string           `json:"videoRange,omitempty"`
@@ -153,6 +154,10 @@ func (cfg config) validate() (validatedConfig, error) {
 	}
 
 	var mimeType string
+	if cfg.StartMS < 0 || (cfg.StartMS > 0 && (cfg.SourceKind != "bluray" ||
+		cfg.StartMS >= cfg.DurationMS || cfg.DurationMS >= maxRestartableDurationMS)) {
+		return validatedConfig{}, errInvalidConfig
+	}
 	switch cfg.SourceKind {
 	case "file":
 		mimeType = fileMediaType(filepath.Ext(cfg.Source))

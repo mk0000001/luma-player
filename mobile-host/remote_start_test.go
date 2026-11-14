@@ -1,12 +1,63 @@
 package main
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestDiscMenuPreviewRequiresCurrentGrantAndExpires(t *testing.T) {
+	var events []playerStatus
+	p := newPlayer("Fixture", "", nil, nil, func(event playerStatus) { events = append(events, event) })
+	now := time.Now()
+	p.now = func() time.Time { return now }
+	peer := netip.MustParseAddr("192.168.4.2")
+	token, err := pairRandom(16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.activateDevice("fixture", "Tablet", peer, token)
+	check := func(address, bearer string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodGet, discMenuPath, nil)
+		request.RemoteAddr = address + ":50000"
+		request.Header.Set("Authorization", "Bearer "+bearer)
+		response := httptest.NewRecorder()
+		p.serveHTTP(response, request)
+		if response.Code != status {
+			t.Fatalf("got %d, want %d", response.Code, status)
+		}
+		return response
+	}
+	check(peer.String(), token, http.StatusForbidden)
+	const grant = "0123456789abcdef0123456789abcdef"
+	p.handleCommand(config{}, playerCommand{Command: "allowRemoteControl", Grant: grant})
+	check("192.168.4.3", token, http.StatusUnauthorized)
+	check(peer.String(), token, http.StatusNoContent)
+	check(peer.String(), token, http.StatusNoContent)
+	if len(events) != 1 || events[0].Status != "discMenuFrameRequested" || events[0].ID != grant {
+		t.Fatalf("unexpected requests: %+v", events)
+	}
+	var frame bytes.Buffer
+	if err := png.Encode(&frame, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	p.handleCommand(config{}, playerCommand{Command: "discMenuFrame", Grant: grant, Frame: frame.Bytes()})
+	response := check(peer.String(), token, http.StatusOK)
+	if !bytes.Equal(response.Body.Bytes(), frame.Bytes()) || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("unexpected menu response")
+	}
+	now = now.Add(3 * time.Second)
+	check(peer.String(), token, http.StatusNoContent)
+	p.handleCommand(config{}, playerCommand{Command: "allowRemoteControl"})
+	check(peer.String(), token, http.StatusForbidden)
+}
 
 func TestRemoteStartRequiresPairingAndHostPermission(t *testing.T) {
 	var requested int

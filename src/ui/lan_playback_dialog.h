@@ -33,6 +33,7 @@ struct LanPlaybackMedia {
     QVector<qint64> chaptersMs;
     QStringList chapterTitles;
     qint64 durationMs = 0;
+    qint64 startMs = 0;
     int audioIndex = -1, audioTrackId = -1;
     bool disc = false;
 };
@@ -61,6 +62,7 @@ public:
     QString readyEndpoint() const { return ready_ ? endpoint_ : QString{}; }
     void setMediaAvailable(bool available, bool disc);
     bool canShare() const;
+    bool remoteControlEnabled() const { return !remoteControlGrant_.isEmpty(); }
     bool isSharing() const { return sharing_; }
     bool isPreparingDiscShare() const { return mediaState_ == MediaState::Preparing; }
     void prepareDiscShare();
@@ -70,10 +72,12 @@ public:
     bool releaseMediaForRemoteControl();
     void disarmRemoteStart();
     QString remoteFilePath(const QString &id) const;
+    void sendDiscMenuFrame(const QByteArray &png);
 
 signals:
     void shareRequested();
     void remoteControlRequested(const QString &action,const QString &fileId);
+    void discMenuFrameRequested();
     void streamDiagnostic(const QString &reason,const QString &message);
     void receiveRequested();
     void shareStopped(bool cleanupConfirmed);

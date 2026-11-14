@@ -48,12 +48,24 @@ VideoSurface::VideoSurface(QWidget *parent):QWidget(parent){
     video_->setFocusPolicy(Qt::StrongFocus);video_->setMouseTracking(true);video_->setAutoFillBackground(true);video_->setAcceptDrops(true);
     QPalette black=video_->palette();black.setColor(QPalette::Window,Qt::black);video_->setPalette(black);
     video_->setStyleSheet("#nativeVideoWindow{background:#000000;}");
+    menuPreviewIdle_.setSingleShot(true);
+    menuPreviewIdle_.setInterval(1800);
+    connect(&menuPreviewIdle_, &QTimer::timeout, this, [this] { menuPreview_.reset(); });
     qApp->installEventFilter(this);queueSync();
 }
 VideoSurface::~VideoSurface(){delete video_.data();}
 WId VideoSurface::videoWindowId(){syncWindow();return video_?video_->winId():0;}
 QWidget *VideoSurface::videoWindow()const{return video_.data();}
-void VideoSurface::setVideoActive(bool active){active_=active;syncWindow();}
+void VideoSurface::setVideoActive(bool active){
+    active_=active;
+    if (!active) menuPreview_.reset();
+    syncWindow();
+}
+QImage VideoSurface::remoteDiscMenuFrame() {
+    if (!video_ || !video_->isVisible()) return {};
+    menuPreviewIdle_.start();
+    return menuPreview_.latestFrame(video_->winId());
+}
 void VideoSurface::queueSync(){
     if(syncPending_)return;syncPending_=true;QTimer::singleShot(0,this,[this]{syncPending_=false;syncWindow();});
 }

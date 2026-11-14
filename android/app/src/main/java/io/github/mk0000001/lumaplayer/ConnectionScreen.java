@@ -69,6 +69,9 @@ final class ConnectionScreen {
     private int mediaRequestGeneration;
     private boolean controlInFlight;
     private LanClient waitingClient;
+    private LanClient menuClient;
+    private ScheduledFuture<?> menuRequest;
+    private int menuGeneration;
 
     private boolean foreground;
     private boolean playing;
@@ -140,6 +143,7 @@ final class ConnectionScreen {
 
     void stop() {
         foreground = false;
+        stopMenuPreview();
         controller.reset();
         stopDiscovery();
         closeVpnSearch();
@@ -162,6 +166,7 @@ final class ConnectionScreen {
     }
 
     void close() {
+        stopMenuPreview();
         if (waitingClient != null) {
             waitingClient.close();
             waitingClient = null;
@@ -184,7 +189,7 @@ final class ConnectionScreen {
     }
 
     boolean handleBack() {
-        if (controller.dismissOverlay()) return true;
+        if (closePcControls()) return true;
         if (pairScreen.getVisibility() != View.VISIBLE) {
             return false;
         }
@@ -193,6 +198,7 @@ final class ConnectionScreen {
     }
 
     void showHome(int message, boolean error) {
+        stopMenuPreview();
         controller.reset();
         if (waitingClient != null) {
             waitingClient.close();
@@ -220,6 +226,7 @@ final class ConnectionScreen {
     }
 
     void hideForPlayback(LanClient media) {
+        stopMenuPreview();
         playing = true;
         waitingClient = null;
         if (attempt != null) {
@@ -235,6 +242,7 @@ final class ConnectionScreen {
     }
 
     void returnToControls(LanClient media) {
+        stopMenuPreview();
         controller.reset();
         playing = false;
         waitingClient = media;
@@ -255,6 +263,7 @@ final class ConnectionScreen {
         }));
         setStatus(pairStatus, R.string.pair_wait_media, false);
         controller.openOverlay(action -> sendPcAction(media, action));
+        startMenuPreview(media);
         checkWaitingClient(media, 0);
     }
 
@@ -794,6 +803,44 @@ final class ConnectionScreen {
 
     void showPcControls(LanClient media) {
         controller.toggle(action -> sendPcAction(media, action));
+        if (!playing && controller.isOverlayVisible()) startMenuPreview(media);
+        else stopMenuPreview();
+    }
+
+    private void startMenuPreview(LanClient media) {
+        stopMenuPreview();
+        if (!activity.hasSecureDisplay()) return;
+        menuClient = media;
+        pollMenuPreview(media, menuGeneration, 0);
+    }
+
+    private void pollMenuPreview(LanClient media, int generation, long delayMs) {
+        menuRequest = network.schedule(() -> {
+            android.graphics.Bitmap frame;
+            try {
+                frame = DiscMenuView.decode(media.discMenuFrame());
+            } catch (IOException e) {
+                frame = null;
+            }
+            var result = frame;
+            activity.runOnUiThread(() -> {
+                if (menuClient != media || generation != menuGeneration || !foreground || playing ||
+                        !controller.isOverlayVisible() || !activity.hasSecureDisplay()) {
+                    if (generation == menuGeneration) stopMenuPreview();
+                    return;
+                }
+                controller.updateMenu(result);
+                pollMenuPreview(media, generation, 650);
+            });
+        }, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void stopMenuPreview() {
+        ++menuGeneration;
+        menuClient = null;
+        if (menuRequest != null) menuRequest.cancel(false);
+        menuRequest = null;
+        controller.updateMenu(null);
     }
 
     private void sendPcAction(LanClient media, String action) {
@@ -859,7 +906,9 @@ final class ConnectionScreen {
     }
 
     boolean closePcControls() {
-        return controller.dismissOverlay();
+        if (!controller.dismissOverlay()) return false;
+        stopMenuPreview();
+        return true;
     }
 
     void updatePcControllerLayout(boolean videoOnly, boolean pip) {

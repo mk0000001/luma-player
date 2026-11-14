@@ -361,7 +361,7 @@ public final class MainActivity extends Activity {
         applyVideoAspect();
         playerView.showController();
         navigation.setVisible(true);
-        loadStream(0, navigation.selectedProfile(), true);
+        loadStream(session.startMs, navigation.selectedProfile(), true);
         scheduleSessionCheck(attempt, 0);
     }
 
@@ -655,7 +655,7 @@ public final class MainActivity extends Activity {
     }
 
     @SuppressWarnings("deprecation")
-    private boolean hasSecureDisplay() {
+    boolean hasSecureDisplay() {
         Display display = Build.VERSION.SDK_INT >= 30 ? getDisplay() : getWindowManager().getDefaultDisplay();
         return display != null && (display.getFlags() & Display.FLAG_SECURE) != 0;
     }

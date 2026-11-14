@@ -14,19 +14,25 @@ import (
 	"time"
 )
 
-func TestBlurayExactChapterUsesDiscIndex(t *testing.T) {
-	cfg := validatedConfig{config: config{SourceKind: "bluray", Playlist: "00001", ChaptersMS: []int64{0, 1500, 3000}}}
-	chapter := variantArguments(cfg, originalProfile, 3000, false)
-	index := slices.Index(chapter, "-chapter")
-	if index < 0 || chapter[index+1] != "3" || slices.Contains(chapter, "-ss") {
-		t.Fatalf("expected direct chapter 3: %v", chapter)
+func TestBlurayChapterStreamsFirstFrameAtRequestedPosition(t *testing.T) {
+	fixture := os.Getenv("LUMA_TEST_BLURAY_FIXTURE")
+	if fixture == "" {
+		t.Skip("set LUMA_TEST_BLURAY_FIXTURE to a synthetic red, green, blue Blu-ray folder")
 	}
-	for _, args := range [][]string{
-		variantArguments(cfg, originalProfile, 3001, false),
-		variantArgumentsForSeek(cfg, originalProfile, 3000, false, false),
-	} {
-		if slices.Contains(args, "-chapter") || !slices.Contains(args, "-ss") {
-			t.Fatalf("expected timestamp seek: %v", args)
+	ffmpeg := variantTestFFmpeg(t)
+	cfg := validatedConfig{config: config{Source: fixture, SourceKind: "bluray", Playlist: "00000",
+		AudioMode: "compatible", ChaptersMS: []int64{0, 64000, 128000}}}
+	for _, tc := range []struct {
+		start    int64
+		dominant int
+	}{{0, 0}, {64000, 1}, {128000, 2}} {
+		args := variantArguments(cfg, originalProfile, tc.start, false)
+		args = append(args[:len(args)-1], "-t", "0.75", args[len(args)-1])
+		stream := runFixtureFFmpeg(t, ffmpeg, nil, args...)
+		pixel := runFixtureFFmpeg(t, ffmpeg, bytes.NewReader(stream), "-i", "pipe:0",
+			"-frames:v", "1", "-vf", "scale=2:2,format=rgb24", "-f", "rawvideo", "pipe:1")
+		if len(pixel) != 12 || pixel[tc.dominant] < 100 || pixel[(tc.dominant+1)%3] > 12 || pixel[(tc.dominant+2)%3] > 12 {
+			t.Fatalf("start %d: got RGB %v, expected channel %d", tc.start, pixel, tc.dominant)
 		}
 	}
 }

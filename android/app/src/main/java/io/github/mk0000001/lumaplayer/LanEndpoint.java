@@ -13,6 +13,7 @@ final class LanEndpoint {
     static final String PLAYBACK_START_PATH = "/v1/playback/start";
     static final String PLAYER_CONTROL_PATH = "/v1/player/control";
     static final String PLAYER_FILES_PATH = "/v1/player/files";
+    static final String DISC_MENU_PATH = "/v1/player/disc-menu.png";
     static final String IDENTITY_PATH = "/v1/pair/identity";
     static final String PAIR_START_PATH = "/v1/pair/start";
     static final String PAIR_REVEAL_PATH = "/v1/pair/reveal";
@@ -129,7 +130,7 @@ final class LanEndpoint {
     }
 
     private static boolean permitsPath(String path) {
-        return isMediaPath(path) || PLAYER_FILES_PATH.equals(path) || PLAYER_CONTROL_PATH.equals(path) || PLAYBACK_START_PATH.equals(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
+        return isMediaPath(path) || PLAYER_FILES_PATH.equals(path) || PLAYER_CONTROL_PATH.equals(path) || DISC_MENU_PATH.equals(path) || PLAYBACK_START_PATH.equals(path) || IDENTITY_PATH.equals(path) || PAIR_START_PATH.equals(path)
                 || PAIR_REVEAL_PATH.equals(path) || PAIR_POLL_PATH.equals(path) || PAIR_LOGIN_PATH.equals(path);
     }
 

@@ -25,6 +25,7 @@ type sessionMetadata struct {
 	MIMEType      string             `json:"mimeType"`
 	SourceKind    string             `json:"sourceKind"`
 	DurationMS    int64              `json:"durationMs"`
+	StartMS       int64              `json:"startMs,omitempty"`
 	Seekable      bool               `json:"seekable"`
 	Restartable   bool               `json:"restartable"`
 	Profiles      []string           `json:"profiles"`
@@ -60,7 +61,7 @@ func newSession(cfg validatedConfig, token string) (*mediaSession, error) {
 		subtitleTransforms: make(chan struct{}, 4),
 		meta: sessionMetadata{
 			Version: protocolVersion, Title: cfg.Title, MIMEType: cfg.mimeType,
-			SourceKind: cfg.SourceKind, DurationMS: cfg.DurationMS, Seekable: cfg.SourceKind == "file",
+			SourceKind: cfg.SourceKind, DurationMS: cfg.DurationMS, StartMS: cfg.StartMS, Seekable: cfg.SourceKind == "file",
 			Profiles: []string{originalProfile}, ChaptersMS: append([]int64{}, cfg.ChaptersMS...), VideoRange: cfg.VideoRange,
 			ChapterTitles: cfg.ChapterTitles,
 			Subtitles:     make([]subtitleMetadata, 0, len(cfg.Subtitles)),

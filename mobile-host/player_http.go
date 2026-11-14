@@ -17,6 +17,12 @@ const maxPairBody = 1024
 const remoteStartPath = "/v1/playback/start"
 const remoteControlPath = "/v1/player/control"
 const remoteFilesPath = "/v1/player/files"
+const discMenuPath = "/v1/player/disc-menu.png"
+const maxDiscMenuFrame = 512 * 1024
+
+func isPNG(frame []byte) bool {
+	return bytes.HasPrefix(frame, []byte("\x89PNG\r\n\x1a\n"))
+}
 
 func validRemoteFileID(id string) bool {
 	return len(id) == 32 && strings.Trim(id, "0123456789abcdef") == ""
@@ -42,6 +48,8 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 		p.serveRemoteControl(w, r, peer)
 	case remoteFilesPath:
 		p.serveRemoteFiles(w, r, peer)
+	case discMenuPath:
+		p.serveDiscMenu(w, r, peer)
 	case pairIdentityPath:
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, "GET")
@@ -60,6 +68,50 @@ func (p *player) serveHTTP(original http.ResponseWriter, r *http.Request) {
 		p.servePairing(w, r, peer)
 	default:
 		p.servePlayerMedia(w, r, peer)
+	}
+}
+
+func (p *player) serveDiscMenu(w *responseWriter, r *http.Request, peer netip.Addr) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, "GET")
+		return
+	}
+	if rejectRequestBody(w, r) {
+		return
+	}
+	p.mu.Lock()
+	now := p.now()
+	device := p.authorizeLocked(peer, requestBearer(r), false, now)
+	_, allowed := p.controlDevices[device]
+	grant := p.remoteControl
+	var frame []byte
+	var refresh bool
+	if device != nil && allowed && grant != "" && p.media == nil {
+		if now.Sub(p.menuFrameAt) < 2*time.Second {
+			frame = p.menuFrame
+		}
+		if now.Sub(p.menuRequestAt) >= 600*time.Millisecond {
+			p.menuRequestAt = now
+			refresh = true
+		}
+	}
+	p.mu.Unlock()
+	if refresh {
+		p.announce(playerStatus{Status: "discMenuFrameRequested", ID: grant})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	switch {
+	case device == nil:
+		unauthorized(w)
+	case !allowed || grant == "":
+		http.Error(w, "remote control is disabled", http.StatusForbidden)
+	case len(frame) == 0:
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Length", strconv.Itoa(len(frame)))
+		// This bounded response uses the HTTP server's own write deadline.
+		_, _ = w.ResponseWriter.Write(frame)
 	}
 }
 

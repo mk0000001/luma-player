@@ -55,6 +55,25 @@ private slots:
         QVERIFY(video->window()!=host.window());QVERIFY(!host.windowFlags().testFlag(Qt::Tool));
     }
 #ifdef Q_OS_WIN
+    void menuPreviewReadsOnlyTheVideoWindow(){
+        if (QGuiApplication::platformName()!="windows" || !qEnvironmentVariableIsSet("LUMA_TEST_MENU_PREVIEW"))
+            QSKIP("Requires interactive Windows Graphics Capture");
+        QWidget video;
+        video.setStyleSheet("background: rgb(25, 72, 197)");
+        video.resize(480,270);
+        video.show();
+        QTRY_VERIFY(video.isVisible());
+        luma::DiscMenuPreview capture;
+        QImage frame;
+        const auto receivedBlue=[&]{
+            frame=capture.latestFrame(video.winId());
+            return !frame.isNull() && frame.pixelColor(frame.width()/2,frame.height()/2).blue()>150;
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(receivedBlue(),3500);
+        QVERIFY(SetWindowDisplayAffinity(reinterpret_cast<HWND>(video.winId()),0x11));
+        QVERIFY(capture.latestFrame(video.winId()).isNull());
+    }
+
     void performanceOverlayStaysAboveTheNativeVideo(){
         if(QGuiApplication::platformName()!="windows")QSKIP("Requires native Windows window stacking");
         QWidget host;

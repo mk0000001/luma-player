@@ -49,6 +49,7 @@ type playerCommand struct {
 	Options  *deviceOptions `json:"options"`
 	Grant    string         `json:"grant"`
 	Files    []remoteFile   `json:"files"`
+	Frame    []byte         `json:"frame"`
 }
 
 type remoteFile struct {
@@ -88,6 +89,9 @@ type player struct {
 	controlDevices  map[*activeDevice]struct{}
 	lastControl     time.Time
 	remoteFiles     []remoteFile
+	menuFrame       []byte
+	menuFrameAt     time.Time
+	menuRequestAt   time.Time
 }
 
 func newPlayer(name, pin string, remembered map[string]rememberedDevice,
@@ -203,6 +207,14 @@ func readPlayerCommands(ctx context.Context, input *bufio.Reader, lines chan<- c
 func (p *player) handleCommand(binding config, command playerCommand) {
 	var err error
 	switch command.Command {
+	case "discMenuFrame":
+		p.mu.Lock()
+		if command.Grant == p.remoteControl && p.remoteControl != "" &&
+			len(command.Frame) <= maxDiscMenuFrame && (len(command.Frame) == 0 || isPNG(command.Frame)) {
+			p.menuFrame = command.Frame
+			p.menuFrameAt = p.now()
+		}
+		p.mu.Unlock()
 	case "setRemoteFiles":
 		files := make([]remoteFile, 0, min(32, len(command.Files)))
 		for _, file := range command.Files {
@@ -224,6 +236,8 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		if command.Command == "allowRemoteControl" {
 			p.remoteControl = command.Grant
 			p.lastControl = time.Time{}
+			p.menuFrame = nil
+			p.menuRequestAt = time.Time{}
 			clear(p.controlDevices)
 			if command.Grant != "" {
 				p.expireDevices(p.now())
@@ -238,6 +252,9 @@ func (p *player) handleCommand(binding config, command playerCommand) {
 		}
 		p.mu.Unlock()
 	case "share":
+		p.mu.Lock()
+		p.menuFrame = nil
+		p.mu.Unlock()
 		err = p.shareMedia(binding, command.Media)
 		if err == nil {
 			p.announce(playerStatus{Status: "sharing", Title: command.Media.Title})
@@ -327,6 +344,7 @@ func (p *player) revokeAndStop(command string) error {
 	defer p.mu.Unlock()
 	p.remoteStart = ""
 	p.remoteControl = ""
+	p.menuFrame = nil
 	clear(p.controlDevices)
 	if command == "forget" {
 		empty := make(map[string]rememberedDevice)

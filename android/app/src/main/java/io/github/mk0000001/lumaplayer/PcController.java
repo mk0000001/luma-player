@@ -23,6 +23,8 @@ final class PcController {
     private final LinearLayout panel;
     private final ScrollView scroll;
     private final Button playPause;
+    private final DiscMenuView menu;
+    private final LinearLayout menuControls;
     private Consumer<String> send;
     private boolean inline = true;
     private boolean overlay;
@@ -52,6 +54,17 @@ final class PcController {
         Button close = button("×", activity.getString(R.string.pc_controls_close), this::hide);
         header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(46)));
         panel.addView(header);
+
+        menu = new DiscMenuView(activity);
+        menu.setVisibility(View.GONE);
+        panel.addView(menu, new LinearLayout.LayoutParams(-1, dp(155)));
+        menuControls = new LinearLayout(activity);
+        menuControls.setOrientation(LinearLayout.VERTICAL);
+        menuControls.setVisibility(View.GONE);
+        addRow(menuControls, command("↑", "위", "disc-up"), command("↓", "아래", "disc-down"),
+                command("←", "왼쪽", "disc-left"), command("→", "오른쪽", "disc-right"));
+        addRow(menuControls, command("확인", "선택한 메뉴 실행", "disc-confirm"));
+        panel.addView(menuControls);
 
         scroll = new ScrollView(activity);
         scroll.setFillViewport(false);
@@ -114,12 +127,14 @@ final class PcController {
         send = null;
         inline = true;
         overlay = false;
+        updateMenu(null);
         position();
     }
 
     boolean dismissOverlay() {
         if (!overlay) return false;
         overlay = false;
+        updateMenu(null);
         position();
         return true;
     }
@@ -132,6 +147,16 @@ final class PcController {
 
     void setPlaying(boolean playing) {
         playPause.setText(playing ? R.string.status_pause_action : R.string.status_play_action);
+    }
+
+    boolean isOverlayVisible() {
+        return overlay && panel.isShown();
+    }
+
+    void updateMenu(android.graphics.Bitmap image) {
+        menu.update(image);
+        menu.setVisibility(image == null ? View.GONE : View.VISIBLE);
+        menuControls.setVisibility(menu.getVisibility());
     }
 
     private void hide() {
@@ -186,6 +211,11 @@ final class PcController {
         FrameLayout.LayoutParams bounds = (FrameLayout.LayoutParams) panel.getLayoutParams();
         int width = Math.min(dp(300), Math.max(dp(160), availableWidth - dp(24)));
         int height = Math.min(dp(470), Math.max(dp(100), available));
+        int menuHeight = Math.max(dp(60), Math.min(dp(155), height - dp(172)));
+        if (menu.getLayoutParams().height != menuHeight) {
+            menu.getLayoutParams().height = menuHeight;
+            menu.requestLayout();
+        }
         if (bounds.width == width && bounds.height == height && bounds.topMargin == top && bounds.getMarginEnd() == end) return;
         bounds.width = width;
         bounds.height = height;

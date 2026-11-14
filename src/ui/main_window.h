@@ -97,6 +97,8 @@ private:
     bool lanRemotePlayback_=false,lanRemoteSeekable_=false;
     bool lanReturnToDiscMenu_=false;
     bool pendingLanDiscOpen_=false;
+    QDeadlineTimer lanMenuSelectionDeadline_;
+    qint64 lanSelectedPositionMs_=0;
     QDeadlineTimer lanDiscPauseDeadline_;
     qint64 pendingSeek_=-1,seekRequestedAt_=0,nextAiAttemptMs_=0;
     int lastTitle_=-1,decodedSamples_=0,aiRetryCount_=0;

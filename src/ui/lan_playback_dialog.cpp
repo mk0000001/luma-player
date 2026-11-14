@@ -253,6 +253,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     });
     remoteControl_ = new QCheckBox("연결된 기기에서 PC 플레이어 조작 허용", this);
     remoteControl_->setObjectName("lanRemoteControl");
+    remoteControl_->setToolTip("페어링한 기기에서 PC를 조작합니다. Windows의 영상 캡처 제외가 적용된 메뉴는 표시할 수 없습니다.");
     layout->addWidget(remoteControl_);
     connect(remoteControl_, &QCheckBox::toggled, this, [this](bool enabled) {
         remoteControlGrant_ = enabled ? QUuid::createUuid().toString(QUuid::Id128) : QString{};
@@ -819,7 +820,7 @@ bool LanPlaybackDialog::shareMedia(const LanPlaybackMedia &media) {
         {"playlist", media.playlist}, {"audioIndex", media.audioIndex},
         {"audioTrackId", media.audioTrackId}, {"audioMode", audioMode_->currentData().toString()},
         {"ffmpeg", ffmpeg}, {"durationMs", media.durationMs}, {"title", media.title}, {"subtitles", subtitles},
-        {"videoRange", media.videoRange}
+        {"videoRange", media.videoRange}, {"startMs", media.startMs}
     };
     if (!chapters.isEmpty())
         configuration.insert("chaptersMs", chapters);
@@ -1024,6 +1025,14 @@ bool LanPlaybackDialog::writeMessage(const QJsonObject &message) {
     return host_.write(encoded) == encoded.size();
 }
 
+void LanPlaybackDialog::sendDiscMenuFrame(const QByteArray &png) {
+    if (ready_ && !remoteControlGrant_.isEmpty() && png.size() <= 512 * 1024 &&
+        host_.bytesToWrite() < 1024 * 1024) {
+        writeMessage(QJsonObject{{"command", "discMenuFrame"}, {"grant", remoteControlGrant_},
+            {"frame", QString::fromLatin1(png.toBase64())}});
+    }
+}
+
 void LanPlaybackDialog::readReply() {
     const auto incoming = host_.readAllStandardOutput();
     if (protocolFailed_)
@@ -1098,6 +1107,9 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         const auto found = descriptions.constFind(reason);
         if (found != descriptions.cend())
             emit streamDiagnostic(reason,"LAN 영상 요청 · "+found.value());
+    } else if (event == "discMenuFrameRequested") {
+        if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
+            emit discMenuFrameRequested();
     } else if (event == "remoteControl") {
         if (!remoteControlGrant_.isEmpty() && message.value("id").toString() == remoteControlGrant_ && hasActiveDevice_)
             emit remoteControlRequested(message.value("action").toString(),message.value("deviceId").toString());

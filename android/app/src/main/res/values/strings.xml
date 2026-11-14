@@ -37,6 +37,7 @@
     <string name="pc_controls">PC 플레이어 조작</string>
     <string name="pc_controls_short">PC 조작</string>
     <string name="pc_controls_close">PC 컨트롤러 닫기</string>
+    <string name="disc_menu_preview">Blu-ray 메인 메뉴 화면</string>
     <string name="pc_files_title">PC에서 재생할 파일</string>
     <string name="named_chapter_row">%1$s · %2$s</string>
     <string name="pc_files_empty">PC의 내부망 재생에서 ‘갤탭에서 고를 파일 지정’을 눌러 주세요.</string>

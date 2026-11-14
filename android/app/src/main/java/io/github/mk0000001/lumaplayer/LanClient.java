@@ -252,6 +252,24 @@ final class LanClient implements Closeable {
                 RequestBody.create("{\"action\":\"file-open\",\"fileId\":" + JSONObject.quote(id) + "}", JSON));
     }
 
+    byte[] discMenuFrame() throws IOException {
+        final long maxBytes = 512 * 1024;
+        Request request = new Request.Builder().url(url(LanEndpoint.DISC_MENU_PATH)).build();
+        Call call = metadataRequests.newCall(request);
+        call.timeout().timeout(2, TimeUnit.SECONDS);
+        try (Response response = call.execute()) {
+            if (response.code() == 204) return null;
+            if (response.code() != 200) throw new HttpException(response.code());
+            ResponseBody body = response.body();
+            MediaType type = body == null ? null : body.contentType();
+            if (type == null || !type.type().equals("image") || !type.subtype().equals("png")
+                    || body.contentLength() > maxBytes || body.source().request(maxBytes + 1)) {
+                throw new IOException("Invalid disc menu frame");
+            }
+            return body.source().readByteArray();
+        }
+    }
+
     private void sendPlayerCommand(String path, RequestBody body) throws IOException {
         Request request = new Request.Builder().url(url(path)).post(body).build();
         Call call = metadataRequests.newCall(request);
@@ -419,7 +437,7 @@ final class LanClient implements Closeable {
                         || LanEndpoint.PAIR_REVEAL_PATH.equals(path) || LanEndpoint.PAIR_POLL_PATH.equals(path));
                 case REMEMBERED -> "POST".equals(method) && LanEndpoint.PAIR_LOGIN_PATH.equals(path);
                 case PLAYBACK -> ("GET".equals(method) && (LanEndpoint.isMediaPath(path)
-                        || LanEndpoint.PLAYER_FILES_PATH.equals(path)))
+                        || LanEndpoint.PLAYER_FILES_PATH.equals(path) || LanEndpoint.DISC_MENU_PATH.equals(path)))
                         || ("POST".equals(method) && (LanEndpoint.PLAYBACK_START_PATH.equals(path)
                                 || LanEndpoint.PLAYER_CONTROL_PATH.equals(path)));
             };

@@ -5,6 +5,7 @@
 #include "video_surface.h"
 
 #include <QFileInfo>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QHash>
@@ -23,6 +24,16 @@ LanPlaybackDialog *MainWindow::lanPlaybackDialog() {
         lanPlaybackDialog_ = new LanPlaybackDialog(this);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::shareRequested, this, &MainWindow::startLanShare);
         connect(lanPlaybackDialog_, &LanPlaybackDialog::remoteControlRequested, this, &MainWindow::applyLanRemoteControl);
+        connect(lanPlaybackDialog_, &LanPlaybackDialog::discMenuFrameRequested, this, [this] {
+            QByteArray png;
+            if (active_ && active_ == discEngine_.get() && !lanDiscSharing_ && active_->state().discMenus &&
+                active_->state().navigationTitle && active_->state().currentTitle >= 0 && !active_->state().failed) {
+                const auto frame = static_cast<VideoSurface *>(surface_)->remoteDiscMenuFrame();
+                QBuffer buffer(&png);
+                if (!frame.isNull() && buffer.open(QIODevice::WriteOnly)) frame.save(&buffer, "PNG", 65);
+            }
+            lanPlaybackDialog_->sendDiscMenuFrame(png);
+        });
         connect(lanPlaybackDialog_, &LanPlaybackDialog::streamDiagnostic, this, [this](const QString &reason,const QString &message) {
             appendLog(message);
             recordDeveloperEvent("lan-stream",reason.toLatin1().constData());
@@ -117,8 +128,11 @@ void MainWindow::applyLanRemoteControl(const QString &action,const QString &file
         {"disc-popup", DiscAction::Popup}, {"disc-up", DiscAction::Up}, {"disc-down", DiscAction::Down},
         {"disc-left", DiscAction::Left}, {"disc-right", DiscAction::Right}, {"disc-confirm", DiscAction::Activate}
     };
-    if (const auto found = navigation.constFind(action); found != navigation.cend())
+    if (const auto found = navigation.constFind(action); found != navigation.cend()) {
+        if (found.value() == DiscAction::Activate && active_->state().navigationTitle)
+            lanMenuSelectionDeadline_.setRemainingTime(15000);
         active_->navigate(discActionCode(found.value()));
+    }
 }
 
 void MainWindow::startLanDiscovery() {
@@ -208,6 +222,13 @@ void MainWindow::updateLanPlaybackAvailability() {
         shareSelectedLanFile_=false;
         startLanShare();
     }
+    if (!lanMenuSelectionDeadline_.hasExpired() && active_ == discEngine_.get() && lanPlaybackDialog_->canShare() &&
+        lanPlaybackDialog_->remoteControlEnabled()) {
+        lanMenuSelectionDeadline_ = {};
+        const auto &state = active_->state();
+        lanSelectedPositionMs_ = std::clamp(state.positionMs, qint64{0}, std::max(qint64{0}, state.durationMs - 250));
+        startLanShare();
+    }
     advanceLanDiscShare();
 }
 
@@ -254,6 +275,7 @@ bool MainWindow::sendLanMedia() {
     media.title = media.disc ? (discInfo_.label.isEmpty() ? QString("Blu-ray") : discInfo_.label) : QFileInfo(source_).fileName();
     media.source = media.disc ? discInfo_.root : QFileInfo(source_).canonicalFilePath();
     media.durationMs = std::max<qint64>(0, state.durationMs);
+    media.startMs = std::exchange(lanSelectedPositionMs_, 0);
     media.chaptersMs = state.chapterOffsetsMs;
     if(media.chaptersMs.size()==state.chapters.size()){
         for(const auto &chapter:state.chapters){
@@ -282,6 +304,7 @@ bool MainWindow::sendLanMedia() {
 }
 
 void MainWindow::finishLanShare(bool cleanupConfirmed) {
+    lanSelectedPositionMs_ = 0;
     const auto file=std::exchange(pendingLanFile_,QString{});
     const bool openDisc=std::exchange(pendingLanDiscOpen_,false);
     if(cleanupConfirmed && openDisc){
@@ -315,6 +338,8 @@ void MainWindow::finishLanShare(bool cleanupConfirmed) {
 }
 
 bool MainWindow::stopLanShareForSourceChange() {
+    lanMenuSelectionDeadline_ = {};
+    lanSelectedPositionMs_ = 0;
     if (!lanPlaybackDialog_)
         return true;
     lanPlaybackDialog_->disarmRemoteStart();
