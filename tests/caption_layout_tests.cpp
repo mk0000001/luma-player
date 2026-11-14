@@ -65,15 +65,21 @@ private slots:
         QCOMPARE(maxOpacity(renderOverlay(text,size,{{},100,0,60})),153);
     }
     void backgroundFitsEachLine(){
-        const QSize viewport(640,360);
-        const QString cue="A deliberately wider caption line\nShort";
+        const QSize viewport(960,360);
+        const QString cue="WWWWWWWWWWWW\nWW";
         const luma::CaptionStyle style{{},100,0,60};
-        const auto layout=luma::layoutCaption(cue,viewport,0,nullptr,style);
+        QImage image(viewport,QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        const auto layout=luma::layoutCaption(cue,viewport,0,&image,style);
+        QVERIFY(layout.text);
         QCOMPARE(layout.text->lineCount(),2);
+        QVERIFY(layout.text->lineAt(0).naturalTextWidth()>layout.text->lineAt(1).naturalTextWidth()+24);
         const int firstLineY=qRound(layout.origin.y()+layout.text->lineAt(0).naturalTextRect().center().y());
         const int secondLineY=qRound(layout.origin.y()+layout.text->lineAt(1).naturalTextRect().center().y());
         const int left=qCeil(layout.background.left())+12;
-        const auto image=renderOverlay(cue,viewport,style);
+        QPainter painter(&image);
+        luma::paintCaption(painter,layout,style);
+        painter.end();
         QCOMPARE(qAlpha(image.pixel(left,firstLineY)),153);
         QCOMPARE(qAlpha(image.pixel(left,secondLineY)),0);
         QCOMPARE(qAlpha(image.pixel(viewport.width()/2,secondLineY)),153);
