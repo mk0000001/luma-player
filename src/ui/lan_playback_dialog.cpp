@@ -49,6 +49,8 @@ namespace {
 constexpr int port = 48762;
 constexpr int startupWaitMs = 10000;
 constexpr int discoveryRefreshMs = 5000;
+constexpr auto discoveryAtStartupKey = "lan/discoveryAtStartup";
+constexpr auto controlAfterPairingKey = "lan/controlAfterPairing";
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
@@ -189,7 +191,15 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(22, 20, 22, 20);
     layout->setSpacing(12);
-    layout->addWidget(plainLabel("같은 네트워크의 Android 앱이나 다른 PC에서 이 PC를 선택하세요.", this));
+    layout->addWidget(plainLabel("기기 검색을 켜면 같은 네트워크에서 이 PC를 찾을 수 있습니다.", this));
+    auto *discoveryAtStartup = new QCheckBox("시작 시 기기 검색 켜기", this);
+    discoveryAtStartup->setObjectName("lanDiscoveryAtStartup");
+    discoveryAtStartup->setToolTip("다음 실행부터 이 PC가 검색되도록 기다립니다. 현재 검색은 아래 버튼에서 제어합니다.");
+    discoveryAtStartup->setChecked(discoveryAtStartupEnabled());
+    layout->addWidget(discoveryAtStartup);
+    connect(discoveryAtStartup, &QCheckBox::toggled, this, [](bool enabled) {
+        QSettings().setValue(discoveryAtStartupKey, enabled);
+    });
 
     interfaces_ = new ChoiceBox(this);
     interfaces_->setObjectName("lanPrivateInterface");
@@ -205,7 +215,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     address_ = plainLabel({}, this);
     address_->setObjectName("lanPlaybackAddress");
     layout->addWidget(address_);
-    status_ = plainLabel("기기 연결을 시작할 수 있습니다.", this);
+    status_ = plainLabel("기기 검색이 꺼져 있습니다.", this);
     status_->setObjectName("lanPlaybackStatus");
     layout->addWidget(status_);
 
@@ -221,6 +231,9 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     start_->setObjectName("lanStart");
     stop_ = new QPushButton("공유 중지", this);
     stop_->setObjectName("lanStop");
+    discoveryToggle_ = new QPushButton("기기 검색 켜기", this);
+    discoveryToggle_->setObjectName("lanToggleDiscovery");
+    shareButtons->addWidget(discoveryToggle_);
     shareButtons->addWidget(start_);
     shareButtons->addWidget(stop_);
     shareButtons->addStretch();
@@ -261,7 +274,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
         publishRemoteControl(enabled);
     });
     connect(remoteControl_, &QCheckBox::clicked, this, [](bool enabled) {
-        QSettings().setValue("lan/controlAfterPairing", enabled);
+        QSettings().setValue(controlAfterPairingKey, enabled);
     });
     auto *remoteFiles = new QPushButton("갤탭에서 고를 파일 지정", this);
     remoteFiles->setObjectName("lanChooseRemoteFiles");
@@ -382,6 +395,7 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     host_.setStandardErrorFile(QProcess::nullDevice());
     connect(start_, &QPushButton::clicked, this, &LanPlaybackDialog::shareRequested);
     connect(stop_, &QPushButton::clicked, this, &LanPlaybackDialog::stopSharing);
+    connect(discoveryToggle_, &QPushButton::clicked, this, &LanPlaybackDialog::toggleDiscovery);
     connect(receive, &QPushButton::clicked, this, &LanPlaybackDialog::receiveRequested);
     connect(disconnectDevice_, &QPushButton::clicked, this, [this] { manageDevice(false); });
     connect(forgetDevice_, &QPushButton::clicked, this, [this] { manageDevice(true); });
@@ -484,6 +498,10 @@ void LanPlaybackDialog::showEvent(QShowEvent *event) {
     deviceRefresh_.start();
 }
 
+bool LanPlaybackDialog::discoveryAtStartupEnabled() {
+    return QSettings().value(discoveryAtStartupKey, false).toBool();
+}
+
 void LanPlaybackDialog::hideEvent(QHideEvent *event) {
     deviceRefresh_.stop();
     QDialog::hideEvent(event);
@@ -528,10 +546,11 @@ void LanPlaybackDialog::startDiscovery() {
     if (!discoveryRefresh_.isActive())
         discoveryRefresh_.start();
     maintainDiscovery();
+    updateControls();
 }
 
 void LanPlaybackDialog::maintainDiscovery() {
-    if (shuttingDown_ || closingHost_ || forgetting_ || mediaState_ != MediaState::Idle || pairingDialog_)
+    if (!discoveryRefresh_.isActive() || shuttingDown_ || closingHost_ || forgetting_ || mediaState_ != MediaState::Idle || pairingDialog_)
         return;
 #ifdef Q_OS_WIN
     if (direct_)
@@ -640,6 +659,19 @@ void LanPlaybackDialog::restartDiscovery() {
     startDiscovery();
 }
 
+void LanPlaybackDialog::toggleDiscovery() {
+    if (!discoveryRefresh_.isActive()) {
+        restartDiscovery();
+        return;
+    }
+    discoveryRefresh_.stop();
+    const bool stopped = stopSharingAndWait();
+    closeHost();
+    if (stopped && host_.state() == QProcess::NotRunning)
+        status_->setText("기기 검색이 꺼져 있습니다.");
+    updateControls();
+}
+
 #ifdef Q_OS_WIN
 void LanPlaybackDialog::toggleDirect() {
     if (direct_) {
@@ -707,7 +739,10 @@ void LanPlaybackDialog::stopDirect(const QString &message) {
     directDetails_->setVisible(!message.isEmpty());
     closeHost();
     publisher.reset();
-    startDiscovery();
+    if (discoveryRefresh_.isActive())
+        maintainDiscovery();
+    else if (message.isEmpty())
+        status_->setText("기기 검색이 꺼져 있습니다.");
     updateControls();
 }
 #endif
@@ -1105,7 +1140,7 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         showPairRequest(message);
     } else if (event == "deviceConnected" && !forgetting_) {
         hasActiveDevice_ = true;
-        if (mediaState_ != MediaState::Stopping && QSettings().value("lan/controlAfterPairing", true).toBool()) {
+        if (mediaState_ != MediaState::Stopping && QSettings().value(controlAfterPairingKey, false).toBool()) {
             if (remoteControl_->isChecked())
                 publishRemoteControl(true);
             else
@@ -1241,7 +1276,7 @@ void LanPlaybackDialog::showPairRequest(const QJsonObject &message) {
     const auto name = message.value("device").toString().simplified().left(128);
     layout->addWidget(plainLabel(name.isEmpty() ? "Android 기기" : name, dialog));
     layout->addWidget(plainLabel("연결하려는 기기에 같은 번호가 보이면 승인하세요.", dialog));
-    if (QSettings().value("lan/controlAfterPairing", true).toBool())
+    if (QSettings().value(controlAfterPairingKey, false).toBool())
         layout->addWidget(plainLabel("승인한 기기에서 PC 플레이어를 조작할 수 있습니다.", dialog));
     auto *number = plainLabel(code, dialog);
     number->setObjectName("lanPairingCode");
@@ -1334,7 +1369,11 @@ void LanPlaybackDialog::updateControls() {
     directButton_->setText(direct ? "공유기 없는 연결 종료" : "공유기 없이 휴대폰 연결");
 #endif
     interfaces_->setEnabled(idle && !starting && !forgetting_ && !direct);
-    retry_->setEnabled(idle && !starting && !forgetting_ && !direct);
+    const bool discovering = discoveryRefresh_.isActive();
+    discoveryToggle_->setText(discovering ? "기기 검색 끄기" : "기기 검색 켜기");
+    discoveryToggle_->setEnabled(!shuttingDown_ && !closingHost_ && !forgetting_ && !direct &&
+                                 (discovering || (idle && !starting)));
+    retry_->setEnabled(discovering && idle && !starting && !forgetting_ && !direct);
     audioMode_->setEnabled(idle && !forgetting_);
     start_->setEnabled(canShare());
     remoteStart_->setEnabled(ready_ && mediaAvailable_ && !forgetting_ && mediaState_ == MediaState::Idle);

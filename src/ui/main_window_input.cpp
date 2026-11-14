@@ -176,8 +176,7 @@ bool MainWindow::nativeEvent(const QByteArray &eventType,void *message,qintptr *
         if(event->message==WM_DEVICECHANGE && (event->wParam==DBT_DEVICEARRIVAL || event->wParam==DBT_DEVICEREMOVECOMPLETE) && event->lParam){
             const auto *header=reinterpret_cast<const DEV_BROADCAST_HDR *>(event->lParam);
             if(header->dbch_size>=sizeof(DEV_BROADCAST_VOLUME) && header->dbch_devicetype==DBT_DEVTYP_VOLUME &&
-               (reinterpret_cast<const DEV_BROADCAST_VOLUME *>(header)->dbcv_flags & DBTF_MEDIA) &&
-               QSettings().value("disc/scanAutomatically",true).toBool())discMediaChanged();
+               (reinterpret_cast<const DEV_BROADCAST_VOLUME *>(header)->dbcv_flags & DBTF_MEDIA))discMediaChanged();
         }
     }
     if(eventType=="windows_generic_MSG" && static_cast<const MSG *>(message)->message==WM_DISPLAYCHANGE)

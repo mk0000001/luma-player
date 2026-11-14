@@ -82,6 +82,13 @@
                     android:text="@string/discovery_refresh" />
             </LinearLayout>
 
+            <CheckBox
+                android:id="@+id/auto_discovery"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
+                android:text="@string/discovery_automatic" />
+
             <TextView
                 android:id="@+id/discovery_status"
                 android:layout_width="match_parent"

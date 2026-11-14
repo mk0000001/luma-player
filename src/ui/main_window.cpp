@@ -20,7 +20,6 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QDateTime>
-#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QLabel>
@@ -34,7 +33,7 @@
 
 namespace luma {
 
-MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtitleCache_(QDir::tempPath()+"/luma-captions-XXXXXX"){
+MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this){
     setWindowTitle("LumaPlayer");resize(1440,900);setMinimumSize(1080,680);setAcceptDrops(true);setWindowIcon(playerApplicationIcon());
     buildUi();fullscreenControls_=new FullscreenControls(this,transport_,surface_);
     connect(static_cast<VideoSurface*>(surface_),&VideoSurface::urlsDropped,this,&MainWindow::openDroppedUrls);
@@ -145,7 +144,7 @@ MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this),subtit
         appendLog("번역 장치 확인: "+message);
     });
     QTimer::singleShot(0,this,[this]{
-        if(QSettings().value("disc/scanAutomatically",true).toBool())discoverDisc();
+        if(scanDiscAutomatically_ || qEnvironmentVariableIsSet("LUMA_DISABLE_HOST_STORAGE_PROBES"))discoverDisc();
         updateDisplayStatus();applyTheme();
         if(auto *window=windowHandle())connect(window,&QWindow::screenChanged,this,&MainWindow::updateDisplayStatus,Qt::QueuedConnection);
     });

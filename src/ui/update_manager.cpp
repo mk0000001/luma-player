@@ -222,7 +222,7 @@ bool verifySignature(const QByteArray &data, const QByteArray &signature, const 
 
 bool notificationsEnabled()
 {
-    return QSettings().value(notificationSetting, true).toBool();
+    return QSettings().value(notificationSetting, false).toBool();
 }
 
 HANDLE lockPath(const QString &path, bool directory)
@@ -1060,7 +1060,7 @@ void UpdateManager::addControls(QVBoxLayout *layout)
     if (!layout || state_->checkButton)
         return;
     auto *row = new QHBoxLayout;
-    auto *alerts = new QCheckBox(QStringLiteral("업데이트 알림 받기"));
+    auto *alerts = new QCheckBox(QStringLiteral("시작 시 업데이트 확인"));
     alerts->setObjectName(QStringLiteral("updateNotifications"));
     alerts->setChecked(notificationsEnabled());
     auto *check = new QPushButton(QStringLiteral("업데이트 확인"));

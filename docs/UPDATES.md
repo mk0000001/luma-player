@@ -2,7 +2,7 @@
 
 ## 한국어
 
-Windows LumaPlayer는 실행할 때 공식 GitHub 공개 릴리스를 확인합니다. 새 버전이 있으면 업데이트 창에서 설치 파일을 받을 위치를 선택할 수 있습니다. 설정의 **업데이트 확인**으로 언제든 다시 확인하고, **업데이트 알림 받기**를 해제해 실행 시 알림을 끌 수 있습니다. [공식 릴리스](https://github.com/mk0000001/luma-player/releases)
+Windows LumaPlayer의 설정에서 **업데이트 확인**을 누르면 공식 GitHub 공개 릴리스를 조회합니다. 실행할 때마다 확인하려면 **시작 시 업데이트 확인**을 켜세요. 새 버전이 있으면 업데이트 창에서 설치 파일을 받을 위치를 선택할 수 있습니다. [공식 릴리스](https://github.com/mk0000001/luma-player/releases)
 
 다운로드 위치로 여유 공간이 있는 로컬 드라이브를 선택하세요. 앱은 Windows 사용자와 시스템에만 접근 권한이 있는 폴더에 설치 파일을 저장하고 서명, 파일 크기, SHA-256을 확인합니다. **설치 시작**을 누르면 확인한 설치 프로그램을 열고 현재 플레이어를 종료합니다. 이미 설치된 버전도 비교하고, 선택한 설치본이 확인 이후 바뀌면 업데이트 설치가 중단됩니다. GitHub에 직접 접속할 수 없는 네트워크에서는 공식 릴리스에서 설치 파일을 받을 수 있습니다.
 
@@ -16,7 +16,7 @@ Windows LumaPlayer는 실행할 때 공식 GitHub 공개 릴리스를 확인합�
 
 ## English
 
-LumaPlayer for Windows checks the official GitHub releases at launch. When a new version is available, use the update prompt to choose where to download the installer. Use **업데이트 확인** in Settings to check manually and turn off **업데이트 알림 받기** to disable startup notifications. [Official releases](https://github.com/mk0000001/luma-player/releases)
+Select **업데이트 확인** in LumaPlayer's Windows settings to check the official GitHub releases. Turn on **시작 시 업데이트 확인** to check at launch. When a new version is available, use the update prompt to choose where to download the installer. [Official releases](https://github.com/mk0000001/luma-player/releases)
 
 Choose a local drive with enough free space for the download. The app stages the installer in a directory accessible to the Windows user and system, then verifies the signature, file size, and SHA-256. Select **설치 시작** to open the verified installer and close the player. The updater also checks the installed version and stops if the selected installation changes after verification. On networks without direct access to GitHub, use the official release downloads.
 

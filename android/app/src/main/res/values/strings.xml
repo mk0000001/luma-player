@@ -4,7 +4,9 @@
     <string name="connect_title">PC에 연결</string>
     <string name="connect_help">같은 네트워크의 PC를 선택하거나 VPN에 연결한 뒤 PC 주소를 입력하세요.</string>
     <string name="pc_list_title">PC 목록</string>
-    <string name="discovery_refresh">새로고침</string>
+    <string name="discovery_refresh">PC 검색</string>
+    <string name="discovery_automatic">PC 자동 검색</string>
+    <string name="discovery_manual">PC 검색을 누르거나 아래에 PC 주소를 입력하세요.</string>
     <string name="discovery_searching">PC를 찾는 중…</string>
     <string name="discovery_empty">응답한 PC가 없습니다. 아래에 PC 주소를 직접 입력할 수 있습니다.</string>
     <string name="vpn_discovery_action">VPN에서 PC 찾기</string>

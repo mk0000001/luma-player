@@ -105,6 +105,9 @@ private slots:
     void automaticStorageProbesStayDisabledInUiTests(){
         luma::MainWindow window;
         auto *label=window.findChild<QLabel*>("connectedDiscLabel");
+        auto *automaticScan=window.findChild<QCheckBox*>("automaticDiscScan");
+        QVERIFY(automaticScan);
+        QVERIFY(!automaticScan->isChecked());
         QVERIFY(label);
         QTRY_COMPARE(label->text(),QString("자동 디스크 검색 꺼짐"));
         QVERIFY(window.diagnostics().value("hostStorageProbesDisabled").toBool());
@@ -112,6 +115,8 @@ private slots:
     }
     void mobilePlaybackSettingsAllowNoOpenSource(){
         luma::MainWindow window;
+        window.startLanDiscoveryAtStartup();
+        QVERIFY(!window.findChild<QDialog*>("lanPlaybackDialog"));
         auto *share=window.findChild<QPushButton*>("openLanPlayback");
         QVERIFY(share);
         QVERIFY(share->isEnabled());
@@ -121,6 +126,16 @@ private slots:
         auto *start=dialog->findChild<QPushButton*>("lanStart");
         QVERIFY(start);
         QVERIFY(!start->isEnabled());
+        auto *discovery=dialog->findChild<QCheckBox*>("lanDiscoveryAtStartup");
+        auto *toggle=dialog->findChild<QPushButton*>("lanToggleDiscovery");
+        auto *status=dialog->findChild<QLabel*>("lanPlaybackStatus");
+        QVERIFY(discovery && toggle && status);
+        QVERIFY(!discovery->isChecked());
+        QVERIFY(toggle->isEnabled());
+        QCOMPARE(status->text(),QString("기기 검색이 꺼져 있습니다."));
+        discovery->click();
+        QVERIFY(luma::LanPlaybackDialog::discoveryAtStartupEnabled());
+        QCOMPARE(status->text(),QString("기기 검색이 꺼져 있습니다."));
         dialog->reject();
     }
     void mobilePlaybackOnlySelectsPrivateSubnetsAndEscapesCues(){
@@ -513,6 +528,8 @@ private slots:
         const auto token=approvalReply.value("token").toString().toLatin1();
         QCOMPARE(token.size(),22);
         QVERIFY(approvalReply.value("rememberToken").toString().isEmpty());
+        QVERIFY(!remoteControl->isChecked());
+        remoteControl->click();
         QVERIFY(remoteControl->isChecked());
         auto *menu=manager.get(request("/v1/player/disc-menu.png",token));
         QTRY_VERIFY_WITH_TIMEOUT(menu->isFinished(),12000);

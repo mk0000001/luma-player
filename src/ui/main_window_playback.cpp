@@ -262,7 +262,10 @@ void MainWindow::discoverDisc(){
     connect(worker,&QThread::finished,this,[this,request,revision,result]{
         if(discProbeClosing_)return;
         discProbeRunning_=false;
-        if(revision!=discProbeRevision_ || (discPlayPending_ && request!=discPlayRequest_)){discoverDisc();return;}
+        if(revision!=discProbeRevision_ || (discPlayPending_ && request!=discPlayRequest_)){
+            if(discPlayPending_ || scanDiscAutomatically_)discoverDisc();
+            return;
+        }
         const auto &disc=result->disc;
         discPath_=disc.root;
         if(disc.valid){
@@ -290,9 +293,13 @@ void MainWindow::discMediaChanged(){
     if(discProbeClosing_)return;
     ++discProbeRevision_;
     discPath_.clear();
-    discLabel_->setText(discPlayPending_?"디스크 준비 중…":"디스크 확인 중…");
     discDetails_->clear();
-    discoverDisc();
+    if(discPlayPending_ || scanDiscAutomatically_){
+        discLabel_->setText(discPlayPending_?"디스크 준비 중…":"디스크 확인 중…");
+        discoverDisc();
+    }else{
+        discLabel_->setText("Blu-ray 재생 또는 새로 확인을 눌러 주세요.");
+    }
 }
 
 void MainWindow::playConnectedDisc(){

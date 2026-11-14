@@ -13,7 +13,6 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QProcess>
-#include <QProcessEnvironment>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSettings>
@@ -26,7 +25,6 @@
 namespace luma {
 namespace {
 constexpr auto setupObjectName = "aiAccelerationSetup";
-constexpr auto setupSeenKey = "ai/accelerationSetupOffered";
 
 bool packageFilesAvailable(const QDir &root) {
     return QFileInfo(root.filePath("tools/install-ai-acceleration.ps1")).isFile();
@@ -209,19 +207,9 @@ private:
         updateOptions();
         process_.setWorkingDirectory(root_.absolutePath());
         process_.setProgram(shell);
-        auto environment = QProcessEnvironment::systemEnvironment();
-        environment.insert("LUMA_ACCEL_SETUP_SCRIPT", root_.filePath("tools/install-ai-acceleration.ps1"));
-        environment.insert("LUMA_ACCEL_SETUP_ROOT", root_.absolutePath());
-        environment.insert("LUMA_ACCEL_SETUP_BACKEND", backend);
-        process_.setProcessEnvironment(environment);
-        // Windows PowerShell defaults to Restricted on client PCs with no configured
-        // policy. An explicitly configured policy at any scope still takes precedence.
-        process_.setArguments({"-NoProfile", "-NonInteractive", "-Command", QStringLiteral(
-            "$ErrorActionPreference='Stop';"
-            "if (@(Get-ExecutionPolicy -List | Where-Object {$_.ExecutionPolicy -ne 'Undefined'}).Count -eq 0) {"
-            "Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force"
-            "};"
-            "& $env:LUMA_ACCEL_SETUP_SCRIPT -PlayerDirectory $env:LUMA_ACCEL_SETUP_ROOT -Backend $env:LUMA_ACCEL_SETUP_BACKEND")});
+        process_.setArguments({"-NoProfile", "-NonInteractive", "-File",
+            root_.filePath("tools/install-ai-acceleration.ps1"), "-PlayerDirectory", root_.absolutePath(),
+            "-Backend", backend});
         process_.start();
     }
 
@@ -281,11 +269,4 @@ void showAiAccelerationSetup(QWidget *parent) {
     (new SetupDialog(parent))->open();
 }
 
-void offerAiAccelerationSetup(QWidget *parent) {
-    QSettings settings;
-    if (settings.value(setupSeenKey, false).toBool() ||
-        !packageFilesAvailable(QDir(QCoreApplication::applicationDirPath()))) return;
-    showAiAccelerationSetup(parent);
-    settings.setValue(setupSeenKey, true);
-}
 }

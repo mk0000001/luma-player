@@ -156,6 +156,11 @@ void MainWindow::startLanDiscovery() {
     lanPlaybackDialog()->startDiscovery();
 }
 
+void MainWindow::startLanDiscoveryAtStartup() {
+    if (LanPlaybackDialog::discoveryAtStartupEnabled())
+        startLanDiscovery();
+}
+
 void MainWindow::showLanPlayback() {
     auto *dialog = lanPlaybackDialog();
     dialog->show();

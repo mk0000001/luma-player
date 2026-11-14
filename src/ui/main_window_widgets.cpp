@@ -204,7 +204,8 @@ void MainWindow::buildUi(){
     auto *lanPlayback=button("내부망 재생","openLanPlayback");lanPlayback->setToolTip("같은 네트워크의 PC와 Android 연결을 관리합니다.");nav->addWidget(lanPlayback);
     connect(lanPlayback,&QPushButton::clicked,this,&MainWindow::showLanPlayback);
     nav->addSpacing(22);nav->addWidget(label("연결된 디스크","section"));
-    discLabel_=label(QSettings().value("disc/scanAutomatically",true).toBool()?"디스크 확인 중…":"Blu-ray 재생 또는 새로 확인을 눌러 주세요.","connectedDiscLabel");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
+    scanDiscAutomatically_=QSettings().value("disc/scanAutomatically",false).toBool();
+    discLabel_=label(scanDiscAutomatically_?"디스크 확인 중…":"Blu-ray 재생 또는 새로 확인을 눌러 주세요.","connectedDiscLabel");discLabel_->setWordWrap(true);nav->addWidget(discLabel_);discDetails_=label({},"muted");discDetails_->setWordWrap(true);nav->addWidget(discDetails_);
     auto *rescan=button("새로 확인","subtle");nav->addWidget(rescan);nav->addStretch();nav->addWidget(label("MADE FOR\nYOUR SCREEN","section"));body->addWidget(sidebar_);
     auto *center=new QWidget;auto *centerLayout=new QVBoxLayout(center);centerLayout->setContentsMargins(0,0,0,0);centerLayout->setSpacing(0);
     surface_=new VideoSurface;surface_->setObjectName("videoSurface");surface_->setFocusPolicy(Qt::StrongFocus);surface_->setMinimumSize(500,280);surface_->setMouseTracking(true);
@@ -273,6 +274,15 @@ void MainWindow::buildUi(){
     auto *settingsTab=new QWidget;auto *settingsLayout=new QVBoxLayout(settingsTab);settingsLayout->setContentsMargins(17,18,17,18);settingsLayout->setSpacing(12);
     addCaptionAppearance(settingsLayout,captions_);
     settingsLayout->addWidget(label("PLAYBACK & PRIVACY","section"));
+    auto *scanDisc=new QCheckBox("Blu-ray 자동 검색");
+    scanDisc->setObjectName("automaticDiscScan");
+    scanDisc->setChecked(scanDiscAutomatically_);
+    settingsLayout->addWidget(scanDisc);
+    connect(scanDisc,&QCheckBox::toggled,this,[this](bool enabled){
+        scanDiscAutomatically_=enabled;
+        QSettings().setValue("disc/scanAutomatically",enabled);
+        discMediaChanged();
+    });
     choice(settingsLayout,"파일 HDR 출력",hdrOutputMode_);hdrOutputMode_->setObjectName("hdrOutputMode");
     hdrOutputMode_->addItem("자동 · HDR 화면에 맞춤","auto");hdrOutputMode_->addItem("끔 · SDR 출력","sdr");
     setSavedChoice(hdrOutputMode_,"video/hdrOutput","auto");

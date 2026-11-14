@@ -2,7 +2,7 @@
 
 ## 한국어
 
-Android 9 이상에서 Windows LumaPlayer가 같은 네트워크에 공유한 파일과 Blu-ray 타이틀을 재생합니다. 앱을 열면 모바일 연결이 켜진 PC를 찾습니다. 목록에서 PC를 선택하거나 사설 IPv4 주소를 직접 입력하세요. 주소에 포트가 없으면 `48762`를 사용합니다.
+Android 9 이상에서 Windows LumaPlayer가 같은 네트워크에 공유한 파일과 Blu-ray 타이틀을 재생합니다. **PC 검색**을 눌러 연결을 켜 둔 PC를 찾거나 사설 IPv4 주소를 직접 입력하세요. 목록이 보이는 동안 검색을 반복하려면 **PC 자동 검색**을 켜세요. 주소에 포트가 없으면 `48762`를 사용합니다.
 
 **0.2.3에서 0.2.5로 이동**하려면 새 APK를 설치하고 PC와 다시 페어링하세요. 이번 APK는 별도 앱 ID를 사용하므로 0.2.3과 함께 설치할 수 있습니다. 새 앱에서 연결을 확인한 뒤 이전 앱을 제거할 수 있습니다. [최신 Android APK](https://github.com/mk0000001/luma-player/releases/latest)
 
@@ -26,7 +26,7 @@ APK 경로는 도구 경로 아래 `build/app/outputs/apk/release/LumaPlayer-And
 
 ## English
 
-On Android 9 and later, the app plays media files and Blu-ray titles shared by LumaPlayer for Windows on the same network. The app searches for PCs with mobile connections enabled when it opens. Select a PC or enter its private IPv4 address. The default port is `48762`.
+On Android 9 and later, the app plays media files and Blu-ray titles shared by LumaPlayer for Windows on the same network. Tap **PC 검색** to find PCs with connections enabled, or enter a private IPv4 address. Turn on **PC 자동 검색** to refresh while the list is open. The default port is `48762`.
 
 **Moving from 0.2.3 to 0.2.5** requires installing the new APK and pairing with the PC again. This APK uses a separate application ID and can be installed alongside 0.2.3. You can remove the old app after confirming the connection in the new one. [Latest Android APK](https://github.com/mk0000001/luma-player/releases/latest)
 

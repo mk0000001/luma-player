@@ -64,6 +64,20 @@ private slots:
         QVERIFY(textOpacity>=99 && textOpacity<=103);
         QCOMPARE(maxOpacity(renderOverlay(text,size,{{},100,0,60})),153);
     }
+    void backgroundFitsEachLine(){
+        const QSize viewport(640,360);
+        const QString cue="A deliberately wider caption line\nShort";
+        const luma::CaptionStyle style{{},100,0,60};
+        const auto layout=luma::layoutCaption(cue,viewport,0,nullptr,style);
+        QCOMPARE(layout.text->lineCount(),2);
+        const int firstLineY=qRound(layout.origin.y()+layout.text->lineAt(0).naturalTextRect().center().y());
+        const int secondLineY=qRound(layout.origin.y()+layout.text->lineAt(1).naturalTextRect().center().y());
+        const int left=qCeil(layout.background.left())+12;
+        const auto image=renderOverlay(cue,viewport,style);
+        QCOMPARE(qAlpha(image.pixel(left,firstLineY)),153);
+        QCOMPARE(qAlpha(image.pixel(left,secondLineY)),0);
+        QCOMPARE(qAlpha(image.pixel(viewport.width()/2,secondLineY)),153);
+    }
     void allTextIsLaidOutWithinTheVideo_data(){
         QTest::addColumn<QString>("source");QTest::addColumn<QSizeF>("viewport");QTest::addColumn<int>("inset");
         QTest::newRow("unbroken-Hangul")<<QString(240,QChar(0xac00))<<QSizeF(360,220)<<0;

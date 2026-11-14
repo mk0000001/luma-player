@@ -32,6 +32,7 @@ RestartApplications=no
 SetupMutex=LumaPlayer.Setup.C6A16658
 DisableProgramGroupPage=yes
 SetupLogging=no
+UsePreviousSetupType=no
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -39,8 +40,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 korean.UpdateTargetChanged=설치 대상이 업데이트 확인 이후 변경됐거나 확인한 설치본과 다릅니다. 대상 설치본에서 업데이트를 다시 확인해 주세요.
 english.UpdateTargetChanged=The selected copy changed or differs from the copy checked for this update. Check for updates from the intended installation.
 [Types]
-Name: "full"; Description: "권장: 고정밀 인식 + 한국어 번역 / Recommended: accurate ASR + Korean translation"
-Name: "compact"; Description: "기본 Turbo만 (오프라인) / Bundled Turbo only (offline)"
+Name: "compact"; Description: "기본 설치 · 오프라인 / Standard installation (offline)"
+Name: "full"; Description: "고정밀 인식과 한국어 번역 모델 다운로드 / Download accurate ASR and Korean translation models"
 Name: "custom"; Description: "직접 선택 / Custom"; Flags: iscustom
 [Components]
 #if PayloadFlavor == "windows-x64-cuda"

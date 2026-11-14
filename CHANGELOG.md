@@ -2,6 +2,12 @@
 
 ## 한국어
 
+### 0.2.14
+
+- 기본 Windows 설치에 포함된 Turbo로 오프라인 설치를 완료합니다. 추가 인식·번역 모델 다운로드와 AI 가속 설치는 직접 선택합니다.
+- 시작 시 업데이트 확인, 내부망 검색·수신, Blu-ray 자동 검색은 사용자가 켜야 실행됩니다.
+- Windows와 Android의 자막 배경이 글줄에 더 가깝게 표시됩니다.
+
 ### 0.2.13
 
 - Blu-ray 메뉴 모드에서 재생 시계와 영상·음성 출력이 타이틀 끝에 머물면 재생 완료로 전환합니다. 재생 버튼으로 같은 타이틀을 처음부터 다시 볼 수 있습니다.
@@ -195,6 +201,12 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.14
+
+- Finish the default Windows setup offline with bundled Turbo. Choose additional recognition and translation model downloads and AI acceleration setup explicitly.
+- Enable startup update checks, LAN discovery and listening, and automatic Blu-ray detection to run them.
+- Caption backgrounds fit the text lines more closely on Windows and Android.
 
 ### 0.2.13
 

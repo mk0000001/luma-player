@@ -33,6 +33,9 @@ import java.util.stream.Collectors;
 
 @UnstableApi
 final class PlaybackCaptions {
+    private static final float CAPTION_TEXT_SIZE = .046f;
+    private static final float CAPTION_BOTTOM_PADDING = .05f;
+
     interface Actions {
         Player player();
         long positionMs();
@@ -76,8 +79,10 @@ final class PlaybackCaptions {
         overlay.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         overlay.setVisibility(View.GONE);
         overlay.setApplyEmbeddedFontSizes(false);
-        overlay.setStyle(new CaptionStyleCompat(Color.WHITE, 0xb3000000, Color.TRANSPARENT,
-                CaptionStyleCompat.EDGE_TYPE_NONE, Color.BLACK, activity.getResources().getFont(R.font.noto_sans_cjk_kr)));
+        overlay.setFractionalTextSize(CAPTION_TEXT_SIZE);
+        overlay.setStyle(new CaptionStyleCompat(Color.WHITE, 0x66000000, Color.TRANSPARENT,
+                CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW, Color.BLACK,
+                activity.getResources().getFont(R.font.noto_sans_cjk_kr)));
         frame.addView(overlay, frame.indexOfChild(video.getSubtitleView()) + 1,
                 new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         overlay.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -139,7 +144,7 @@ final class PlaybackCaptions {
     private void updateCaptionPadding() {
         int controlsHeight = Math.round(92 * activity.getResources().getDisplayMetrics().density);
         float padding = controlsVisible && overlay.getHeight() > 0 ? Math.min(.33f, controlsHeight / (float) overlay.getHeight())
-                : SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION;
+                : CAPTION_BOTTOM_PADDING;
         overlay.setBottomPaddingFraction(padding);
     }
 

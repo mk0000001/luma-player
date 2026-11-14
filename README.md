@@ -10,7 +10,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 - **듣고 읽고 이해하세요.** 일본어 원문 아래에 한글 독음과 한국어 번역을 함께 띄울 수 있습니다. 가지고 있는 자막 파일도 열 수 있고, 글꼴과 크기, 글자·배경 투명도를 조절할 수 있습니다.
 - **감상 전에 자막을 준비하세요.** 전체 영상의 자막과 번역을 저장해 두면, 다시 열거나 다른 장면으로 이동할 때 준비된 자막을 바로 쓸 수 있습니다.
 - **다른 기기에서 보세요.** Android 또는 Windows에서 같은 내부망의 LumaPlayer PC를 찾아 연결하세요. 첫 연결은 양쪽의 코드를 확인해 송출 PC에서 승인합니다. 연결된 기기는 PC에서 확인하고 해제할 수 있습니다. [내부망 재생 안내](docs/LAN-PLAYBACK.md)
-- **새 버전을 확인하세요.** Windows 앱은 실행할 때 GitHub에서 업데이트를 확인합니다. 설정에서 수동으로 확인하거나 자동 알림을 끌 수 있습니다. [업데이트 안내](docs/UPDATES.md)
+- **새 버전을 확인하세요.** Windows 설정의 **업데이트 확인**에서 공식 GitHub 릴리스를 확인할 수 있습니다. 자동 확인을 원하면 **시작 시 업데이트 확인**을 켜세요. [업데이트 안내](docs/UPDATES.md)
 - **내 화면에 맞춰 감상하세요.** 전체화면이나 항상 위에 뜨는 작은 화면(PiP)으로 볼 수 있습니다. 탐색 바를 클릭하거나 방향키로 장면을 이동하고, 다크·라이트 모드를 고를 수 있습니다.
 
 ### 설치 및 업데이트
@@ -19,7 +19,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 [최신 Windows·Android·Linux 다운로드와 업데이트 안내](https://github.com/mk0000001/luma-player/releases/latest)
 
-Windows에서 Radeon·Intel GPU는 기본 설치 파일을 사용하세요. 두 설치본에 Turbo 음성 인식 모델이 포함됩니다. 권장 설치는 full-v3 Q5와 Hy-MT2 한국어 번역 모델을 추가로 내려받으며, 추가 다운로드는 약 5.71 GB입니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+Windows에서 Radeon·Intel GPU는 기본 설치 파일을 사용하세요. 두 설치본에 Turbo 음성 인식 모델이 포함됩니다. full-v3 Q5와 Hy-MT2 한국어 번역이 필요하면 설치 화면에서 모델 다운로드를 선택하세요. 추가 다운로드는 약 5.71 GB입니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
 
@@ -66,7 +66,7 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 - **Listen, read, and understand.** Show the Japanese original, its Hangul pronunciation, and a Korean translation together. Load your own subtitles and adjust the font, size, or text and background opacity.
 - **Prepare captions before watching.** Save captions and translation for a whole title, then reuse the completed project when you reopen it or seek to another scene.
 - **Watch on another device.** Find a LumaPlayer PC on the same network from Android or Windows. Compare the code on both screens and approve the first connection on the host PC. View and disconnect paired devices on the PC. [LAN playback guide](docs/LAN-PLAYBACK.md)
-- **Check for a new version.** The Windows app checks GitHub at launch. Check manually or turn off automatic notifications in settings. [Update guide](docs/UPDATES.md)
+- **Check for a new version.** Use **업데이트 확인** in Windows settings to check the official GitHub releases. Enable **시작 시 업데이트 확인** to check at launch. [Update guide](docs/UPDATES.md)
 - **Make it fit your screen.** Switch to fullscreen or always-on-top picture-in-picture. Click the seek track or use the arrow keys to jump, and choose dark or light mode.
 
 ### Install or update
@@ -75,7 +75,7 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 
 [Latest downloads and update instructions for Windows, Android, and Linux](https://github.com/mk0000001/luma-player/releases/latest)
 
-On Windows, use the standard installer for Radeon and Intel GPUs. Both installers include the Turbo speech recognition model. The recommended setup also downloads full-v3 Q5 and Hy-MT2 for Korean translation, totaling about 5.71 GB. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
+On Windows, use the standard installer for Radeon and Intel GPUs. Both installers include the Turbo speech recognition model. Select the optional downloads in setup for full-v3 Q5 and Hy-MT2 Korean translation, totaling about 5.71 GB. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
 

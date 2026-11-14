@@ -1,6 +1,7 @@
 #include "caption_layout.h"
 #include <QFont>
 #include <QPainter>
+#include <QPainterPath>
 #include <QTextOption>
 #include <algorithm>
 
@@ -28,7 +29,7 @@ CaptionLayout layoutCaption(const QString &source,const QSizeF &viewport,qreal b
     QString text=source;text.replace("\r\n","\n");text.replace('\r','\n');text.replace('\n',QChar::LineSeparator);
     const qreal horizontalMargin=std::min(qreal(24),width*.04),topMargin=std::min(qreal(20),height*.05);
     const qreal bottomMargin=std::min(height*.12,std::max(qreal(4),height/18));
-    const qreal paddingX=std::min(qreal(14),width*.03),paddingY=std::min(qreal(8),height*.03);
+    const qreal paddingX=std::min(qreal(9),width*.03),paddingY=std::min(qreal(4),height*.03);
     const qreal textWidth=std::max(qreal(.01),width-2*horizontalMargin-2*paddingX),textHeight=std::max(qreal(.01),height-topMargin-bottomMargin-2*paddingY);
     QStringList families{"Noto Sans CJK JP","Noto Sans CJK KR","Noto Sans","Noto Color Emoji","Segoe UI Emoji"};
     if(!style.fontFamily.isEmpty()){
@@ -57,7 +58,18 @@ void paintCaption(QPainter &painter,const CaptionLayout &layout,const CaptionSty
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setPen(Qt::NoPen);
     painter.setBrush(QColor(0,0,0,qRound(std::clamp(style.backgroundOpacity,0,100)*255/100.)));
-    painter.drawRoundedRect(layout.background,10,10);
+    if(style.backgroundOpacity>0){
+        const QPointF padding=layout.origin-layout.background.topLeft();
+        QPainterPath backdrop;
+        backdrop.setFillRule(Qt::WindingFill);
+        for(int i=0;i<layout.text->lineCount();++i){
+            const auto line=layout.text->lineAt(i).naturalTextRect();
+            if(line.width()<=0)continue;
+            const QRectF scaled(layout.origin+line.topLeft()*layout.scale,line.size()*layout.scale);
+            backdrop.addRoundedRect(scaled.adjusted(-padding.x(),-padding.y(),padding.x(),padding.y()),5,5);
+        }
+        painter.drawPath(backdrop);
+    }
     painter.setPen(Qt::white);
     painter.setOpacity(std::clamp(style.textOpacity,0,100)/100.);
     painter.translate(layout.origin);

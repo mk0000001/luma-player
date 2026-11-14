@@ -5,9 +5,9 @@
 릴리스의 Windows x64 기본 설치 EXE 또는 NVIDIA CUDA 포함 설치 EXE로 LumaPlayer를 설치합니다.
 
 1. 설치 EXE를 실행하고 언어·설치 폴더를 선택합니다. 관리자 권한은 필요하지 않습니다. 기본 위치는 사용자 로컬 앱 폴더입니다.
-2. 권장 설치는 full-v3 Q5 음성인식(약 1.08 GB)과 Hy-MT2 한국어 번역(약 4.62 GB)을 자동 다운로드합니다. 인터넷 없이 설치하려면 기본 Turbo만 선택합니다. Turbo는 두 설치 파일에 포함됩니다.
+2. 기본 설치는 오프라인에서 진행하며 두 설치 파일 모두 Turbo 음성 인식 모델을 포함합니다. full-v3 Q5 음성 인식(약 1.08 GB)이나 Hy-MT2 한국어 번역(약 4.62 GB)이 필요하면 다운로드할 모델을 선택하세요. 업데이트할 때도 같은 화면에서 추가 다운로드를 선택할 수 있습니다.
 3. 모델의 고정 HTTPS 주소와 SHA-256을 검증합니다. 이미 같은 폴더에 유효한 모델이 있으면 재사용합니다. 실패하면 설치 화면에서 재시도하거나 취소할 수 있습니다. 설치 화면의 다운로드 진행률을 확인하세요.
-4. 시작 메뉴에서 LumaPlayer를 실행합니다. 첫 실행 또는 **설정 → AI 가속 설정**에서 CUDA, Vulkan, OpenVINO를 선택할 수 있습니다. 기존 모델 선택은 유지합니다. 새 설치의 기본 인식기는 Turbo이며 AI 자막 설정의 모델 선택에서 full-v3를 선택할 수 있습니다. 한국어 번역기는 설치된 Hy-MT2를 우선 발견합니다.
+4. 시작 메뉴에서 LumaPlayer를 실행합니다. **설정 → AI 가속 설정**을 열면 하드웨어를 확인하고 CUDA, Vulkan, OpenVINO를 선택할 수 있습니다. 가속 설치 도우미는 Windows의 PowerShell 실행 정책을 따릅니다. 기존 모델 선택은 유지합니다. 새 설치의 기본 인식기는 Turbo이며 AI 자막 설정의 모델 선택에서 full-v3를 선택할 수 있습니다. 한국어 번역기는 설치된 Hy-MT2를 우선 발견합니다.
 
 플레이어 약 3.63 GB와 추가 모델 약 5.71 GB가 필요하며, 다운로드 임시 파일을 위한 공간도 확보하세요(약 16 GB 여유 권장). 제거 프로그램은 추가 다운로드 모델과 사용자 설정·자막을 보존합니다. 디스크 키·미디어·인식한 상용 자막은 포함하지 않습니다. 설치 EXE는 코드 서명되지 않았습니다.
 
@@ -27,9 +27,9 @@
 
 Choose the standard or NVIDIA CUDA-bundled Windows x64 setup EXE from Releases. Run it and select the language, destination, and components. Installation is per user and needs no administrator rights.
 
-Recommended installation automatically downloads full-v3 Q5 ASR (1.08 GB) and Hy-MT2 Korean translation (4.62 GB). Both installers include Turbo for offline installation. Immutable HTTPS URLs and SHA-256 enforce model integrity. Valid existing models at the destination are reused, and failures offer retry or cancellation.
+The default setup runs offline and both installers include Turbo. Choose the optional downloads for full-v3 Q5 ASR (1.08 GB), Hy-MT2 Korean translation (4.62 GB), or both during installation or an update. Immutable HTTPS URLs and SHA-256 enforce model integrity. Setup reuses valid models at the destination and offers retry or cancellation if a download fails.
 
-Launch from the Start Menu. Choose CUDA, Vulkan, or OpenVINO at first launch or under **Settings → AI acceleration**. Existing model choices are preserved. Fresh installations use Turbo by default, and full-v3 is available in AI caption settings. Installed Hy-MT2 is discovered preferentially. Allow approximately 16 GB free for the player, optional models, and download staging. Uninstall preserves downloaded optional models and user settings and captions. The EXE is unsigned.
+Launch from the Start Menu. Open **Settings → AI acceleration** to check the hardware and choose CUDA, Vulkan, or OpenVINO. The acceleration installer follows the Windows PowerShell execution policy. Existing model choices are preserved. Fresh installations use Turbo by default, and full-v3 is available in AI caption settings. Installed Hy-MT2 is discovered preferentially. Allow approximately 16 GB free for the player, optional models, and download staging. Uninstall preserves downloaded optional models and user settings and captions. The EXE is unsigned.
 
 Build with official Inno Setup 6.7.4 and the current standard or CUDA payload using `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. The builder verifies the manifest entries and source commit, reads model pins from the repository lock files, and writes the EXE to a new output folder.
 

@@ -102,7 +102,7 @@ private slots:
     void rejectsSignedWrongScopeAndDowngrades();
     void rejectsInstallerSizeAndHashChanges();
     void restrictsDownloadOrigins();
-    void optOutPersistsAndManualCheckRemainsAvailable();
+    void startupChecksRequireOptInAndManualCheckRemainsAvailable();
     void liveManualCheckWithNotificationsDisabled();
 };
 
@@ -233,7 +233,7 @@ void UpdateManagerTests::restrictsDownloadOrigins()
     QVERIFY(!allowedAssetUrl(QUrl("https://release-assets.githubusercontent.com:8443/github-production-release-asset/1446711230/c8f632dc-cfdd-412a-99c2-03272bbe608e?sp=r&sig=fixture"), tag, assetName));
 }
 
-void UpdateManagerTests::optOutPersistsAndManualCheckRemainsAvailable()
+void UpdateManagerTests::startupChecksRequireOptInAndManualCheckRemainsAvailable()
 {
     QTemporaryDir settingsDirectory;
     QVERIFY(settingsDirectory.isValid());
@@ -247,8 +247,18 @@ void UpdateManagerTests::optOutPersistsAndManualCheckRemainsAvailable()
         manager.addControls(&layout);
         auto *alerts = window.findChild<QCheckBox *>("updateNotifications");
         QVERIFY(alerts);
+        QVERIFY(!alerts->isChecked());
+        alerts->click();
+    }
+    {
+        QWidget window;
+        QVBoxLayout layout(&window);
+        luma::UpdateManager manager(&window);
+        manager.addControls(&layout);
+        auto *alerts = window.findChild<QCheckBox *>("updateNotifications");
+        QVERIFY(alerts);
         QVERIFY(alerts->isChecked());
-        alerts->setChecked(false);
+        alerts->click();
     }
     QWidget window;
     QVBoxLayout layout(&window);
@@ -272,7 +282,6 @@ void UpdateManagerTests::liveManualCheckWithNotificationsDisabled()
     QCoreApplication::setApplicationVersion("999.0.0");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settingsDirectory.path());
-    QSettings().setValue("update/notifyOnStartup", false);
 
     QWidget window;
     QVBoxLayout layout(&window);

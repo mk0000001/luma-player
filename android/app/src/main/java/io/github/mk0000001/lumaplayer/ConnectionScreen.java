@@ -1,6 +1,8 @@
 package io.github.mk0000001.lumaplayer;
 
 import android.app.AlertDialog;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -14,6 +16,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
@@ -42,6 +45,7 @@ import org.json.JSONException;
 @UnstableApi
 final class ConnectionScreen {
     private static final long DISCOVERY_REFRESH_MS = 5000;
+    private static final String AUTO_DISCOVERY_KEY = "autoDiscovery";
     private final MainActivity activity;
     private final PcController controller;
     private final ScheduledExecutorService network;
@@ -54,6 +58,7 @@ final class ConnectionScreen {
     private final TextView discoveryStatus;
     private final LinearLayout pcList;
     private final Button refresh;
+    private final CheckBox autoDiscovery;
     private final Button nearbyButton;
     private final Button vpnSearch;
     private final TextView pairName;
@@ -100,6 +105,7 @@ final class ConnectionScreen {
         discoveryStatus = activity.findViewById(R.id.discovery_status);
         pcList = activity.findViewById(R.id.pc_list);
         refresh = activity.findViewById(R.id.refresh_button);
+        autoDiscovery = activity.findViewById(R.id.auto_discovery);
         nearbyButton = activity.findViewById(R.id.nearby_pc_button);
         vpnSearch = activity.findViewById(R.id.vpn_search_button);
         pairName = activity.findViewById(R.id.pair_pc_name);
@@ -114,6 +120,15 @@ final class ConnectionScreen {
 
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
+        SharedPreferences preferences = activity.getSharedPreferences("luma_discovery", Context.MODE_PRIVATE);
+        autoDiscovery.setChecked(preferences.getBoolean(AUTO_DISCOVERY_KEY, false));
+        autoDiscovery.setOnClickListener(view -> {
+            boolean enabled = autoDiscovery.isChecked();
+            preferences.edit().putBoolean(AUTO_DISCOVERY_KEY, enabled).apply();
+            if (showingVpnResults && !enabled) return;
+            stopDiscovery();
+            refreshHome();
+        });
         nearbyButton.setOnClickListener(view -> showNearby());
         vpnSearch.setOnClickListener(view -> showVpnSearch());
         activity.findViewById(R.id.connect_button).setOnClickListener(view -> selectAddress());
@@ -137,7 +152,7 @@ final class ConnectionScreen {
         if (waitingClient != null) {
             checkWaitingClient(waitingClient, 0);
         } else if (nearby == null && home.getVisibility() == View.VISIBLE) {
-            discover();
+            refreshHome();
         }
     }
 
@@ -221,7 +236,7 @@ final class ConnectionScreen {
             homeStatus.setVisibility(View.VISIBLE);
         }
         if (foreground) {
-            discover();
+            refreshHome();
         }
     }
 
@@ -291,6 +306,18 @@ final class ConnectionScreen {
         }, delayMs, TimeUnit.MILLISECONDS);
     }
 
+    private void refreshHome() {
+        if (autoDiscovery.isChecked()) {
+            discover();
+            return;
+        }
+        renderList();
+        setStatus(discoveryStatus, R.string.discovery_manual, false);
+        discoveryStatus.setVisibility(discovered.isEmpty() ? View.VISIBLE : View.GONE);
+        nearbyButton.setVisibility(discovered.isEmpty() && NearbyConnection.supported(activity)
+                ? View.VISIBLE : View.GONE);
+    }
+
     private void discover() {
         discover(null);
     }
@@ -356,7 +383,7 @@ final class ConnectionScreen {
                 discoveryStatus.setVisibility(found.isEmpty() ? View.VISIBLE : View.GONE);
                 nearbyButton.setVisibility(discovered.isEmpty() && NearbyConnection.supported(activity)
                         ? View.VISIBLE : View.GONE);
-                if (!vpn) {
+                if (!vpn && autoDiscovery.isChecked()) {
                     home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
                 }
             });
@@ -364,7 +391,7 @@ final class ConnectionScreen {
     }
 
     private void refreshOrdinaryDiscovery() {
-        if (!foreground || showingVpnResults || home.getVisibility() != View.VISIBLE) {
+        if (!autoDiscovery.isChecked() || !foreground || showingVpnResults || home.getVisibility() != View.VISIBLE) {
             return;
         }
         if (nearby != null || vpnDialog != null || scan != null) {
@@ -446,7 +473,7 @@ final class ConnectionScreen {
         }
         if (scan != null) {
             stopDiscovery();
-            home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
+            if (autoDiscovery.isChecked()) home.postDelayed(refreshDiscovery, DISCOVERY_REFRESH_MS);
         }
         nearby = new NearbyConnection(activity, connectivity, discoveryExecutor, new NearbyConnection.Listener() {
             @Override

@@ -58,6 +58,7 @@ public:
     explicit LanPlaybackDialog(QWidget *parent);
     ~LanPlaybackDialog() override;
 
+    static bool discoveryAtStartupEnabled();
     void startDiscovery();
     QString readyEndpoint() const { return ready_ ? endpoint_ : QString{}; }
     void setMediaAvailable(bool available, bool disc);
@@ -98,6 +99,7 @@ private:
     void publishRemoteControl(bool enabled);
     void maintainDiscovery();
     bool startHost(const QString &address, const QString &subnet, const QString &peerSubnet = {});
+    void toggleDiscovery();
     void restartDiscovery();
     void closeHost();
     void stopSharing();
@@ -139,7 +141,7 @@ private:
     QComboBox *interfaces_, *audioMode_;
     QLabel *address_, *status_;
     QLineEdit *peerSubnet_;
-    QPushButton *start_, *stop_, *retry_, *forget_, *disconnectDevice_, *forgetDevice_;
+    QPushButton *start_, *stop_, *discoveryToggle_, *retry_, *forget_, *disconnectDevice_, *forgetDevice_;
     QTreeWidget *devices_;
     QGroupBox *deviceOptionsBox_;
     QComboBox *deviceProfile_, *deviceHdr_, *deviceSkip_, *deviceFill_;

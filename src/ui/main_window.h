@@ -2,7 +2,6 @@
 #include <QDeadlineTimer>
 #include <QElapsedTimer>
 #include <QMainWindow>
-#include <QTemporaryDir>
 #include <QSet>
 #include <QHash>
 #include <QJsonArray>
@@ -28,6 +27,7 @@ public:
     ~MainWindow()override;
     void openSource(const QString &source);
     void startLanDiscovery();
+    void startLanDiscoveryAtStartup();
     void enableAutomaticSubtitles(const QString &language);
     bool loadCaptionFile(const QString &path);
     bool loadPreparedCaptionProject(const QString &path);
@@ -89,7 +89,6 @@ private:
     PlaybackEngine *active_=nullptr;
     SubtitleJob job_;
     JapaneseReading reading_;
-    QTemporaryDir subtitleCache_;
     QVector<SubtitleCue> generatedCues_,externalCues_;
     QVector<SubtitleCue> presentationCues_;
     bool presentationDirty_=true,captionsVisible_=true;
@@ -106,7 +105,7 @@ private:
     QString source_,model_,discPath_;
     QStringList playbackQueue_;
     quint64 discPlayRequest_=0,discProbeRevision_=0;
-    bool discProbeRunning_=false,discPlayPending_=false,discProbeClosing_=false;
+    bool scanDiscAutomatically_=false,discProbeRunning_=false,discPlayPending_=false,discProbeClosing_=false;
     bool full_=false,bufferHolding_=false,bufferResume_=false,aiFailed_=false,translationFailed_=false,bufferBypass_=false,lastNavigation_=false;
     bool fullscreenWasMaximized_=false;
     bool captionPrefillPending_=true;
