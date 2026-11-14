@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.2.13
+
+- Blu-ray 메뉴 모드에서 재생 시계와 영상·음성 출력이 타이틀 끝에 머물면 재생 완료로 전환합니다. 재생 버튼으로 같은 타이틀을 처음부터 다시 볼 수 있습니다.
+
 ### 0.2.12
 
 - Blu-ray가 PCM으로 출력하면 음량 조절과 음소거를 사용할 수 있습니다. 실제 비트스트림 출력 중에는 리시버에서 조절합니다.
@@ -191,6 +195,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.13
+
+- Detect when the playback clock and audio/video output stop at the end of a Blu-ray title in menu mode. Press Play to start that title again from the beginning.
 
 ### 0.2.12
 

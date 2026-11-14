@@ -1238,6 +1238,25 @@ private slots:
             window.diagnostics().value("positionMs").toInteger()>250 &&
             window.diagnostics().value("positionMs").toInteger()<2000,5500);
     }
+    void nativeReplayButtonRestartsAnEndedDisc(){
+        const auto disc=qEnvironmentVariable("LUMA_UI_DISC_REPLAY_FIXTURE");
+        if(disc.isEmpty())QSKIP("Set LUMA_UI_DISC_REPLAY_FIXTURE to a short owned Blu-ray folder");
+        luma::MainWindow window;
+        window.show();
+        window.openSource(disc);
+        auto *play=window.findChild<QPushButton*>("playButton");
+        QVERIFY(play);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("ended").toBool(),42000);
+        QVERIFY(!window.diagnostics().value("playing").toBool());
+        QCOMPARE(play->accessibleName(),QString("처음부터 다시 재생 · K / Space"));
+
+        QTest::mouseClick(play,Qt::LeftButton);
+        QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("playing").toBool() &&
+            !window.diagnostics().value("ended").toBool() &&
+            window.diagnostics().value("displayedPictures").toInt()>10 &&
+            window.diagnostics().value("positionMs").toInteger()>250 &&
+            window.diagnostics().value("positionMs").toInteger()<4000,12000);
+    }
     void nativeChapterHighlightAndKeyboardSeekFollowActualPlayback(){
         const auto media=qEnvironmentVariable("LUMA_UI_CHAPTER_FIXTURE");
         if(media.isEmpty())QSKIP("Set LUMA_UI_CHAPTER_FIXTURE to an owned video with three chapters");

@@ -34,6 +34,8 @@ int discActionCode(DiscAction action){
 }
 namespace {
 constexpr int discCacheMs = 10000;
+constexpr int discEndStallMs = 2000;
+constexpr qint64 discEndToleranceMs = 1000;
 
 bool validSourceText(const QString &source) {
     return !source.trimmed().isEmpty() && source.size() <= 32768 &&
@@ -265,6 +267,7 @@ struct PlaybackEngine::Impl {
     bool nextDiscSoftware=false,discAllocationFailed=false;
     QByteArray discHardwareOverride;
     QElapsedTimer discFrameProgress;
+    QElapsedTimer discEndWait;
     int lastDiscFrame=-1,audioAtLastDiscFrame=0;
     int metadataTitle=-2,metadataAudio=-2;
     int chapterOffsetsTitle=-2,chapterOffsetsCount=-1;
@@ -755,7 +758,7 @@ bool PlaybackEngine::openInternal(const QString &source,WId surface,qint64 prepa
 }
 void PlaybackEngine::stop(){
     if(!available() || d->stopping.exchange(true))return;
-    d->videoOutputActive=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();
+    d->videoOutputActive=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->discEndWait.invalidate();
     d->timer.stop();d->state.playing=false;d->state.ended=false;d->state.durationMs=0;d->state.timelineReady=false;d->state.lanSubtitleCueActive=false;d->fileLoaded=false;
     d->state.sourceVideoRange="unknown";
     d->state.chapterOffsetsMs.clear();
@@ -843,7 +846,7 @@ void PlaybackEngine::updateFrameInterpolation(){
             "디스플레이 동기 혼합 요청됨 · 출력 동기화 대기";
     }
 }
-void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);d->state.bufferedUntilMs=-1;d->state.discBufferPercent=-1;if(d->player){d->discBufferPercent.store(-1);d->discFrameProgress.invalidate();d->libvlc_media_player_set_time(d->player,ms);}else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
+void PlaybackEngine::seek(qint64 ms){if(!available())return;ms=std::max<qint64>(0,ms);d->state.bufferedUntilMs=-1;d->state.discBufferPercent=-1;if(d->player){d->discBufferPercent.store(-1);d->discFrameProgress.invalidate();d->discEndWait.invalidate();d->state.ended=false;d->libvlc_media_player_set_time(d->player,ms);}else if(!d->seekReady)d->deferredSeek=ms;else d->command({"seek",QByteArray::number(double(ms)/1000,'f',3),"absolute+exact"});}
 void PlaybackEngine::setPerformanceMetricsEnabled(bool enabled){
     d->performanceMetrics=enabled;
     if(!enabled){
@@ -884,9 +887,9 @@ void PlaybackEngine::setSubtitlesVisible(bool visible){
         }
     }else d->mpv_set_property_string(d->mpv,"sub-visibility",visible?"yes":"no");
 }
-void PlaybackEngine::setChapter(int id){if(!available())return;d->state.bufferedUntilMs=-1;d->state.discBufferPercent=-1;if(d->player){d->discBufferPercent.store(-1);d->discFrameProgress.invalidate();d->libvlc_media_player_set_chapter(d->player,id);}else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
-void PlaybackEngine::setTitle(int id){if(d->player){d->discBufferPercent.store(-1);d->state.discBufferPercent=-1;d->discFrameProgress.invalidate();d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_title(d->player,id);}}
-void PlaybackEngine::navigate(int mode){if(d->player && mode>=libvlc_navigate_activate && mode<=libvlc_navigate_popup)d->libvlc_media_player_navigate(d->player,mode);}
+void PlaybackEngine::setChapter(int id){if(!available())return;d->state.bufferedUntilMs=-1;d->state.discBufferPercent=-1;if(d->player){d->discBufferPercent.store(-1);d->discFrameProgress.invalidate();d->discEndWait.invalidate();d->state.ended=false;d->libvlc_media_player_set_chapter(d->player,id);}else d->mpv_set_property_string(d->mpv,"chapter",QByteArray::number(id).constData());}
+void PlaybackEngine::setTitle(int id){if(d->player){d->discBufferPercent.store(-1);d->state.discBufferPercent=-1;d->discFrameProgress.invalidate();d->discEndWait.invalidate();d->state.ended=false;d->preparedDiscDuration=0;d->preparedNativeTitle=-1;d->preparedTitleWait.invalidate();d->libvlc_media_player_set_title(d->player,id);}}
+void PlaybackEngine::navigate(int mode){if(d->player && mode>=libvlc_navigate_activate && mode<=libvlc_navigate_popup){d->discEndWait.invalidate();d->state.ended=false;d->libvlc_media_player_navigate(d->player,mode);}}
 void PlaybackEngine::clearManagedSubtitles(){
     if(!d->managedSubtitle)return;
     if(d->player)d->libvlc_video_set_spu(d->player,-1);
@@ -902,6 +905,11 @@ bool PlaybackEngine::loadSubtitle(const QString &path,bool managed){
 void PlaybackEngine::poll(){
     if(d->stopping.load())return;
     if(d->player){
+        const auto previousTitle=d->state.currentTitle;
+        const auto previousDuration=d->state.durationMs;
+        const auto previousPosition=d->state.positionMs;
+        const auto previousPictures=d->state.displayedPictures;
+        const auto previousAudioBuffers=d->state.playedAudioBuffers;
         d->state.positionMs=std::max<qint64>(0,d->libvlc_media_player_get_time(d->player));
         d->state.durationMs=std::max<qint64>(0,d->libvlc_media_player_get_length(d->player));
         d->state.playing=d->libvlc_media_player_is_playing(d->player)!=0;
@@ -947,7 +955,6 @@ void PlaybackEngine::poll(){
         // Keep known lengths/mapping if a transient metadata query fails. The
         // live length can still describe the previous title after its ID changes.
         d->state.navigationTitle=!d->titleMetadataReady || d->state.currentTitle<0 || (d->state.discMenus && d->state.currentTitle==0) || d->navigationTitles.contains(d->state.currentTitle);
-        d->state.ended=nativeState==libvlc_Ended && !d->state.navigationTitle;
         d->state.timelineReady=discTimelineReady(d->state.durationMs,d->titleDurations.value(d->state.currentTitle),d->state.navigationTitle);
         if(d->preparedDiscDuration>0 && !d->state.failed){
             d->libvlc_media_player_set_pause(d->player,1);d->state.playing=false;
@@ -967,6 +974,20 @@ void PlaybackEngine::poll(){
         }
         for(int i=0;titles && i<count && i<10000;++i)if(titles[i])d->state.titles.append({i,QString::fromUtf8(titles[i]->psz_name?titles[i]->psz_name:"")+QString(" · %1 min").arg(titles[i]->i_duration/60000)});
         if(count>0 && titles)d->libvlc_title_descriptions_release(titles,unsigned(count));
+        // Menu playback can drain at the title boundary without a native EOF.
+        // Wait for disc-authored transitions and for any remaining decoded frames.
+        const bool sameTitle=d->state.currentTitle==previousTitle && d->state.durationMs==previousDuration;
+        const bool atBufferedEnd=d->state.discMenus && d->state.timelineReady && d->state.buffering &&
+            (nativeState==libvlc_Playing || nativeState==libvlc_Buffering) && d->state.discStatisticsAvailable &&
+            d->state.positionMs>=d->state.durationMs-std::min(discEndToleranceMs,d->state.durationMs/10) &&
+            (d->state.displayedPictures>0 || d->state.playedAudioBuffers>0);
+        const bool stalled=sameTitle && d->state.positionMs==previousPosition &&
+            d->state.displayedPictures==previousPictures && d->state.playedAudioBuffers==previousAudioBuffers;
+        if(!atBufferedEnd || !stalled)d->discEndWait.invalidate();
+        else if(!d->discEndWait.isValid())d->discEndWait.start();
+        const bool endStall=d->discEndWait.isValid() && d->discEndWait.elapsed()>=discEndStallMs;
+        d->state.ended=!d->state.failed && !d->state.navigationTitle && (nativeState==libvlc_Ended || endStall);
+        if(d->state.ended){d->state.playing=false;d->state.buffering=false;}
         if (!d->state.timelineReady || chapters <= 0) {
             d->state.chapterOffsetsMs.clear();
             d->discChapterNames.clear();

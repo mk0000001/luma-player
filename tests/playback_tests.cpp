@@ -9,6 +9,7 @@
 struct libvlc_instance_t { libvlc_log_cb callback=nullptr;void *opaque=nullptr; };
 struct vlc_log_t { const char *object; };
 struct libvlc_media_t { std::string location;bool menus=true,startPaused=false; };
+struct libvlc_event_manager_t { libvlc_callback_t buffering=nullptr;void *opaque=nullptr; };
 struct libvlc_media_player_t {
     libvlc_instance_t *instance;
     libvlc_media_t *media=nullptr;
@@ -17,6 +18,9 @@ struct libvlc_media_player_t {
     int title=-1,pendingTitle=-1,ackReads=0,metadataReads=0;bool premature=false;
     bool audioReady=false;
     int volume=100,volumeChanges=0;
+    libvlc_event_manager_t events;
+    libvlc_time_t time=1000;
+    int pictures=0;
 };
 static libvlc_media_player_t *currentPlayer=nullptr;
 static bool preparedFixture(const libvlc_media_player_t *p){return p->media && p->media->location.find("/prepared/")!=std::string::npos;}
@@ -63,6 +67,19 @@ FIXTURE_API void luma_fixture_audio_output(const char *fourcc){
 }
 FIXTURE_API int luma_fixture_volume(){return currentPlayer && currentPlayer->audioReady?currentPlayer->volume:-1;}
 FIXTURE_API int luma_fixture_volume_changes(){return currentPlayer?currentPlayer->volumeChanges:0;}
+FIXTURE_API void luma_fixture_disc_clock(int title,libvlc_time_t time,int pictures,int buffering){
+    if(!currentPlayer)return;
+    currentPlayer->title=title;
+    currentPlayer->time=time;
+    currentPlayer->pictures=pictures;
+    const auto &events=currentPlayer->events;
+    if(events.buffering){
+        libvlc_event_t event{};
+        event.type=libvlc_MediaPlayerBuffering;
+        event.u.media_player_buffering.new_cache=float(buffering);
+        events.buffering(&event,events.opaque);
+    }
+}
 FIXTURE_API libvlc_instance_t *libvlc_new(int,const char *const *){return new libvlc_instance_t;}
 FIXTURE_API void libvlc_release(libvlc_instance_t *p){delete p;}
 FIXTURE_API void libvlc_log_set(libvlc_instance_t *p,libvlc_log_cb callback,void *opaque){p->callback=callback;p->opaque=opaque;}
@@ -77,12 +94,19 @@ FIXTURE_API void libvlc_media_add_option(libvlc_media_t *p,const char *option){c
 FIXTURE_API void libvlc_media_release(libvlc_media_t *p){delete p;}
 FIXTURE_API libvlc_media_player_t *libvlc_media_player_new(libvlc_instance_t *p){currentPlayer=new libvlc_media_player_t{p};return currentPlayer;}
 FIXTURE_API void libvlc_media_player_release(libvlc_media_player_t *p){if(currentPlayer==p)currentPlayer=nullptr;delete p;}
-FIXTURE_API void libvlc_media_player_set_media(libvlc_media_player_t *p,libvlc_media_t *media){p->media=media;p->title=preparedFixture(p)?(media->menus?3:1):-1;p->pendingTitle=-1;p->metadataReads=0;p->premature=false;p->audioReady=false;}
+FIXTURE_API void libvlc_media_player_set_media(libvlc_media_player_t *p,libvlc_media_t *media){p->media=media;p->title=preparedFixture(p)?(media->menus?3:1):-1;p->pendingTitle=-1;p->metadataReads=0;p->premature=false;p->audioReady=false;p->time=1000;p->pictures=0;}
+FIXTURE_API libvlc_event_manager_t *libvlc_media_player_event_manager(libvlc_media_player_t *p){return &p->events;}
+FIXTURE_API int libvlc_event_attach(libvlc_event_manager_t *p,libvlc_event_type_t type,libvlc_callback_t callback,void *opaque){
+    if(type!=libvlc_MediaPlayerBuffering)return -1;
+    *p={callback,opaque};
+    return 0;
+}
+FIXTURE_API void libvlc_event_detach(libvlc_event_manager_t *p,libvlc_event_type_t,libvlc_callback_t,void *){*p={};}
 FIXTURE_API int libvlc_media_player_play(libvlc_media_player_t *p){p->playing=!p->media->startPaused;p->state=p->media->location.find("poll-only")!=std::string::npos?libvlc_Error:p->playing?libvlc_Playing:libvlc_Paused;if(preparedFixture(p) && !p->media->menus && p->playing && p->title!=0)p->premature=true;return 0;}
 FIXTURE_API void libvlc_media_player_stop(libvlc_media_player_t *p){p->playing=false;p->state=libvlc_Stopped;}
 FIXTURE_API void libvlc_media_player_pause(libvlc_media_player_t *p){p->playing=!p->playing;}
 FIXTURE_API void libvlc_media_player_set_pause(libvlc_media_player_t *p,int paused){p->playing=!paused;if(preparedFixture(p) && !p->media->menus && !paused && p->title!=0)p->premature=true;}
-FIXTURE_API libvlc_time_t libvlc_media_player_get_time(libvlc_media_player_t *){return 1000;}
+FIXTURE_API libvlc_time_t libvlc_media_player_get_time(libvlc_media_player_t *p){return p->time;}
 FIXTURE_API libvlc_time_t libvlc_media_player_get_length(libvlc_media_player_t *p){return preparedFixture(p)?titleDuration(p,p->title):0;}
 FIXTURE_API void libvlc_media_player_set_time(libvlc_media_player_t *,libvlc_time_t){}
 FIXTURE_API libvlc_state_t libvlc_media_player_get_state(libvlc_media_player_t *p){return p->state;}
@@ -123,7 +147,7 @@ FIXTURE_API void libvlc_video_set_mouse_input(libvlc_media_player_t *,unsigned){
 FIXTURE_API int libvlc_media_player_add_slave(libvlc_media_player_t *,libvlc_media_slave_type_t,const char *,bool){return 0;}
 FIXTURE_API unsigned libvlc_media_tracks_get(libvlc_media_t *,libvlc_media_track_t ***tracks){*tracks=nullptr;return 0;}
 FIXTURE_API void libvlc_media_tracks_release(libvlc_media_track_t **,unsigned){}
-FIXTURE_API int libvlc_media_get_stats(libvlc_media_t *,libvlc_media_stats_t *stats){*stats={};return 1;}
+FIXTURE_API int libvlc_media_get_stats(libvlc_media_t *,libvlc_media_stats_t *stats){*stats={};stats->i_displayed_pictures=currentPlayer?currentPlayer->pictures:0;return 1;}
 FIXTURE_API int libvlc_audio_get_track(libvlc_media_player_t *p){return p->audioReady?4352:-1;}
 FIXTURE_API int libvlc_video_get_spu(libvlc_media_player_t *){return -1;}
 FIXTURE_API void libvlc_media_player_set_hwnd(libvlc_media_player_t *,void *){}
@@ -254,6 +278,39 @@ private slots:
     }
     void ordinaryDiscOpenKeepsAuthoredMenuMode(){
         PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());QVERIFY(engine.open("bluray:///prepared/ordinary",0));QTRY_VERIFY(engine.state().navigationTitle);QVERIFY(engine.state().discMenus);QCOMPARE(discMenus_(),1);
+    }
+    void discPlaybackEndsWhenBufferingStallsAtTitleEnd(){
+        using DiscClock=void (*)(int,qint64,int,int);
+        const auto clock=reinterpret_cast<DiscClock>(fixture_.resolve("luma_fixture_disc_clock"));
+        QVERIFY(clock);
+        PlaybackEngine engine(PlaybackEngine::Kind::Disc,runtime());
+        QVERIFY(engine.open("bluray:///prepared/ending",0));
+
+        clock(3,20020,464,0);
+        QTRY_VERIFY(engine.state().navigationTitle && engine.state().buffering);
+        QTest::qWait(2100);
+        QVERIFY(!engine.state().ended);
+
+        clock(1,10000,528,0);
+        QTRY_VERIFY(engine.state().timelineReady && engine.state().buffering);
+        QTest::qWait(2100);
+        QVERIFY(!engine.state().ended);
+
+        clock(1,6294288,2250,0);
+        QTRY_COMPARE(engine.state().positionMs,6294288);
+        QVERIFY(!engine.state().ended);
+        QTest::qWait(1100);
+        clock(1,6294288,2251,0);
+        QTRY_COMPARE(engine.state().displayedPictures,2251);
+        QTest::qWait(1100);
+        QVERIFY(!engine.state().ended);
+        QTRY_VERIFY_WITH_TIMEOUT(engine.state().ended,4000);
+        QVERIFY(!engine.state().playing);
+        QVERIFY(!engine.state().buffering);
+        QCOMPARE(engine.state().currentTitle,1);
+
+        QVERIFY(engine.open("bluray:///prepared/ending",0));
+        QTRY_VERIFY(engine.state().playing && !engine.state().ended && engine.state().navigationTitle);
     }
     void videoDeviceLossIsNonfatalAndDebounced_data(){
         QTest::addColumn<QByteArray>("message");QTest::addColumn<QString>("code");
