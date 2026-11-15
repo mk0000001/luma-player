@@ -50,6 +50,7 @@ constexpr int port = 48762;
 constexpr int startupWaitMs = 10000;
 constexpr int discoveryRefreshMs = 5000;
 constexpr auto discoveryAtStartupKey = "lan/discoveryAtStartup";
+constexpr auto remoteControlPreferenceKey = "lan/allowRemoteControl";
 constexpr int stopWaitMs = 4000;
 constexpr int pairWaitMs = 90000;
 constexpr qsizetype maxReplyBytes = 64 * 1024;
@@ -268,8 +269,10 @@ LanPlaybackDialog::LanPlaybackDialog(QWidget *parent) : QDialog(parent) {
     remoteControl_ = new QCheckBox("연결된 기기에서 PC 플레이어 조작 허용", this);
     remoteControl_->setObjectName("lanRemoteControl");
     remoteControl_->setToolTip("페어링한 기기에서 PC를 조작합니다. Windows의 영상 캡처 제외가 적용된 메뉴는 표시할 수 없습니다.");
+    remoteControl_->setChecked(QSettings().value(remoteControlPreferenceKey, true).toBool());
     layout->addWidget(remoteControl_);
     connect(remoteControl_, &QCheckBox::toggled, this, [this](bool enabled) {
+        QSettings().setValue(remoteControlPreferenceKey, enabled);
         publishRemoteControl(enabled);
     });
     auto *remoteFiles = new QPushButton("갤탭에서 고를 파일 지정", this);
@@ -495,7 +498,7 @@ void LanPlaybackDialog::showEvent(QShowEvent *event) {
 }
 
 bool LanPlaybackDialog::discoveryAtStartupEnabled() {
-    return QSettings().value(discoveryAtStartupKey, false).toBool();
+    return QSettings().value(discoveryAtStartupKey, true).toBool();
 }
 
 void LanPlaybackDialog::hideEvent(QHideEvent *event) {
@@ -763,10 +766,14 @@ void LanPlaybackDialog::disarmRemoteStart() {
 }
 
 void LanPlaybackDialog::disarmRemoteControl() {
-    remoteControl_->setChecked(false);
+    publishRemoteControl(false);
 }
 
 void LanPlaybackDialog::publishRemoteControl(bool enabled) {
+    if (enabled && (!ready_ || !hasActiveDevice_ || forgetting_ || mediaState_ == MediaState::Stopping))
+        return;
+    if (!enabled && remoteControlGrant_.isEmpty())
+        return;
     remoteControlGrant_ = enabled ? QUuid::createUuid().toString(QUuid::Id128) : QString{};
     if (ready_)
         writeMessage(QJsonObject{{"command", "allowRemoteControl"}, {"grant", remoteControlGrant_}});
@@ -996,7 +1003,6 @@ void LanPlaybackDialog::manageDevice(bool forget) {
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     disarmRemoteStart();
-    disarmRemoteControl();
     if (ready_ && !forgetting_ && !writeMessage(QJsonObject{
             {"command", forget ? "forgetDevice" : "disconnectDevice"}, {"id", id}}))
         status_->setText("기기 연결을 변경할 수 없습니다.");
@@ -1136,6 +1142,7 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
         showPairRequest(message);
     } else if (event == "deviceConnected" && !forgetting_) {
         hasActiveDevice_ = true;
+        publishRemoteControl(remoteControl_->isChecked());
         if (mediaState_ == MediaState::Idle) {
             if (!mediaAvailable_)
                 status_->setText("기기가 연결되었습니다. PC에서 미디어를 열고 공유를 시작하세요.");
@@ -1193,6 +1200,7 @@ void LanPlaybackDialog::handleReply(const QJsonObject &message) {
     } else if (event == "unshared" && mediaState_ == MediaState::Stopping) {
         status_->setText("기기 연결을 유지하고 모바일 공유를 중지했습니다.");
         finishShare(true);
+        publishRemoteControl(remoteControl_->isChecked());
     } else if (event == "stopped") {
         const bool forgot = command == "forget" || forgetting_;
         forgetting_ = false;
@@ -1365,7 +1373,7 @@ void LanPlaybackDialog::updateControls() {
     audioMode_->setEnabled(idle && !forgetting_);
     start_->setEnabled(canShare());
     remoteStart_->setEnabled(ready_ && mediaAvailable_ && !forgetting_ && mediaState_ == MediaState::Idle);
-    remoteControl_->setEnabled(ready_ && hasActiveDevice_ && !forgetting_ && mediaState_ != MediaState::Stopping);
+    remoteControl_->setEnabled(!shuttingDown_ && !closingHost_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     stop_->setEnabled(!idle && mediaState_ != MediaState::Stopping);
     forget_->setEnabled(ready_ && !forgetting_ && mediaState_ != MediaState::Stopping);
     const auto *selected = devices_->currentItem();

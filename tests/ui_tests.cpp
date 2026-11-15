@@ -114,28 +114,38 @@ private slots:
         QVERIFY(window.diagnostics().value("discRoot").toString().isEmpty());
     }
     void mobilePlaybackSettingsAllowNoOpenSource(){
-        luma::MainWindow window;
-        window.startLanDiscoveryAtStartup();
-        QVERIFY(!window.findChild<QDialog*>("lanPlaybackDialog"));
-        auto *share=window.findChild<QPushButton*>("openLanPlayback");
-        QVERIFY(share);
-        QVERIFY(share->isEnabled());
-        share->click();
-        auto *dialog=window.findChild<QDialog*>("lanPlaybackDialog");
-        QVERIFY(dialog);
-        auto *start=dialog->findChild<QPushButton*>("lanStart");
-        QVERIFY(start);
-        QVERIFY(!start->isEnabled());
-        auto *discovery=dialog->findChild<QCheckBox*>("lanDiscoveryAtStartup");
-        auto *toggle=dialog->findChild<QPushButton*>("lanToggleDiscovery");
-        auto *status=dialog->findChild<QLabel*>("lanPlaybackStatus");
-        QVERIFY(discovery && toggle && status);
-        QVERIFY(!discovery->isChecked());
-        QVERIFY(toggle->isEnabled());
-        QCOMPARE(status->text(),QString("기기 검색이 꺼져 있습니다."));
-        discovery->click();
         QVERIFY(luma::LanPlaybackDialog::discoveryAtStartupEnabled());
-        QCOMPARE(status->text(),QString("기기 검색이 꺼져 있습니다."));
+        {
+            luma::MainWindow window;
+            auto *share=window.findChild<QPushButton*>("openLanPlayback");
+            QVERIFY(share && share->isEnabled());
+            share->click();
+            auto *dialog=window.findChild<luma::LanPlaybackDialog*>("lanPlaybackDialog");
+            QVERIFY(dialog);
+            auto *start=dialog->findChild<QPushButton*>("lanStart");
+            auto *discovery=dialog->findChild<QCheckBox*>("lanDiscoveryAtStartup");
+            auto *control=dialog->findChild<QCheckBox*>("lanRemoteControl");
+            QVERIFY(start && !start->isEnabled());
+            QVERIFY(discovery && discovery->isChecked());
+            QVERIFY(control && control->isEnabled() && control->isChecked());
+            QVERIFY(!dialog->remoteControlEnabled());
+            discovery->click();
+            control->click();
+            dialog->reject();
+        }
+
+        luma::MainWindow reopened;
+        reopened.startLanDiscoveryAtStartup();
+        QVERIFY(!reopened.findChild<luma::LanPlaybackDialog*>("lanPlaybackDialog"));
+        auto *share=reopened.findChild<QPushButton*>("openLanPlayback");
+        QVERIFY(share);
+        share->click();
+        auto *dialog=reopened.findChild<luma::LanPlaybackDialog*>("lanPlaybackDialog");
+        QVERIFY(dialog);
+        auto *discovery=dialog->findChild<QCheckBox*>("lanDiscoveryAtStartup");
+        auto *control=dialog->findChild<QCheckBox*>("lanRemoteControl");
+        QVERIFY(discovery && !discovery->isChecked());
+        QVERIFY(control && !control->isChecked());
         dialog->reject();
     }
     void mobilePlaybackOnlySelectsPrivateSubnetsAndEscapesCues(){
@@ -435,9 +445,12 @@ private slots:
 #ifdef Q_OS_WIN
     void mobilePlaybackUsesAuthenticatedLocalHost(){
         const auto source=qEnvironmentVariable("LUMA_UI_LAN_SOURCE");
-        const auto address=qEnvironmentVariable("LUMA_UI_LAN_ADDRESS");
-        if(QGuiApplication::platformName()!="windows" || source.isEmpty() || address.isEmpty())
-            QSKIP("Requires the staged LAN host, native playback and a selected private adapter");
+        if(QGuiApplication::platformName()!="windows" || source.isEmpty())
+            QSKIP("Requires the staged LAN host and native playback");
+        const auto adapters=luma::lanPrivateInterfaces();
+        if(adapters.isEmpty())
+            QSKIP("Requires a private IPv4 adapter");
+        const auto address=qEnvironmentVariable("LUMA_UI_LAN_ADDRESS",adapters.first().address.toString());
         const bool disc=source.endsWith(".json",Qt::CaseInsensitive);
         QSettings().setValue("playback/volume",0);
         luma::MainWindow window;
@@ -448,7 +461,7 @@ private slots:
         QVERIFY(share);
         QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("positionMs").toInteger()>100,30000);
         if(disc)QTRY_VERIFY_WITH_TIMEOUT(window.diagnostics().value("preparedCaptionsApplied").toBool(),20000);
-        window.startLanDiscovery();
+        window.startLanDiscoveryAtStartup();
         share->click();
         auto *dialog=window.findChild<QDialog*>("lanPlaybackDialog");
         QVERIFY(dialog);
@@ -489,6 +502,9 @@ private slots:
         auto *rejected=manager.get(request("/v1/session"));
         QTRY_VERIFY_WITH_TIMEOUT(rejected->isFinished(),12000);
         QCOMPARE(rejected->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),401);
+        auto *unpairedControl=manager.get(request("/v1/player/disc-menu.png"));
+        QTRY_VERIFY_WITH_TIMEOUT(unpairedControl->isFinished(),12000);
+        QCOMPARE(unpairedControl->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),401);
 
         const auto base64Url=[](const QByteArray &bytes){
             return bytes.toBase64(QByteArray::Base64UrlEncoding|QByteArray::OmitTrailingEquals);
@@ -528,8 +544,6 @@ private slots:
         const auto token=approvalReply.value("token").toString().toLatin1();
         QCOMPARE(token.size(),22);
         QVERIFY(approvalReply.value("rememberToken").toString().isEmpty());
-        QVERIFY(!remoteControl->isChecked());
-        remoteControl->click();
         QVERIFY(remoteControl->isChecked());
         auto *menu=manager.get(request("/v1/player/disc-menu.png",token));
         QTRY_VERIFY_WITH_TIMEOUT(menu->isFinished(),12000);

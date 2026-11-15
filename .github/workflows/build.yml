@@ -13,6 +13,10 @@ on:
         description: Produce and verify the Ubuntu 24.04 x64 release archive
         type: boolean
         default: false
+      test_lan_playback:
+        description: Verify Windows startup discovery and approved remote control with generated media
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -91,6 +95,24 @@ jobs:
           $env:LUMA_SUBTITLE_FILE_RUNTIME = "$pwd/build/runtime"
           ctest --test-dir build --output-on-failure
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify first-launch LAN discovery and control
+        if: inputs.test_lan_playback
+        shell: pwsh
+        run: |
+          $qt = (Get-Content dependencies.lock.json -Raw | ConvertFrom-Json).windows | Where-Object id -eq 'qt'
+          $env:PATH = "$pwd/.deps/$($qt.target)/bin;$env:PATH"
+          $env:QT_PLUGIN_PATH = "$pwd/.deps/$($qt.target)/plugins"
+          $env:QT_QPA_PLATFORM = 'windows'
+          $env:LUMA_UI_LAN_SOURCE = Join-Path $pwd 'build/lan-test.mp4'
+          ./build/runtime/tools/ffmpeg.exe -nostdin -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=24' -t 40 -c:v libx264 -pix_fmt yuv420p $env:LUMA_UI_LAN_SOURCE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $result = 'build/lan-first-run-test-results.txt'
+          & ./build/ui_tests.exe mobilePlaybackUsesAuthenticatedLocalHost -o "$result,txt"
+          $code = $LASTEXITCODE
+          Get-Content -LiteralPath $result
+          if ($code -ne 0 -or -not (Select-String -LiteralPath $result -Pattern 'PASS\s+: UiTests::mobilePlaybackUsesAuthenticatedLocalHost' -Quiet)) {
+            throw 'First-launch LAN playback test did not pass.'
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

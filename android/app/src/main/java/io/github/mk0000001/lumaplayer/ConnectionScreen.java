@@ -121,7 +121,7 @@ final class ConnectionScreen {
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
         SharedPreferences preferences = activity.getSharedPreferences("luma_discovery", Context.MODE_PRIVATE);
-        autoDiscovery.setChecked(preferences.getBoolean(AUTO_DISCOVERY_KEY, false));
+        autoDiscovery.setChecked(preferences.getBoolean(AUTO_DISCOVERY_KEY, true));
         autoDiscovery.setOnClickListener(view -> {
             boolean enabled = autoDiscovery.isChecked();
             preferences.edit().putBoolean(AUTO_DISCOVERY_KEY, enabled).apply();

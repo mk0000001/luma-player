@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.2.16
+
+- 첫 실행에서 PC의 내부망 기기 검색과 Android의 PC 자동 검색을 켭니다. 승인해 연결한 기기에는 재생 조작 권한을 기본으로 부여합니다. 검색과 조작 설정은 사용자가 바꾼 값을 저장합니다.
+
 ### 0.2.15
 
 - Windows 설치본에 AI 모델을 무손실 압축으로 포함했습니다. GPU·메모리에 맞는 항목을 미리 선택하며, NVIDIA CUDA는 선택 시 설치 중에 내려받습니다.
@@ -205,6 +209,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.16
+
+- The PC starts LAN discovery on first launch and Android searches for PCs automatically. Approved, connected devices get playback controls by default. The apps save the user's discovery and control choices.
 
 ### 0.2.15
 
