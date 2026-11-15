@@ -4,7 +4,7 @@
 
 ### 0.2.15
 
-- Windows 설치 EXE에서 NVIDIA CUDA 런타임과 AI 모델을 분리했습니다. 설치 화면이 GPU·메모리에 맞춰 선택 항목을 추천하고, 선택한 항목을 설치 중에 내려받습니다.
+- Windows 설치본에 AI 모델을 무손실 압축으로 포함했습니다. GPU·메모리에 맞는 항목을 미리 선택하며, NVIDIA CUDA는 선택 시 설치 중에 내려받습니다.
 
 ### 0.2.14
 
@@ -208,7 +208,7 @@
 
 ### 0.2.15
 
-- Removed the NVIDIA CUDA runtime and AI weights from the Windows setup EXE. Setup recommends components based on the GPU and memory and downloads the selections during installation.
+- Bundled losslessly compressed AI weights in Windows setup. Setup preselects components based on the GPU and memory and downloads NVIDIA CUDA when selected.
 
 ### 0.2.14
 

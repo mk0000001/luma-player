@@ -4,7 +4,7 @@
 
 포터블에는 번역 실행기와 Whisper large-v3-turbo Q5 음성 인식 모델이 들어갑니다. `windows-x64` 코어는 CUDA를 생략하고, `windows-x64-cuda`는 음성 인식·번역 CUDA 실행기를 함께 포함합니다. **번역 가중치는 두 구성 모두 별도 선택 설치**입니다. 번역 모델 없이도 영상·음성 재생, 원문 자막과 일본어 한글 독음을 사용할 수 있습니다. 설치할 때 인터넷을 쓰며, 완료 후 인식·번역은 로컬에서 실행합니다. 외부 API 계정·키·Python은 필요하지 않습니다.
 
-Windows 설치 화면에서 하드웨어에 따라 CUDA와 모델을 추천합니다. 기존 설치에서 가속 라이브러리를 관리하려면 **설정 → AI 가속 설정**을 여세요. NVIDIA에는 CUDA, AMD Radeon과 Intel GPU에는 Vulkan, Intel GPU와 NPU에는 OpenVINO를 권장합니다. Vulkan·OpenVINO 음성 인식 런타임은 기본 패키지에 포함되며, 설정의 이 두 항목은 번역 런타임을 추가하거나 복구합니다. [Windows 설치 안내](WINDOWS-INSTALLER.md)
+Windows 전체 모델 포함 설치본에는 Hy-MT2 한국어 번역 모델이 무손실 압축되어 있습니다. 설치 화면에서 하드웨어에 따라 CUDA와 모델을 추천합니다. 기존 설치에서 가속 라이브러리를 관리하려면 **설정 → AI 가속 설정**을 여세요. NVIDIA에는 CUDA, AMD Radeon과 Intel GPU에는 Vulkan, Intel GPU와 NPU에는 OpenVINO를 권장합니다. Vulkan·OpenVINO 음성 인식 런타임은 기본 패키지에 포함되며, 설정의 이 두 항목은 번역 런타임을 추가하거나 복구합니다. [Windows 설치 안내](WINDOWS-INSTALLER.md)
 
 ### 번역 모델 선택
 
@@ -101,7 +101,7 @@ pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 
 The portable player includes the translation runtime and Whisper large-v3-turbo Q5 ASR model. The `windows-x64` core omits CUDA, while `windows-x64-cuda` bundles both ASR and translation CUDA runtimes. **Translation weights remain optional in both.** Playback, source captions and Japanese Hangul readings work without translation weights. Installation uses the internet; subsequent recognition/translation runs locally, without an external API account/key or Python.
 
-Windows Setup recommends CUDA and models based on the hardware. Open **AI 가속 설정** in Settings to manage libraries after installation. Choose CUDA for NVIDIA, Vulkan for AMD Radeon and Intel GPUs, or OpenVINO for supported Intel GPUs and NPUs. Vulkan and OpenVINO recognition libraries are part of the standard payload, and their settings buttons add or repair the translation runtime. [Windows setup guide](WINDOWS-INSTALLER.md)
+Full Windows model setup includes the losslessly compressed Hy-MT2 Korean translation model. Setup recommends CUDA and models based on the hardware. Open **AI 가속 설정** in Settings to manage libraries after installation. Choose CUDA for NVIDIA, Vulkan for AMD Radeon and Intel GPUs, or OpenVINO for supported Intel GPUs and NPUs. Vulkan and OpenVINO recognition libraries are part of the standard payload, and their settings buttons add or repair the translation runtime. [Windows setup guide](WINDOWS-INSTALLER.md)
 
 ### Choose a translation model
 

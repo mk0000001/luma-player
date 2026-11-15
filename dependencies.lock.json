@@ -73,7 +73,7 @@
     "licenseFile": "OpenAI-Whisper-MIT.txt",
     "licenseSha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
   },
-  "highQualityModel":{"id":"ggerganov/whisper.cpp","url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin","revision":"5359861c739e955e79d9a303bcbc70fb988958b1","sha256":"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2","bytes":574041195,"file":"ggml-large-v3-turbo-q5_0.bin","license":"MIT"},
-  "encoder":{"id":"Intel/whisper.cpp-openvino-models","revision":"d0c3075c40e4938fb2a4cccfc91704106d3e7d12","file":"ggml-base-models.zip","bytes":171306938,"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
+  "highQualityModel":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin","revision":"5359861c739e955e79d9a303bcbc70fb988958b1","sha256":"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2","bytes":574041195,"file":"ggml-large-v3-turbo-q5_0.bin","license":"MIT"},
+  "encoder":{"url":"https://huggingface.co/Intel/whisper.cpp-openvino-models/resolve/d0c3075c40e4938fb2a4cccfc91704106d3e7d12/ggml-base-models.zip","archive":"ggml-base-openvino.zip","sha256":"18f6e87146bfe9986fa764657cca26695bcb7fa3ba5d77d6d6af1d38de720e4c"},
   "model":{"url":"https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin","sha256":"60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe","file":"ggml-base.bin"}
 }

@@ -2,18 +2,18 @@
 
 ## 한국어
 
-릴리스의 Windows x64 설치 EXE로 LumaPlayer를 설치합니다.
+릴리스에서 Windows 설치본을 고릅니다. **전체 모델 포함 설치**는 `windows-x64-models.exe`와 번호가 붙은 `.bin` 파일을 모두 같은 폴더에 받은 뒤 실행하세요. Whisper Base와 OpenVINO 인코더, Turbo, full-v3 Q5, Hy-MT2 한국어 번역 모델이 들어 있습니다. **단일 파일 설치**는 Whisper Base와 Turbo를 포함하며, 앱에서 시작한 업데이트에도 사용됩니다.
 
 1. 설치 EXE를 실행하고 언어·설치 폴더를 선택합니다. 관리자 권한은 필요하지 않습니다. 기본 위치는 사용자 로컬 앱 폴더입니다.
-2. 설치 화면에서 GPU·드라이버·메모리를 확인해 추천 항목을 체크합니다. 호환 NVIDIA GPU를 감지하면 CUDA를 추천합니다. RAM 16 GB급과 전용 VRAM 4 GB급부터 Whisper Turbo를, 그 아래는 Whisper Base와 OpenVINO 인코더를 추천합니다. RAM 32 GB급과 전용 VRAM 12 GB급부터 한국어 번역 모델 Hy-MT2도 추천합니다. 필요한 항목을 직접 바꾸거나 **플레이어만 · 오프라인**을 선택할 수 있습니다.
-3. 설치 프로그램은 고정 HTTPS 주소에서 선택한 항목을 받아 SHA-256을 확인합니다. 같은 폴더에 검증된 모델과 CUDA 라이브러리가 있으면 재사용합니다. 앱에서 시작한 업데이트도 설치 화면에서 항목을 직접 추가할 수 있습니다. 자동 선택은 일반 설치 화면에서만 적용됩니다.
+2. 설치 화면에서 GPU·드라이버·메모리를 확인해 추천 항목을 체크합니다. 호환 NVIDIA GPU를 감지하면 CUDA를 추천합니다. RAM 16 GB급과 전용 VRAM 4 GB급부터 Whisper Turbo를, 그 아래는 Whisper Base와 OpenVINO 인코더를 추천합니다. 전체 설치본은 RAM 32 GB급과 전용 VRAM 12 GB급부터 Hy-MT2도 추천합니다. 항목을 바꾸거나 **플레이어만**을 선택할 수 있습니다.
+3. 선택한 모델은 설치 파일에서 풉니다. CUDA를 선택하면 고정 HTTPS 주소에서 라이브러리를 받아 SHA-256을 확인합니다. 같은 폴더에 검증된 모델과 CUDA 라이브러리가 있으면 재사용합니다. 앱에서 시작한 업데이트에서는 원하는 항목을 직접 고를 수 있습니다.
 4. 시작 메뉴에서 LumaPlayer를 실행합니다. **AI 자막 → 음성 인식 모델 선택**에서 설치한 모델을 바꿀 수 있습니다. 한국어 번역기는 설치된 Hy-MT2를 찾습니다. **설정 → AI 가속 설정**에서 별도 가속 라이브러리를 설치할 수도 있습니다.
 
-Whisper Base와 인코더는 약 172 MB, Turbo는 약 575 MB, full-v3 Q5는 약 1.08 GB, Hy-MT2는 약 4.62 GB입니다. CUDA 크기와 설치에 필요한 공간은 설치 화면에 표시됩니다. 제거 프로그램은 다운로드한 모델과 사용자 설정·자막을 보존합니다. 설치 EXE는 코드 서명되지 않았습니다.
+설치 후 모델의 원래 크기는 Whisper Base와 인코더 약 189 MB, Turbo 약 574 MB, full-v3 Q5 약 1.08 GB, Hy-MT2 약 4.62 GB입니다. CUDA 다운로드 크기와 설치에 필요한 공간은 설치 화면에 표시됩니다. 제거 프로그램은 모델과 사용자 설정·자막을 보존합니다. Windows 설치 EXE에 Authenticode 서명이 없습니다.
 
 CPU·Vulkan·Intel OpenVINO 실행기, Qt 6, Visual C++ 실행 DLL, libVLC·libmpv·FFmpeg과 Noto Sans는 기본 설치에서 제공합니다. 선택한 CUDA 12 런타임은 설치 폴더에 내려받아 사용합니다. CUDA Toolkit이나 Visual Studio 설치는 필요 없으며 가속에는 해당 장치의 호환 드라이버가 필요합니다.
 
-설치기를 빌드하려면 공식 Inno Setup **6.7.4**, 네이티브 Windows 빌드와 잠금 파일에 지정한 Base 인코더·CUDA 개발 캐시를 준비하세요. `scripts/package-windows.ps1 -StageOnly -ForInstaller`로 만든 폴더를 `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`에 전달합니다. 설치 EXE와 별도 CUDA 아카이브·체크섬을 같은 버전의 GitHub 릴리스에 올립니다. 0.2.15 설치 EXE의 `-cuda` 접미사는 0.2.14 이하 업데이트와 호환하기 위해 사용합니다.
+설치기를 빌드하려면 공식 Inno Setup **6.7.4**, 네이티브 Windows 빌드와 잠금 파일에 지정한 모델·CUDA 개발 캐시를 준비하세요. Whisper full-v3 Q5는 `.deps/models`, Hy-MT2는 `.deps/translation/models`에 둡니다. `scripts/package-windows.ps1 -StageOnly -ForInstaller`로 만든 폴더를 `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`에 전달합니다. 단일 EXE, 전체 모델 포함 EXE와 모든 `.bin` 파일, 선택 다운로드용 CUDA 아카이브 및 체크섬을 같은 버전의 GitHub 릴리스에 올립니다. 0.2.15 단일 EXE의 `-cuda` 접미사는 0.2.14 이하 업데이트와 호환하기 위해 사용합니다.
 
 ### 설치가 차단될 때
 
@@ -25,13 +25,13 @@ CPU·Vulkan·Intel OpenVINO 실행기, Qt 6, Visual C++ 실행 DLL, libVLC·libm
 
 ## English
 
-Run the Windows x64 setup EXE from Releases, then select the language, destination and components. Installation is per user and needs no administrator rights.
+Choose a Windows installer in Releases. For **full model setup**, save the `windows-x64-models.exe` and all its numbered `.bin` files in the same folder before running the EXE. It includes Whisper Base and its OpenVINO encoder, Turbo, full-v3 Q5, and the Hy-MT2 Korean translation model. **Single-file setup** includes Whisper Base and Turbo and is also used for in-app updates. Installation is per user and needs no administrator rights.
 
-Interactive setup checks the GPU, driver, and memory and preselects suitable components. It recommends CUDA on supported NVIDIA hardware, Whisper Turbo from the 16 GB RAM and 4 GB dedicated VRAM class, and Whisper Base with its OpenVINO encoder on smaller systems. Hy-MT2 is recommended from the 32 GB RAM and 12 GB dedicated VRAM class. Change selections or choose **Player only (offline)**. App-initiated updates offer manual selections.
+Interactive setup checks the GPU, driver, and memory and preselects suitable components. It recommends CUDA on supported NVIDIA hardware, Whisper Turbo from the 16 GB RAM and 4 GB dedicated VRAM class, and Whisper Base with its OpenVINO encoder on smaller systems. Full model setup recommends Hy-MT2 from the 32 GB RAM and 12 GB dedicated VRAM class. Change selections or choose **Player only**. App-initiated updates offer manual selections.
 
-Setup downloads selected components over pinned HTTPS URLs and checks their SHA-256 hashes. It reuses verified models and CUDA libraries already at the destination. Whisper Base with its encoder is about 172 MB, Turbo about 575 MB, full-v3 Q5 about 1.08 GB, and Hy-MT2 about 4.62 GB. Setup shows the CUDA download size. Uninstall preserves downloaded models, user settings and captions. The setup EXE is unsigned.
+Model installation extracts the compressed setup data. If you select CUDA, Setup downloads the runtime from its pinned HTTPS URL and checks its SHA-256. Setup reuses verified models and CUDA libraries at the destination. The installed sizes are about 189 MB for Whisper Base and its encoder, 574 MB for Turbo, 1.08 GB for full-v3 Q5, and 4.62 GB for Hy-MT2. Setup shows the CUDA download and required disk space. Uninstall preserves models, user settings and captions. The setup EXE is unsigned.
 
-Build with official Inno Setup 6.7.4, the native Windows build, and the pinned Base encoder and CUDA development caches. Stage with `scripts/package-windows.ps1 -StageOnly -ForInstaller`, then call `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. Publish the installer, CUDA archive, and checksums together on the versioned GitHub release. The `-cuda` filename suffix in 0.2.15 preserves compatibility with updaters through 0.2.14.
+Build with official Inno Setup 6.7.4, the native Windows build, and the pinned model and CUDA development caches. Place Whisper full-v3 Q5 in `.deps/models` and Hy-MT2 in `.deps/translation/models`. Stage with `scripts/package-windows.ps1 -StageOnly -ForInstaller`, then call `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. Publish the single-file installer, full model installer and all its `.bin` files, CUDA archive, and checksums on the versioned release. The `-cuda` suffix on the 0.2.15 single-file installer preserves compatibility with updaters through 0.2.14.
 
 The standard payload contains CPU, Vulkan and Intel OpenVINO runners, Qt 6, the Visual C++ runtime, libVLC/libmpv/FFmpeg, and Noto Sans. Select CUDA to install its runtime into the LumaPlayer directory. GPU and NPU acceleration require compatible device drivers. Use **AI 자막 → 음성 인식 모델 선택** to switch between installed models, and **설정 → AI 가속 설정** to manage additional runtimes.
 

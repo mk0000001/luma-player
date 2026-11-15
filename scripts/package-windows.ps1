@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'package-support.ps1')
 if($ForInstaller -and (!$StageOnly -or $IncludeCuda -or $IncludeTranslationModel)){
-    throw 'Installer staging requires -StageOnly and downloads CUDA and model files separately.'
+    throw 'Installer staging requires -StageOnly and a core-only staging directory. The installer builder adds verified models separately.'
 }
 if (!$Version) { $Version=(Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() }
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') { throw 'Invalid semantic version' }

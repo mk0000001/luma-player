@@ -3,26 +3,39 @@ $ErrorActionPreference='Stop'
 . "$PSScriptRoot/../scripts/package-support.ps1"
 . "$PSScriptRoot/../scripts/bootstrap-support.ps1"
 $root=Split-Path -Parent $PSScriptRoot
-$a=Get-Content "$root/dependencies.lock.json" -Raw | ConvertFrom-Json
-$t=Get-Content "$root/translation-dependencies.lock.json" -Raw | ConvertFrom-Json
 $count=0
-foreach($entry in @(@{spec=$a.highQualityModel;component='turbo';destination='runtime/models'},
-                   @{spec=$a.accurateModel;component='accurate';destination='runtime/models'},
-                   @{spec=$t.qualityModel;component='translation';destination='runtime/translation/models'})){
- $spec=$entry.spec
- $line=New-LumaInstallerModelEntry -Spec $spec -Destination $entry.destination -Component $entry.component
- if($line -notlike ('*Hash: "'+$spec.sha256+'"*') -or $line -notlike '*external download ignoreversion*'){throw 'missing-native-integrity-enforcement'}
- if($line -notlike ("*', '"+$spec.bytes+"', '*")){throw 'Inno Check must pass the size as text, including weights larger than 2 GiB.'}
- $count++
- foreach($field in @('url','file','sha256','bytes')){
-  $copy=$spec | ConvertTo-Json -Depth 9 | ConvertFrom-Json
-  switch($field){url{$copy.url='http://evil.invalid/model'} file{$copy.file='../escape.bin'} sha256{$copy.sha256='invalid'} bytes{$copy.bytes=-1}}
-  $rejected=$false;try{New-LumaInstallerModelEntry -Spec $copy -Destination $entry.destination -Component $entry.component | Out-Null}catch{$rejected=$true}
-  if(!$rejected){throw "accepted-invalid-$field"};$count++
- }
-}
 $fixture=Join-Path $root ('.deps/installer-tests/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+foreach($entry in @(@{name='encoder.xml';component='base';dest='runtime\models';bytes=20L},
+                   @{name='turbo.bin';component='turbo';dest='runtime\models';bytes=50L},
+                   @{name='accurate.bin';component='accurate';dest='runtime\models';bytes=100L},
+                   @{name='quality.gguf';component='translation';dest='runtime\translation\models';bytes=4624648896L})){
+ $file=[pscustomobject]@{Name=$entry.name;Source=(Join-Path $fixture $entry.name);Bytes=$entry.bytes;Sha256=('1'*64)}
+ $line=New-LumaInstallerModelEntry -File $file -Component $entry.component
+ if(!$line.StartsWith('Source: "'+$file.Source+'"; DestDir: "{app}\'+$entry.dest+'";') -or
+    $line -notlike '*solidbreak uninsneveruninstall*' -or $line -match '\b(download|external)\b'){
+    throw 'An installer model must be embedded, separately compressed, and preserved on uninstall.'
+ }
+ if($line -notlike ("*', '"+$file.Bytes+"', '*")){throw 'Inno Check must pass the size as text, including weights larger than 2 GiB.'}
+ $count++
+ $file.Name='../escape.bin'
+ $rejected=$false
+ try{New-LumaInstallerModelEntry -File $file -Component $entry.component | Out-Null}catch{$rejected=$true}
+ if(!$rejected){throw 'Accepted a model path escape.'};$count++
+}
+
+$modelPath=Join-Path $fixture 'pinned.gguf'
+[IO.File]::WriteAllText($modelPath,'test weight')
+$spec=@{file='pinned.gguf';bytes=(Get-Item -LiteralPath $modelPath).Length;sha256=(Get-FileHash -LiteralPath $modelPath).Hash.ToLowerInvariant()}
+$file=Get-LumaInstallerLockedModelFile -SourceDirectory $fixture -Spec $spec
+if($file.Source -cne $modelPath -or $file.Sha256 -cne $spec.sha256){throw 'Verified model metadata differs from its pin.'}
+$count++
+[IO.File]::WriteAllText($modelPath,'test wrong!')
+$rejected=$false
+try{Get-LumaInstallerLockedModelFile -SourceDirectory $fixture -Spec $spec | Out-Null}catch{$rejected=$true}
+if(!$rejected){throw 'Changed model bytes entered the installer.'};$count++
+[IO.File]::Delete($modelPath)
+
 $archiveFixture=Join-Path $fixture 'download-only-payload'
 New-Item -ItemType Directory -Path (Join-Path $archiveFixture 'runtime/models') -Force | Out-Null
 $weight=Join-Path $archiveFixture 'runtime/models/ggml-test.bin'

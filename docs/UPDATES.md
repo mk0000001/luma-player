@@ -12,7 +12,7 @@ Windows LumaPlayer의 설정에서 **업데이트 확인**을 누르면 공식 G
 ./scripts/sign-update-manifest.ps1 -Version <버전> -InstallerPath <설치 파일> -OutputDirectory <릴리스 폴더>
 ```
 
-같은 GitHub 릴리스에 `luma-update.json`, `luma-update.sig`, 설치 파일·체크섬, 선택 다운로드용 CUDA 아카이브를 첨부합니다. 0.2.15는 이전 앱이 업데이트를 찾을 수 있도록 `-windows-x64-cuda.exe` 파일명을 사용합니다. 0.2.15부터는 `-windows-x64.exe` 파일명도 인식합니다.
+같은 GitHub 릴리스에 `luma-update.json`, `luma-update.sig`, 단일 설치 파일·체크섬과 선택 다운로드용 CUDA 아카이브를 첨부합니다. 0.2.15의 단일 EXE는 이전 앱의 업데이트 기능과 호환하도록 `-windows-x64-cuda.exe` 파일명을 사용합니다. 0.2.15부터는 `-windows-x64.exe` 파일명도 인식합니다. 전체 모델 포함 설치의 EXE와 `.bin` 파일은 수동 설치용입니다.
 
 ## English
 
@@ -26,4 +26,4 @@ For distribution, sign metadata for the verified Windows x64 installer on the re
 ./scripts/sign-update-manifest.ps1 -Version <version> -InstallerPath <installer> -OutputDirectory <release folder>
 ```
 
-Attach `luma-update.json`, `luma-update.sig`, the corresponding installer and checksum, and the optional CUDA archive to the same GitHub release. The 0.2.15 setup retains the `-windows-x64-cuda.exe` filename so older clients can find the update. Clients from 0.2.15 also recognize `-windows-x64.exe` filenames.
+Attach `luma-update.json`, `luma-update.sig`, the single-file installer and checksum, and the optional CUDA archive to the same GitHub release. The 0.2.15 single-file setup retains `-windows-x64-cuda.exe` for compatibility with older updaters. Clients from 0.2.15 also recognize `-windows-x64.exe` filenames. The full model setup EXE and its `.bin` files are for manual installation.

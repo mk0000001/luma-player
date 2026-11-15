@@ -23,7 +23,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir={#Output}
 OutputBaseFilename=LumaPlayer-{#PlayerVersion}-setup.1-{#InstallerFlavor}
-Compression=lzma2/fast
+Compression=lzma2/ultra64
+LZMAUseSeparateProcess=yes
+#ifdef IncludeFullModels
+DiskSpanning=yes
+DiskSliceSize=2100000000
+#endif
 ArchiveExtraction=full
 SolidCompression=yes
 WizardStyle=modern
@@ -40,21 +45,27 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 korean.UpdateTargetChanged=설치 대상이 업데이트 확인 이후 변경됐거나 확인한 설치본과 다릅니다. 대상 설치본에서 업데이트를 다시 확인해 주세요.
 english.UpdateTargetChanged=The selected copy changed or differs from the copy checked for this update. Check for updates from the intended installation.
-korean.ComponentsPrompt=이 PC의 그래픽 장치와 메모리에 맞춰 권장 항목을 선택했습니다. 추가 다운로드를 선택하거나 해제할 수 있습니다.
-english.ComponentsPrompt=Setup selected components based on this PC's graphics and memory. You can change the selection before downloading.
+korean.ComponentsPrompt=이 PC의 그래픽 장치와 메모리에 맞춰 권장 항목을 선택했습니다. 설치할 항목을 바꿀 수 있습니다.
+english.ComponentsPrompt=Setup selected components based on this PC's graphics and memory. You can change the selection before installing.
 [Types]
-Name: "compact"; Description: "플레이어만 · 오프라인 / Player only (offline)"
+Name: "compact"; Description: "플레이어만 / Player only"
 Name: "custom"; Description: "직접 선택 / Custom"; Flags: iscustom
 [Components]
 Name: "core"; Description: "플레이어 · CPU, Vulkan, Intel OpenVINO / Player"; Types: compact custom; Flags: fixed
 Name: "cuda"; Description: "NVIDIA CUDA 12 라이브러리 다운로드 ({#CudaDownloadMB} MB) / CUDA runtime"; ExtraDiskSpaceRequired: {#CudaExpandedBytes}; Flags: disablenouninstallwarning
-Name: "base"; Description: "Whisper Base + Intel OpenVINO 인코더 다운로드 (172 MB) / Compact ASR"; ExtraDiskSpaceRequired: {#BaseExpandedBytes}; Flags: disablenouninstallwarning
-Name: "turbo"; Description: "Whisper Turbo 인식 모델 다운로드 (575 MB) / Fast ASR"; ExtraDiskSpaceRequired: {#TurboBytes}; Flags: disablenouninstallwarning
-Name: "accurate"; Description: "Whisper full-v3 Q5 인식 모델 다운로드 (1.08 GB) / High-accuracy ASR"; ExtraDiskSpaceRequired: {#AccurateBytes}; Flags: disablenouninstallwarning
-Name: "translation"; Description: "Hy-MT2 한국어 번역 다운로드 (4.62 GB) / Korean translation"; ExtraDiskSpaceRequired: {#TranslationBytes}; Flags: disablenouninstallwarning
+Name: "base"; Description: "Whisper Base + Intel OpenVINO 인코더 / Compact ASR"; ExtraDiskSpaceRequired: {#BaseExpandedBytes}; Flags: disablenouninstallwarning
+Name: "turbo"; Description: "Whisper Turbo 인식 모델 / Fast ASR"; ExtraDiskSpaceRequired: {#TurboBytes}; Flags: disablenouninstallwarning
+#ifdef IncludeFullModels
+Name: "accurate"; Description: "Whisper full-v3 Q5 인식 모델 / High-accuracy ASR"; ExtraDiskSpaceRequired: {#AccurateBytes}; Flags: disablenouninstallwarning
+Name: "translation"; Description: "Hy-MT2 한국어 번역 / Korean translation"; ExtraDiskSpaceRequired: {#TranslationBytes}; Flags: disablenouninstallwarning
+#endif
 [Files]
-Source: "{#Payload}\*"; Excludes: "\setup\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 Source: "{#Payload}\setup\luma-setup-hardware.exe"; Flags: dontcopy noencryption
+Source: "{#Payload}\*"; Excludes: "\setup\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
+#include "models-standard.iss"
+#ifdef IncludeFullModels
+ #include "models-full.iss"
+#endif
 #include "downloads.iss"
 [Icons]
 Name: "{group}\LumaPlayer"; Filename: "{app}\LumaPlayer.exe"; WorkingDir: "{app}"
@@ -82,8 +93,13 @@ begin
     $11: Selection := 'base,cuda';
     $20: Selection := 'turbo';
     $21: Selection := 'turbo,cuda';
+#ifdef IncludeFullModels
     $22: Selection := 'turbo,translation';
     $23: Selection := 'turbo,cuda,translation';
+#else
+    $22: Selection := 'turbo';
+    $23: Selection := 'turbo,cuda';
+#endif
   else
     Exit;
   end;
@@ -105,7 +121,7 @@ begin
       Result := ExpandConstant('{cm:UpdateTargetChanged}');
 end;
 
-function NeedsDownloadFile(RelativePath, ExpectedBytes, ExpectedHash: String): Boolean;
+function NeedsInstallFile(RelativePath, ExpectedBytes, ExpectedHash: String): Boolean;
 var Path: String;
     Bytes: Int64;
 begin
