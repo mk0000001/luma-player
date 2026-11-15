@@ -60,6 +60,22 @@
     "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0.txt",
     "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
   },
+  "singingModel": {
+    "id": "HeartMuLa/HeartTranscriptor-oss",
+    "revision": "ee842de9aeec454236badef2205dea47a1fd8410",
+    "sourceSha256": "9e09145b687c26330da96ad2d7ca1fe542d46247700a43a3156b924a6b6e6a07",
+    "release": "hearttranscriptor-ggml-v1",
+    "file": "ggml-hearttranscriptor-oss-q5_0.bin",
+    "url": "https://github.com/mk0000001/luma-player/releases/download/hearttranscriptor-ggml-v1/ggml-hearttranscriptor-oss-q5_0.bin",
+    "sha256": "46f3fe9443f1defe46eef1ffc4a635fe8ebb3d73564b64c0335aafaad778c346",
+    "bytes": 539212484,
+    "language": "multilingual",
+    "optionalAtRuntime": true,
+    "license": "Apache-2.0",
+    "licenseFile": "HeartTranscriptor-Apache-2.0.txt",
+    "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "licenseSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
   "accurateModel": {
     "id": "ggerganov/whisper.cpp",
     "revision": "fb5ed9369c26eaf08392504d8446da431e0fffb9",

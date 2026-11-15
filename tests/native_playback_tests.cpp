@@ -223,15 +223,54 @@ private slots:
 #endif
     }
     void realLocalRecognition(){
-        const auto speech=qEnvironmentVariable("LUMA_NATIVE_SPEECH");if(speech.isEmpty())QSKIP("Real inference requires LUMA_NATIVE_SPEECH and a model.");
-        SubtitleJob job(qEnvironmentVariable("LUMA_TEST_RUNTIME"));if(qEnvironmentVariableIsSet("LUMA_ASR_GPU"))job.setPreferences({"gpu",qEnvironmentVariable("LUMA_ASR_GPU")});QSignalSpy results(&job,&SubtitleJob::ready);QSignalSpy errors(&job,&SubtitleJob::failed);QElapsedTimer latency;latency.start();
-        RecognitionRequest r;r.source=speech;r.language="en";r.durationMs=11000;job.start(r);job.cancel();const auto current=job.start(r);
-        QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty() || !errors.isEmpty(),60000);QVERIFY2(errors.isEmpty(),errors.isEmpty()?"":qPrintable(errors[0][0].toString()));QCOMPARE(results.size(),1);QCOMPARE(results[0][0].toULongLong(),current);
-        const auto cues=qvariant_cast<QVector<SubtitleCue>>(results[0][1]);QVERIFY(!cues.isEmpty());QString words;for(const auto &cue:cues){words+=cue.text;QVERIFY(cue.startMs>=0);QVERIFY(cue.endMs<=11000);}QVERIFY(words.contains("country",Qt::CaseInsensitive));
-        if(qEnvironmentVariableIsSet("LUMA_REQUIRE_NPU"))QCOMPARE(job.selectedBackend(),QString("NPU"));
-        if(qEnvironmentVariableIsSet("LUMA_ASR_GPU"))QCOMPARE(job.selectedBackend(),QString("GPU"));
-        const auto first=latency.elapsed();latency.restart();job.start(r);QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,30000);QVERIFY(errors.isEmpty());
-        const auto prefix=qEnvironmentVariable("LUMA_NATIVE_REPORT");if(!prefix.isEmpty()){QFile out(prefix+"-speech-latency.json");if(out.open(QIODevice::WriteOnly))out.write(QJsonDocument(QJsonObject{{"firstMs",first},{"warmMs",latency.elapsed()},{"backend",job.selectedBackend()},{"selectedGpu",qEnvironmentVariable("LUMA_ASR_GPU")}}).toJson());}
+        const auto speech=qEnvironmentVariable("LUMA_NATIVE_SPEECH");
+        if(speech.isEmpty()) QSKIP("Real inference requires LUMA_NATIVE_SPEECH and a model.");
+        const auto model=qEnvironmentVariable("LUMA_NATIVE_SPEECH_MODEL");
+        const auto language=qEnvironmentVariable("LUMA_NATIVE_SPEECH_LANGUAGE","en");
+        const auto expected=qEnvironmentVariable("LUMA_NATIVE_SPEECH_EXPECTED","country");
+        const auto duration=qEnvironmentVariableIntValue("LUMA_NATIVE_SPEECH_DURATION_MS");
+        const auto gpu=qEnvironmentVariable("LUMA_ASR_GPU");
+        SubtitleJob job(qEnvironmentVariable("LUMA_TEST_RUNTIME"));
+        if(!gpu.isEmpty()) job.setPreferences({"gpu",gpu});
+        QSignalSpy results(&job,&SubtitleJob::ready);
+        QSignalSpy errors(&job,&SubtitleJob::failed);
+        QElapsedTimer latency;
+        latency.start();
+        RecognitionRequest request;
+        request.source=speech;
+        request.language=language;
+        request.durationMs=duration>0?duration:11000;
+        job.start(request,model);
+        job.cancel();
+        const auto current=job.start(request,model);
+        QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty() || !errors.isEmpty(),60000);
+        QVERIFY2(errors.isEmpty(),errors.isEmpty()?"":qPrintable(errors[0][0].toString()));
+        QCOMPARE(results.size(),1);
+        QCOMPARE(results[0][0].toULongLong(),current);
+        const auto cues=qvariant_cast<QVector<SubtitleCue>>(results[0][1]);
+        QVERIFY(!cues.isEmpty());
+        QString words;
+        for(const auto &cue:cues){
+            words+=cue.text;
+            QVERIFY(cue.startMs>=0);
+            QVERIFY(cue.endMs<=request.durationMs);
+        }
+        QVERIFY(words.contains(expected,Qt::CaseInsensitive));
+        if(qEnvironmentVariableIsSet("LUMA_REQUIRE_NPU")) QCOMPARE(job.selectedBackend(),QString("NPU"));
+        if(!gpu.isEmpty()) QCOMPARE(job.selectedBackend(),QString("GPU"));
+        const auto first=latency.elapsed();
+        latency.restart();
+        job.start(request,model);
+        QTRY_COMPARE_WITH_TIMEOUT(results.count(),2,30000);
+        QVERIFY(errors.isEmpty());
+        const auto prefix=qEnvironmentVariable("LUMA_NATIVE_REPORT");
+        if(!prefix.isEmpty()){
+            QFile out(prefix+"-speech-latency.json");
+            if(out.open(QIODevice::WriteOnly))
+                out.write(QJsonDocument(QJsonObject{{"firstMs",first},{"warmMs",latency.elapsed()},
+                    {"backend",job.selectedBackend()},{"selectedGpu",gpu},
+                    {"accelerator",job.selectedAccelerator()},{"device",job.selectedDevice()}}).toJson());
+        }
     }
     void physicalDiscCaptionAcquisition(){
         const auto disc=qEnvironmentVariable("LUMA_NATIVE_DISC");if(disc.isEmpty())QSKIP("Physical caption test requires the TUKI disc.");

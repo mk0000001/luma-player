@@ -12,23 +12,34 @@ function Get-LumaAsrModelSpec {
  param([string]$Directory,[string]$Profile='japanese')
  $ErrorActionPreference='Stop'
  try{
-  if($Profile -notin @('japanese','accurate')){throw '지원하지 않는 음성 인식 프로필입니다 / Unsupported ASR model profile.'}
+  $profiles=@{japanese='japaneseModel';accurate='accurateModel';singing='singingModel'}
+  if(!$profiles.ContainsKey($Profile)){throw '지원하지 않는 음성 인식 프로필입니다 / Unsupported ASR model profile.'}
   $root=[IO.Path]::GetFullPath($Directory)
   $candidates=@((Join-Path $root 'dependencies.lock.json'),(Join-Path $root 'licenses/dependencies.lock.json'))
   $lock=$candidates | Where-Object {Test-Path -LiteralPath $_ -PathType Leaf} | Select-Object -First 1
   if(!$lock){throw '고정 의존성 파일이 없습니다 / Missing dependencies.lock.json.'}
   $manifest=Get-Content -LiteralPath $lock -Raw -Encoding UTF8 | ConvertFrom-Json
-  $model=if($Profile -eq 'accurate'){$manifest.accurateModel}else{$manifest.japaneseModel}
+  $modelProperty=$profiles[$Profile]
+  $model=$manifest.$modelProperty
   if(!$model){throw '요청한 음성 인식 모델 프로필이 없습니다 / Missing requested ASR model profile.'}
   if([string]$model.file -notmatch '^ggml-[A-Za-z0-9_.-]+\.bin$' -or [string]$model.id -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or [string]$model.revision -notmatch '^[a-f0-9]{40}$' -or [string]$model.sha256 -notmatch '^[a-f0-9]{64}$'){
    throw '모델 고정 정보가 잘못되었습니다 / Invalid pinned ASR model metadata.'
   }
   [long]$size=$model.bytes
-  $expectedLanguage=if($Profile -eq 'accurate'){'multilingual'}else{'ja'}
+  $expectedLanguage=if($Profile -eq 'japanese'){'ja'}else{'multilingual'}
   if($size -le 0 -or $size -gt 2GB -or $model.language -cne $expectedLanguage -or !($model.optionalAtRuntime -is [bool]) -or !$model.optionalAtRuntime){throw '모델 크기 또는 선택 정보가 잘못되었습니다 / Invalid ASR size or optional model profile.'}
   $uri=[uri]$model.url
-  $expected='/'+$model.id+'/resolve/'+$model.revision+'/'+$model.file
-  if(!$uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.Host -ne 'huggingface.co' -or !$uri.IsDefaultPort -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -cne $expected){throw '고정 공식 모델 주소가 잘못되었습니다 / Invalid immutable Hugging Face ASR model URL.'}
+  if($Profile -eq 'singing'){
+   if($model.id -cne 'HeartMuLa/HeartTranscriptor-oss' -or $model.file -cne 'ggml-hearttranscriptor-oss-q5_0.bin' -or [string]$model.release -cnotmatch '^hearttranscriptor-ggml-v[1-9][0-9]*$'){
+    throw '가창 모델 고정 정보가 잘못되었습니다 / Invalid pinned singing model metadata.'
+   }
+   $expectedHost='github.com'
+   $expectedPath="/mk0000001/luma-player/releases/download/$($model.release)/$($model.file)"
+  }else{
+   $expectedHost='huggingface.co'
+   $expectedPath="/$($model.id)/resolve/$($model.revision)/$($model.file)"
+  }
+  if(!$uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.Host -ne $expectedHost -or !$uri.IsDefaultPort -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -cne $expectedPath){throw '고정 모델 주소가 잘못되었습니다 / Invalid immutable ASR model URL.'}
   $expectedLicense=if($Profile -eq 'accurate'){'MIT'}else{'Apache-2.0'}
   if($model.license -cne $expectedLicense -or [string]$model.licenseFile -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*\.txt$' -or [string]$model.licenseSha256 -notmatch '^[a-f0-9]{64}$'){throw '모델 라이선스 고정 정보가 잘못되었습니다 / Invalid pinned ASR license metadata.'}
   $licenseCandidates=@((Join-Path $root ('LICENSES/'+$model.licenseFile)),(Join-Path $root ('licenses/LICENSES/'+$model.licenseFile)),(Join-Path $root ('licenses/'+$model.licenseFile)))
@@ -53,7 +64,7 @@ function Install-LumaAsrModel {
    if(Test-Path -LiteralPath $temporary -PathType Leaf){Remove-Item -LiteralPath $temporary -Force}
    Assert-LumaTranslationDiskSpace -Directory $models -RequiredBytes ([long]$model.bytes+64MB)
    Write-Host '선택 음성 인식 모델을 다운로드합니다 / Downloading the optional ASR model.'
-   $transferred=Receive-LumaTranslationModelFile -Uri $model.url -TemporaryPath $temporary -ExpectedBytes $model.bytes
+   $transferred=Receive-LumaTranslationModelFile -Uri $model.url -TemporaryPath $temporary -ExpectedBytes $model.bytes -Activity '음성 인식 모델 / Speech recognition model'
   }
   Complete-LumaTranslationModelFile $temporary $destination $model.sha256 $model.bytes
   return [pscustomobject]@{AlreadyInstalled=$false;BytesTransferred=$transferred;ModelPath=$destination}

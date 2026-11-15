@@ -51,7 +51,7 @@ function Assert-LumaTranslationDiskSpace {
     }
 }
 function Receive-LumaTranslationModelFile {
-    param([uri]$Uri,[string]$TemporaryPath,[long]$ExpectedBytes)
+    param([uri]$Uri,[string]$TemporaryPath,[long]$ExpectedBytes,[string]$Activity='한국어 번역 모델 / Korean translation model')
     $ErrorActionPreference = 'Stop'
     Add-Type -AssemblyName System.Net.Http
     $handler = [Net.Http.HttpClientHandler]::new()
@@ -77,7 +77,7 @@ function Receive-LumaTranslationModelFile {
             if ($received -gt $ExpectedBytes) { throw '서버 파일이 예상 크기를 초과했습니다 / Download exceeds the pinned file size.' }
             $fileStream.Write($buffer,0,$read)
             if ($received -ge $nextProgress) {
-                Write-Progress -Activity '한국어 번역 모델 / Korean translation model' -Status ('{0:N1} / {1:N1} MiB' -f ($received/1MB),($ExpectedBytes/1MB)) -PercentComplete ([Math]::Min(100,[int](100.0*$received/$ExpectedBytes)))
+                Write-Progress -Activity $Activity -Status ('{0:N1} / {1:N1} MiB' -f ($received/1MB),($ExpectedBytes/1MB)) -PercentComplete ([Math]::Min(100,[int](100.0*$received/$ExpectedBytes)))
                 $nextProgress = $received + 16MB
             }
         }
@@ -85,7 +85,7 @@ function Receive-LumaTranslationModelFile {
         $fileStream.Flush($true)
         return $received
     } finally {
-        Write-Progress -Activity '한국어 번역 모델 / Korean translation model' -Completed
+        Write-Progress -Activity $Activity -Completed
         if ($fileStream) { $fileStream.Dispose() }
         if ($downloadStream) { $downloadStream.Dispose() }
         if ($response) { $response.Dispose() }

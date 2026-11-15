@@ -22,14 +22,57 @@ function New-AsrFixture([string]$Name,[switch]$Packaged){
  return [pscustomobject]@{Directory=$directory;Manifest=$manifest;Lock=$lock;License=$license;Destination=(Join-Path $directory ('runtime/models/'+$spec.file))}
 }
 function Save-AsrFixture($Fixture){[IO.File]::WriteAllText($Fixture.Lock,($Fixture.Manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))}
+function New-SingingFixture([string]$Name) {
+ $fixture=New-AsrFixture $Name -Packaged
+ $model=$fixture.Manifest.japaneseModel | ConvertTo-Json | ConvertFrom-Json
+ $model.id='HeartMuLa/HeartTranscriptor-oss'
+ $model.revision='ee842de9aeec454236badef2205dea47a1fd8410'
+ $model.file='ggml-hearttranscriptor-oss-q5_0.bin'
+ $model.language='multilingual'
+ $model.url='https://github.com/mk0000001/luma-player/releases/download/hearttranscriptor-ggml-v1/ggml-hearttranscriptor-oss-q5_0.bin'
+ $model | Add-Member -NotePropertyName release -NotePropertyValue 'hearttranscriptor-ggml-v1'
+ $fixture.Manifest | Add-Member -NotePropertyName singingModel -NotePropertyValue $model
+ Save-AsrFixture $fixture
+ return $fixture
+}
 function Receive-LumaTranslationModelFile {
- param([uri]$Uri,[string]$TemporaryPath,[long]$ExpectedBytes)
+ param([uri]$Uri,[string]$TemporaryPath,[long]$ExpectedBytes,[string]$Activity)
  $script:asrTransportCalls++
  if($script:asrTransportMode -eq 'fail'){throw 'Owned transport failure'}
  $bytes=if($script:asrTransportMode -eq 'corrupt'){[Text.Encoding]::UTF8.GetBytes('Wrong synthetic ASR model byte')}elseif($script:asrTransportMode -eq 'short'){[byte[]]@(1,2,3)}else{$script:asrPayload}
  [IO.File]::WriteAllBytes($TemporaryPath,$bytes);return $bytes.Length
 }
 try{
+ Test-AsrCase 'singing profile installs and reuses verified HeartTranscriptor independently' {
+  $fixture=New-SingingFixture 'singing'
+  $spec=Get-LumaAsrModelSpec -Directory $fixture.Directory -Profile singing
+  Assert-Asr ($spec.id -ceq 'HeartMuLa/HeartTranscriptor-oss') 'Wrong singing recognition model.'
+  $script:asrTransportMode='valid'
+  $script:asrTransportCalls=0
+  $installed=Install-LumaAsrModel -Directory $fixture.Directory -Profile singing
+  Assert-Asr ((Split-Path -Leaf $installed.ModelPath) -ceq $spec.file) 'Singing profile installed the wrong file.'
+  Assert-Asr ($script:asrTransportCalls -eq 1 -and (Test-LumaTranslationModelFile $installed.ModelPath $spec.sha256 $spec.bytes)) 'Singing profile failed to publish verified bytes.'
+  Assert-Asr (!(Test-Path -LiteralPath $fixture.Destination)) 'Singing profile changed the ordinary Japanese model.'
+  $script:asrTransportMode='fail'
+  $cached=Install-LumaAsrModel -Directory $fixture.Directory -Profile singing
+  Assert-Asr ($cached.AlreadyInstalled -and $script:asrTransportCalls -eq 1) 'The verified singing model was downloaded again.'
+ }
+ Test-AsrCase 'singing profile rejects other release origins and paths before download' {
+  foreach ($url in @(
+   'https://example.com/mk0000001/luma-player/releases/download/hearttranscriptor-ggml-v1/ggml-hearttranscriptor-oss-q5_0.bin',
+   'https://github.com/other/luma-player/releases/download/hearttranscriptor-ggml-v1/ggml-hearttranscriptor-oss-q5_0.bin',
+   'https://github.com/mk0000001/luma-player/releases/latest/download/ggml-hearttranscriptor-oss-q5_0.bin'
+  )) {
+   $fixture=New-SingingFixture ('singing-url-'+[guid]::NewGuid().ToString('N'))
+   $fixture.Manifest.singingModel.url=$url
+   Save-AsrFixture $fixture
+   $script:asrTransportCalls=0
+   $rejected=$false
+   try { Install-LumaAsrModel -Directory $fixture.Directory -Profile singing | Out-Null }
+   catch { $rejected=$_.Exception.Message -match 'Invalid immutable' }
+   Assert-Asr ($rejected -and $script:asrTransportCalls -eq 0) 'An unpinned HeartTranscriptor release URL was accepted.'
+  }
+ }
  Test-AsrCase 'accurate full model has its own MIT profile and destination' {
   $fixture=New-AsrFixture 'accurate-profile'
   $model=$fixture.Manifest.japaneseModel | ConvertTo-Json | ConvertFrom-Json

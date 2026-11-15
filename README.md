@@ -48,7 +48,7 @@ Windows 11 x64에서 1080p H.264 재생과 full-v3 Q5 음성 인식 + Hy-MT2-7B 
 | Blu-ray 메뉴나 재생이 열리지 않음 | **새로 확인**으로 디스크를 감지한 뒤 **Blu-ray 재생**을 눌러 보세요. 계속 실패하면 개발자 모드의 진단에서 첫 오류를 확인하세요. |
 | Windows 보안이 설치를 차단함 | 차단된 파일명과 탐지명을 확인하고 릴리스의 SHA‑256과 대조하세요. [설치 차단 진단과 신고 방법](docs/WINDOWS-INSTALLER.md) |
 
-[재생·자막·단축키 안내](docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](docs/INSTALL-TRANSLATION.md)
+[재생·자막·단축키 안내](docs/CAPTIONS-AND-PLAYBACK.md) · [번역 모델 안내](docs/INSTALL-TRANSLATION.md) · [HeartTranscriptor 노래 인식 모델](docs/ASR-HEARTTRANSCRIPTOR.md)
 
 ### 기술과 개발
 
@@ -104,7 +104,7 @@ Menu navigation, ALL PLAY, seeking, and captions were tested using **TUKI NIPPON
 | Disc menu or playback fails to open | Refresh disc detection with **새로 확인**, then retry **Blu-ray 재생**. If it still fails, check the first error in developer diagnostics. |
 | Windows security blocks installation | Record the blocked filename and detection name and compare the installer SHA‑256 with the release. [Diagnose and report installation blocks](docs/WINDOWS-INSTALLER.md) |
 
-[Playback, captions, and shortcuts](docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](docs/INSTALL-TRANSLATION.md)
+[Playback, captions, and shortcuts](docs/CAPTIONS-AND-PLAYBACK.md) · [Translation models](docs/INSTALL-TRANSLATION.md) · [HeartTranscriptor singing recognition](docs/ASR-HEARTTRANSCRIPTOR.md)
 
 ### Technology and development
 
