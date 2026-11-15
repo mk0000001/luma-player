@@ -15,7 +15,7 @@ function New-LumaInstallerModelEntry {
  if($Destination -cne $expectedDestination -or !$Spec.file.EndsWith($extension,[StringComparison]::Ordinal)){throw 'Invalid model destination/component'}
  Assert-LumaInstallerModelPin -Spec $Spec
  $dest=$Destination.Replace('/','\')
- 'Source: "'+$Spec.url+'"; DestDir: "{app}\'+$dest+'"; DestName: "'+$Spec.file+'"; ExternalSize: '+$Spec.bytes+'; Hash: "'+$Spec.sha256+'"; Components: '+$Component+'; Flags: external download ignoreversion uninsneveruninstall; Check: NeedsDownloadFile('''+$dest+'\'+$Spec.file+''', '+$Spec.bytes+', '''+$Spec.sha256+''')'
+ 'Source: "'+$Spec.url+'"; DestDir: "{app}\'+$dest+'"; DestName: "'+$Spec.file+'"; ExternalSize: '+$Spec.bytes+'; Hash: "'+$Spec.sha256+'"; Components: '+$Component+'; Flags: external download ignoreversion uninsneveruninstall; Check: NeedsDownloadFile('''+$dest+'\'+$Spec.file+''', '''+$Spec.bytes+''', '''+$Spec.sha256+''')'
 }
 
 function Get-LumaInstallerBaseFiles {
@@ -74,7 +74,7 @@ function New-LumaInstallerArchiveCheck {
  foreach($file in $Files){
   if($file.Path -cnotmatch '^runtime/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+$' -or $file.Path.Split('/') -contains '..' -or
      $file.Sha256 -cnotmatch '^[a-f0-9]{64}$' -or $file.Bytes -le 0){throw 'Invalid archive file pin.'}
-  "  if NeedsDownloadFile('$($file.Path.Replace('/','\'))', $($file.Bytes), '$($file.Sha256)') then"
+  "  if NeedsDownloadFile('$($file.Path.Replace('/','\'))', '$($file.Bytes)', '$($file.Sha256)') then"
   '  begin Result := True; Exit; end;'
  }
  '  Result := False;'

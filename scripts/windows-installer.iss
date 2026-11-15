@@ -104,13 +104,13 @@ begin
       Result := ExpandConstant('{cm:UpdateTargetChanged}');
 end;
 
-function NeedsDownloadFile(RelativePath: String; ExpectedBytes: Int64; ExpectedHash: String): Boolean;
+function NeedsDownloadFile(RelativePath, ExpectedBytes, ExpectedHash: String): Boolean;
 var Path: String;
     Bytes: Int64;
 begin
   Path := ExpandConstant('{app}\') + RelativePath;
   Result := True;
-  if FileSize64(Path, Bytes) and (Bytes = ExpectedBytes) then
+  if FileSize64(Path, Bytes) and (Bytes = StrToInt64Def(ExpectedBytes, -1)) then
     Result := CompareText(GetSHA256OfFile(Path), ExpectedHash) <> 0;
 end;
 

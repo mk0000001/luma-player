@@ -12,6 +12,7 @@ foreach($entry in @(@{spec=$a.highQualityModel;component='turbo';destination='ru
  $spec=$entry.spec
  $line=New-LumaInstallerModelEntry -Spec $spec -Destination $entry.destination -Component $entry.component
  if($line -notlike ('*Hash: "'+$spec.sha256+'"*') -or $line -notlike '*external download ignoreversion*'){throw 'missing-native-integrity-enforcement'}
+ if($line -notlike ("*', '"+$spec.bytes+"', '*")){throw 'Inno Check must pass the size as text, including weights larger than 2 GiB.'}
  $count++
  foreach($field in @('url','file','sha256','bytes')){
   $copy=$spec | ConvertTo-Json -Depth 9 | ConvertFrom-Json
