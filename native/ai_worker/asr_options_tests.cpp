@@ -33,6 +33,15 @@ int main(){
         require(o.beamSearch && o.beamSize==5 && o.bestOf==5 && o.maxLength==0,"full-v3 did not choose accurate decoding");
         require(o.dtw==DtwPreset::LargeV3 && !o.flashAttention,"wrong full-v3 alignment context");
     });
+    run("timestamp-free multilingual medium uses its alignment heads",[]{
+        ModelArchitecture medium{51865,1500,1024,16,24,448,1024,16,24,80,2008};
+        const auto singing=selectDecodeOptions(Quality::Auto,medium,true);
+        require(singing.beamSearch && singing.maxLength==0 && !singing.flashAttention && singing.dtw==DtwPreset::Medium,
+                "timestamp-free medium did not choose the matching alignment");
+        require(selectDecodeOptions(Quality::Auto,medium).dtw==DtwPreset::None,"normal medium decoding changed");
+        medium.textLayers=23;
+        require(selectDecodeOptions(Quality::Auto,medium,true).dtw==DtwPreset::None,"mismatched model accepted medium alignment");
+    });
     run("auto Kotoba and turbo preserve existing fast decoding",[]{
         for(int layers:{2,4}){const auto o=selectDecodeOptions(Quality::Auto,model(layers));require(!o.beamSearch && o.bestOf==1 && o.maxLength==48 && o.flashAttention && o.dtw==DtwPreset::None,"automatic distilled path changed");}
     });

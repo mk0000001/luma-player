@@ -13,6 +13,10 @@ bool largeV3Shape(const ModelArchitecture &m){
     return m.vocabulary==51866 && m.audioContext==1500 && m.audioState==1280 && m.audioHeads==20 && m.audioLayers==32 &&
         m.textContext==448 && m.textState==1280 && m.textHeads==20 && m.melBins==128;
 }
+bool multilingualMediumShape(const ModelArchitecture &m){
+    return m.vocabulary==51865 && m.audioContext==1500 && m.audioState==1024 && m.audioHeads==16 && m.audioLayers==24 &&
+        m.textContext==448 && m.textState==1024 && m.textHeads==16 && m.textLayers==24 && m.melBins==80;
+}
 }
 Quality parseQuality(const std::string &value){
     if(value=="auto")return Quality::Auto;
@@ -36,13 +40,15 @@ ModelArchitecture readModelArchitecture(std::istream &input){
         throw std::runtime_error("Inconsistent Whisper GGML architecture");
     return m;
 }
-DecodeOptions selectDecodeOptions(Quality quality,const ModelArchitecture &model){
+DecodeOptions selectDecodeOptions(Quality quality,const ModelArchitecture &model,bool noTimestamps){
     DecodeOptions options;
     const bool full=largeV3Shape(model) && model.textLayers==32;
     const bool turbo=largeV3Shape(model) && model.textLayers==4;
-    if(quality==Quality::Fast || (quality==Quality::Auto && !full))return options;
+    const bool singing=noTimestamps && multilingualMediumShape(model);
+    if(quality==Quality::Fast || (quality==Quality::Auto && !full && !singing))return options;
     options.beamSearch=true;options.beamSize=5;options.bestOf=5;options.maxLength=0;
-    if(full)options.dtw=DtwPreset::LargeV3;
+    if(singing)options.dtw=DtwPreset::Medium;
+    else if(full)options.dtw=DtwPreset::LargeV3;
     else if(turbo)options.dtw=DtwPreset::LargeV3Turbo;
     // Capturing cross-attention heads requires the non-flash decoder graph.
     options.flashAttention=options.dtw==DtwPreset::None;

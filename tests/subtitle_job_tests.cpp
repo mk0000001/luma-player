@@ -19,6 +19,14 @@ private slots:
         const auto w=recognitionCommand("runtime","model with spaces.bin","ja","wave.wav","out");
         QCOMPARE(w.arguments[w.arguments.indexOf("-m")+1],QString("model with spaces.bin"));QVERIFY(!w.arguments.contains("--translate"));
     }
+    void onlyHeartTranscriptorUsesTimestampFreeDecoding() {
+        const auto command = [](const QString &model) {
+            return recognitionCommand("runtime", model, "ja", "wave.wav", "out").arguments;
+        };
+        QVERIFY(command("D:/Models/ggml-hearttranscriptor-oss-q5_0.bin").contains("-nt"));
+        QVERIFY(!command("ggml-large-v3-q5_0.bin").contains("-nt"));
+        QVERIFY(!command("ggml-medium.bin").contains("-nt"));
+    }
     void discUsesNavigationTitle() {
         RecognitionRequest r;r.source="E:/";r.disc=true;r.title=2;r.playlist="00003";
         const auto c=extractionCommand("runtime",r,"audio.wav");
@@ -68,6 +76,7 @@ private slots:
         QTest::newRow("srt") << QByteArray("mixed");
         QTest::newRow("aligned") << QByteArray("aligned");
         QTest::newRow("empty-after-filtering") << QByteArray("only");
+        QTest::newRow("malformed-recognizer-bytes") << QByteArray("malformed");
     }
     void generatedOutroIsSuppressed() {
         QFETCH(QByteArray, mode);

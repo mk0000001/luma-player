@@ -45,11 +45,19 @@ int main(int argc,char **argv){
         if(canceled){std::cout<<"LUMA_ABORTED="<<prefix<<std::endl;if(!server || !nextRequest())return 0;continue;}
         if(device=="NPU" && payload.find("npu-fails")!=std::string::npos)return 20;
         const auto outroMode = std::getenv("LUMA_FIXTURE_ASR_OUTRO");
-        std::ofstream out(prefix+".srt");
+        std::ofstream out(prefix+".srt",std::ios::binary);
         if (outroMode) {
-            out << "1\n00:00:00,000 --> 00:00:01,000\nご視聴 ありがとうございました！\n\n";
-            if (std::string_view(outroMode) != "only")
-                out << "2\n00:00:01,000 --> 00:00:02,000\nありがとうございました\n\n";
+            const bool malformed = std::string_view(outroMode) == "malformed";
+            out << "1\n00:00:00,000 --> 00:00:01,000\n";
+            if (malformed) out.put(char(0x9c));
+            out << "ご視聴 ありがとうございました！\n\n";
+            if (std::string_view(outroMode) != "only") {
+                out << "2\n00:00:01,000 --> 00:00:02,000\n";
+                if (malformed) out.put(char(0x9c));
+                out << "ありがとうございました\n\n";
+            }
+            if (malformed)
+                out << "3\n00:00:02,000 --> 00:00:03,000\n" << char(0x9c) << "\n\n";
         } else {
             out << "1\n00:00:00,000 --> 00:00:01,000\nFixture transcription request " << requestNumber << "\n\n";
         }

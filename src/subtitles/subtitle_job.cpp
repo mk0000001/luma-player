@@ -59,7 +59,12 @@ ProcessInvocation extractionCommand(const QString &runtime,const RecognitionRequ
     return {executable(runtime,"tools/ffmpeg","ffmpeg"),args};
 }
 ProcessInvocation recognitionCommand(const QString &runtime,const QString &model,const QString &language,const QString &wav,const QString &prefix){
-    return {executable(runtime,"whisper/whisper-cli","whisper-cli"),{"-m",model,"-f",wav,"-l",language,"-osrt","-of",prefix,"-t",QString::number(std::clamp(QThread::idealThreadCount()/2,2,8)),"-ml","48","-bs","1","-bo","1","-np"}};
+    QStringList arguments{"-m",model,"-f",wav,"-l",language,"-osrt","-of",prefix,"-t",
+        QString::number(std::clamp(QThread::idealThreadCount()/2,2,8)),"-ml","48","-bs","1","-bo","1","-np"};
+    // HeartTranscriptor's generation config disables decoder timestamp tokens.
+    if(QFileInfo(model).fileName().compare("ggml-hearttranscriptor-oss-q5_0.bin",Qt::CaseInsensitive)==0)
+        arguments.append("-nt");
+    return {executable(runtime,"whisper/whisper-cli","whisper-cli"),arguments};
 }
 QString writeSrt(const QVector<SubtitleCue> &input){
     auto cues=input;std::stable_sort(cues.begin(),cues.end(),[](const auto &a,const auto &b){return a.startMs<b.startMs;});QString text;int i=1;
@@ -244,7 +249,14 @@ void SubtitleJob::completed(int code,QProcess::ExitStatus status){
             cues=std::move(aligned->cues);selectedAlignment_=aligned->alignment;
         }
     }
-    cues.removeIf(isGeneratedOutro);
+    for(auto &cue:cues){
+        if(!cue.text.contains(QChar::ReplacementCharacter))continue;
+        // The standalone CLI can emit incomplete UTF-8 from byte-pair tokens.
+        cue.text.remove(QChar::ReplacementCharacter);
+        cue.text=cue.text.trimmed();
+        cue.tokens.clear();
+    }
+    cues.removeIf([](const SubtitleCue &cue){return cue.text.isEmpty() || isGeneratedOutro(cue);});
     const auto &backend=backends_[backendIndex_];
     selectedBackend_=backend.key;
     if(backend.key=="CPU"){

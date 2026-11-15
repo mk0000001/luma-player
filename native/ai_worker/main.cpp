@@ -64,10 +64,11 @@ int listDevices(){
 int run(const std::vector<std::string> &args){
     try {
         if(args.size()==2 && args[1]=="--list-devices")return listDevices();
-        bool server=false,warmup=false;
+        bool server=false,warmup=false,noTimestamps=false;
         std::map<std::string,std::string> options;
         for(size_t i=1;i<args.size();++i){
             const auto &arg=args[i];if(arg=="-osrt" || arg=="-np")continue;if(arg=="--server"){server=true;continue;}if(arg=="--warmup"){warmup=true;continue;}
+            if(arg=="-nt" || arg=="--no-timestamps"){noTimestamps=true;continue;}
             if(i+1>=args.size())throw std::runtime_error("Missing option value");options[arg]=args[++i];
         }
         const auto deviceOptions=luma::asr::parseDevice(options.at("--device"));
@@ -79,13 +80,14 @@ int run(const std::vector<std::string> &args){
         const auto quality=luma::asr::parseQuality(options.count("--quality")?options.at("--quality"):"auto");
         std::ifstream modelHeader(std::filesystem::u8path(options.at("-m")),std::ios::binary);
         if(!modelHeader)throw std::runtime_error("Cannot inspect Whisper model header");
-        const auto decodeOptions=luma::asr::selectDecodeOptions(quality,luma::asr::readModelArchitecture(modelHeader));
+        const auto decodeOptions=luma::asr::selectDecodeOptions(quality,luma::asr::readModelArchitecture(modelHeader),noTimestamps);
         modelHeader.close();
         ggml_backend_load_all();
         auto contextParams=whisper_context_default_params();contextParams.use_gpu=deviceOptions.useGpu;
         contextParams.flash_attn=decodeOptions.flashAttention;
         contextParams.dtw_token_timestamps=decodeOptions.dtw!=luma::asr::DtwPreset::None;
-        if(decodeOptions.dtw==luma::asr::DtwPreset::LargeV3)contextParams.dtw_aheads_preset=WHISPER_AHEADS_LARGE_V3;
+        if(decodeOptions.dtw==luma::asr::DtwPreset::Medium)contextParams.dtw_aheads_preset=WHISPER_AHEADS_MEDIUM;
+        else if(decodeOptions.dtw==luma::asr::DtwPreset::LargeV3)contextParams.dtw_aheads_preset=WHISPER_AHEADS_LARGE_V3;
         else if(decodeOptions.dtw==luma::asr::DtwPreset::LargeV3Turbo)contextParams.dtw_aheads_preset=WHISPER_AHEADS_LARGE_V3_TURBO;
         if(explicitNative || (device=="GPU" && !explicitOpenVino)){
             bool found=false;int gpuIndex=0;int fallback=-1;
@@ -132,6 +134,7 @@ int run(const std::vector<std::string> &args){
         auto params=whisper_full_default_params(decodeOptions.beamSearch?WHISPER_SAMPLING_BEAM_SEARCH:WHISPER_SAMPLING_GREEDY);
         params.n_threads=std::clamp(std::stoi(options.at("-t")),1,16);params.language=options.at("-l").c_str();
         params.translate=false;params.print_realtime=false;params.print_progress=false;params.print_timestamps=false;params.print_special=false;
+        params.no_timestamps=noTimestamps;
         params.max_len=decodeOptions.maxLength;params.token_timestamps=true;params.greedy.best_of=decodeOptions.bestOf;
         if(decodeOptions.beamSearch)params.beam_search.beam_size=decodeOptions.beamSize;
         params.abort_callback=[](void *data){std::error_code error;return std::filesystem::exists(*static_cast<const std::filesystem::path*>(data),error);};params.abort_callback_user_data=const_cast<std::filesystem::path*>(&cancelPath);

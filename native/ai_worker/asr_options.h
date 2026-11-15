@@ -5,7 +5,7 @@
 
 namespace luma::asr {
 enum class Quality { Auto, Fast, Accurate };
-enum class DtwPreset { None, LargeV3, LargeV3Turbo };
+enum class DtwPreset { None, Medium, LargeV3, LargeV3Turbo };
 struct ModelArchitecture {
     int32_t vocabulary=0, audioContext=0, audioState=0, audioHeads=0, audioLayers=0;
     int32_t textContext=0, textState=0, textHeads=0, textLayers=0, melBins=0, fileType=0;
@@ -21,6 +21,6 @@ struct DeviceOptions {
 };
 Quality parseQuality(const std::string &value);
 ModelArchitecture readModelArchitecture(std::istream &input);
-DecodeOptions selectDecodeOptions(Quality quality,const ModelArchitecture &model);
+DecodeOptions selectDecodeOptions(Quality quality,const ModelArchitecture &model,bool noTimestamps=false);
 DeviceOptions parseDevice(const std::string &requested);
 }
