@@ -22,12 +22,15 @@ final class PcController {
     private final FrameLayout dock;
     private final LinearLayout panel;
     private final ScrollView scroll;
+    private final TextView title;
     private final Button playPause;
     private final DiscMenuView menu;
+    private final TextView menuHint;
     private final LinearLayout menuControls;
     private Consumer<String> send;
     private boolean inline = true;
     private boolean overlay;
+    private boolean discMenuMode;
     private boolean suspended;
 
     PcController(Activity activity) {
@@ -45,7 +48,7 @@ final class PcController {
         root.addView(panel, new FrameLayout.LayoutParams(dp(280), -2, Gravity.TOP | Gravity.END));
 
         LinearLayout header = row();
-        TextView title = new TextView(activity);
+        title = new TextView(activity);
         title.setText(R.string.pc_controls);
         title.setTextColor(activity.getColor(R.color.luma_text));
         title.setTextSize(15);
@@ -58,6 +61,12 @@ final class PcController {
         menu = new DiscMenuView(activity);
         menu.setVisibility(View.GONE);
         panel.addView(menu, new LinearLayout.LayoutParams(-1, dp(155)));
+        menuHint = new TextView(activity);
+        menuHint.setText(R.string.pc_disc_menu_hint);
+        menuHint.setTextColor(activity.getColor(R.color.luma_muted));
+        menuHint.setPadding(dp(6), dp(2), dp(6), dp(8));
+        menuHint.setVisibility(View.GONE);
+        panel.addView(menuHint, new LinearLayout.LayoutParams(-1, -2));
         menuControls = new LinearLayout(activity);
         menuControls.setOrientation(LinearLayout.VERTICAL);
         menuControls.setVisibility(View.GONE);
@@ -104,18 +113,24 @@ final class PcController {
         send = action;
         inline = true;
         overlay = false;
+        setDiscMenuMode(false);
         scroll.scrollTo(0, 0);
         position();
     }
 
-    void openOverlay(Consumer<String> action) {
+    void openOverlay(Consumer<String> action, boolean discMenu) {
         send = action;
         overlay = true;
+        setDiscMenuMode(discMenu);
         scroll.scrollTo(0, 0);
         position();
     }
 
     void toggle(Consumer<String> action) {
+        if (discMenuMode) {
+            dismissOverlay();
+            return;
+        }
         send = action;
         if (activity.findViewById(R.id.playback_details).isShown()) inline = !inline;
         else overlay = !overlay;
@@ -127,6 +142,7 @@ final class PcController {
         send = null;
         inline = true;
         overlay = false;
+        setDiscMenuMode(false);
         updateMenu(null);
         position();
     }
@@ -134,13 +150,17 @@ final class PcController {
     boolean dismissOverlay() {
         if (!overlay) return false;
         overlay = false;
+        setDiscMenuMode(false);
         updateMenu(null);
         position();
         return true;
     }
 
     void setVideoOnly(boolean videoOnly, boolean pip) {
-        if (!videoOnly || pip) overlay = false;
+        if (pip || (!videoOnly && !discMenuMode)) {
+            overlay = false;
+            setDiscMenuMode(false);
+        }
         suspended = pip;
         position();
     }
@@ -153,14 +173,33 @@ final class PcController {
         return overlay && panel.isShown();
     }
 
+    boolean isDiscMenuOpen() {
+        return discMenuMode && isOverlayVisible();
+    }
+
+    private void setDiscMenuMode(boolean enabled) {
+        discMenuMode = enabled;
+        int label = enabled ? R.string.pc_disc_menu : R.string.pc_controls;
+        title.setText(label);
+        panel.setAccessibilityPaneTitle(activity.getString(label));
+        scroll.setVisibility(enabled ? View.GONE : View.VISIBLE);
+        updateMenuControls();
+    }
+
     void updateMenu(android.graphics.Bitmap image) {
         menu.update(image);
         int visibility = image == null ? View.GONE : View.VISIBLE;
         if (menu.getVisibility() != visibility) {
             menu.setVisibility(visibility);
-            menuControls.setVisibility(visibility);
+            updateMenuControls();
             position();
         }
+    }
+
+    private void updateMenuControls() {
+        boolean hasFrame = menu.getVisibility() == View.VISIBLE;
+        menuControls.setVisibility(hasFrame || discMenuMode ? View.VISIBLE : View.GONE);
+        menuHint.setVisibility(!hasFrame && discMenuMode ? View.VISIBLE : View.GONE);
     }
 
     private void hide() {
@@ -171,7 +210,7 @@ final class PcController {
     }
 
     private void position() {
-        boolean docked = activity.findViewById(R.id.playback_details).isShown();
+        boolean docked = !discMenuMode && activity.findViewById(R.id.playback_details).isShown();
         boolean visible = send != null && !suspended && (docked ? inline : overlay);
         panel.setVisibility(visible ? View.VISIBLE : View.GONE);
         dock.setVisibility(visible && docked ? View.VISIBLE : View.GONE);
@@ -216,9 +255,10 @@ final class PcController {
         boolean showingMenu = menu.getVisibility() == View.VISIBLE;
         int usableWidth = Math.max(1, availableWidth - dp(24));
         int width = Math.min(dp(showingMenu ? 800 : 300), usableWidth);
-        int height = Math.min(dp(showingMenu ? 640 : 470), Math.max(dp(100), available));
-        if (showingMenu) end += (usableWidth - width) / 2;
-        int menuHeight = Math.max(1, Math.min((width - dp(20)) * 9 / 16, height - dp(126)));
+        int menuHeight = Math.max(1, Math.min((width - dp(20)) * 9 / 16, available - dp(126)));
+        int desiredHeight = discMenuMode ? (showingMenu ? menuHeight + dp(112) : dp(172)) : dp(showingMenu ? 640 : 470);
+        int height = Math.min(desiredHeight, Math.max(dp(100), available));
+        if (showingMenu || discMenuMode) end += (usableWidth - width) / 2;
         if (menu.getLayoutParams().height != menuHeight) {
             menu.getLayoutParams().height = menuHeight;
             menu.requestLayout();

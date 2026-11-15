@@ -67,7 +67,9 @@ void MainWindow::applyLanRemoteControl(const QString &action,const QString &file
         }
         return;
     }
-    if (action == "disc-open") {
+    const bool openForMenu = action == "disc-menu" && !lanDiscSharing_ &&
+        (!active_ || active_ != discEngine_.get() || active_->state().failed || !active_->state().discMenus);
+    if (action == "disc-open" || openForMenu) {
         if (lanDiscSharing_) return;
         if (lanPlaybackDialog_->isSharing()) {
             if (lanPlaybackDialog_->releaseMediaForRemoteControl()) pendingLanDiscOpen_ = true;

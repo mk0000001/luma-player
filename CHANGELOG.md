@@ -5,6 +5,8 @@
 ### 0.2.16
 
 - 첫 실행에서 PC의 내부망 기기 검색과 Android의 PC 자동 검색을 켭니다. 승인해 연결한 기기에는 재생 조작 권한을 기본으로 부여합니다. 검색과 조작 설정은 사용자가 바꾼 값을 저장합니다.
+- Android 연결 화면과 재생 설정에 **Blu-ray 메뉴** 버튼을 추가했습니다. 메뉴 열기와 방향키 입력을 순서대로 처리합니다.
+- 실시간 자막과 미리 생성 자막에서 AI가 만든 일본어 종료 인사 오인식 문구를 걸러냅니다.
 
 ### 0.2.15
 
@@ -213,6 +215,8 @@
 ### 0.2.16
 
 - The PC starts LAN discovery on first launch and Android searches for PCs automatically. Approved, connected devices get playback controls by default. The apps save the user's discovery and control choices.
+- Added **Blu-ray menu** to Android's connection screen and playback settings. Menu and direction commands are sent in order.
+- Filtered a recurring Japanese closing phrase from newly generated live and prepared AI captions.
 
 ### 0.2.15
 

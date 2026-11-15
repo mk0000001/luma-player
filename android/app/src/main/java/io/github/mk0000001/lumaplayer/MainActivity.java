@@ -221,6 +221,11 @@ public final class MainActivity extends Activity {
             }
 
             @Override
+            public void showDiscMenu() {
+                if (client != null) connectionScreen.showDiscMenu(client);
+            }
+
+            @Override
             public void showCaptions() {
                 MainActivity.this.showCaptions(true);
             }

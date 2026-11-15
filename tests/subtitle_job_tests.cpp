@@ -63,6 +63,51 @@ private slots:
             QCOMPARE(cues[0].tokens[1],(SubtitleTokenTiming{4,4,61800,62000}));
         }else{QVERIFY(cues[0].text.startsWith("Fixture transcription"));QCOMPARE(cues[0].startMs,qint64(60000));QVERIFY(cues[0].tokens.isEmpty());}
     }
+    void generatedOutroIsSuppressed_data() {
+        QTest::addColumn<QByteArray>("mode");
+        QTest::newRow("srt") << QByteArray("mixed");
+        QTest::newRow("aligned") << QByteArray("aligned");
+        QTest::newRow("empty-after-filtering") << QByteArray("only");
+    }
+    void generatedOutroIsSuppressed() {
+        QFETCH(QByteArray, mode);
+        QTemporaryDir dir;
+        QVERIFY(QDir(dir.path()).mkpath("tools"));
+        QVERIFY(QDir(dir.path()).mkpath("whisper"));
+#ifdef Q_OS_WIN
+        const QString suffix = ".exe";
+#else
+        const QString suffix;
+#endif
+        const auto fixture = QCoreApplication::applicationDirPath()+"/subtitle_worker_fixture"+suffix;
+        for (const auto &tool : {"tools/ffmpeg", "whisper/whisper-cli"})
+            QVERIFY(QFile::copy(fixture, dir.filePath(QString(tool)+suffix)));
+        QFile model(dir.filePath("model.bin"));
+        QVERIFY(model.open(QIODevice::WriteOnly));
+        model.write("fixture");
+        model.close();
+        qputenv("LUMA_FIXTURE_ASR_OUTRO", mode);
+        const auto cleanup = qScopeGuard([]{qunsetenv("LUMA_FIXTURE_ASR_OUTRO");});
+        SubtitleJob job(dir.path());
+        job.setPreferences({"cpu", {}});
+        QSignalSpy ready(&job, &SubtitleJob::ready), errors(&job, &SubtitleJob::failed);
+        RecognitionRequest request;
+        request.source = "speech.wav";
+        request.language = "ja";
+        request.startMs = 60000;
+        request.durationMs = 3000;
+        job.start(request, model.fileName());
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(), 1, 3000);
+        QCOMPARE(errors.count(), 0);
+        const auto cues = qvariant_cast<QVector<SubtitleCue>>(ready[0][1]);
+        if (mode == "only") {
+            QVERIFY(cues.isEmpty());
+        } else {
+            QCOMPARE(cues.size(), 1);
+            QCOMPARE(cues[0].text, QStringLiteral("ありがとうございました"));
+            QCOMPARE(cues[0].startMs, mode == "aligned" ? 61100 : 61000);
+        }
+    }
     void missingModelAndCancellation() {
         QTemporaryDir dir;SubtitleJob job(dir.path());QSignalSpy errors(&job,&SubtitleJob::failed);
         RecognitionRequest r;r.source="missing.mkv";job.start(r,"missing-model.bin");QCOMPARE(errors.count(),1);QVERIFY(!job.busy());

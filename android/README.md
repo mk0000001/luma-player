@@ -12,6 +12,8 @@ Android 9 이상에서 Windows LumaPlayer가 같은 네트워크에 공유한 �
 
 승인한 뒤 PC에서 **공유 시작**을 누르거나, 조작 권한이 있는 Android 기기에서 **재생 시작**을 누르세요. 재생 화면의 자막 아이콘으로 제공된 자막을 선택할 수 있습니다. 파일은 호스트와 컨테이너가 지원할 때 위치 이동이 가능하고, Blu-ray 타이틀은 실시간 스트림으로 재생합니다.
 
+연결 화면에서 **Blu-ray 메뉴**를 누르면 PC의 디스크 메뉴를 방향키와 **확인**으로 조작할 수 있습니다. 재생 중에는 **재생 설정 → Blu-ray 메뉴**를 선택하세요. PC에서 메뉴에 영상 캡처 제외를 적용한 경우 PC 화면을 보면서 조작할 수 있습니다.
+
 **재생 정보**에서 소스 형식, 초기화된 영상 디코더, AudioTrack 형식, 화면과 오디오 경로가 보고한 지원 형식을 확인할 수 있습니다. HDR10, HDR10+, Dolby Vision, Dolby Digital Plus JOC(Atmos), Dolby TrueHD 및 DTS의 사용 가능 여부는 실제 소스, 기기와 연결된 출력 장치에 따라 달라집니다.
 
 Windows PowerShell에서 저장소 루트의 다음 명령으로 단위 테스트와 릴리스 Lint를 실행하고 로컬 베타 서명 APK를 만듭니다.
@@ -35,6 +37,8 @@ Choose to ask every time or remember the PC, then request approval. If the six-d
 Approved HTTPS connections verify the PC certificate's IP name and public key fingerprint. An Android Keystore key encrypts remembered credentials. The current playback token and media stay in app memory. Screen capture obscures the secure video surface, while playback controls and text subtitle overlays remain in the UI. Android app policy restricts playback audio capture.
 
 After approval, start sharing on the PC or tap **Start playback** on an Android device with playback control. Choose an available subtitle track with the player's subtitle button. File seeking depends on the host and container. Blu-ray titles use a live stream.
+
+Tap **Blu-ray menu** on the connected screen to navigate the disc on the PC with direction buttons and **OK**. During playback, open it from **Playback settings**. If the PC applies capture exclusion to the menu, use the buttons while viewing the PC display.
 
 **재생 정보** shows the source formats, initialized video decoder, AudioTrack format, and capabilities reported by the display and audio route. HDR10, HDR10+, Dolby Vision, Dolby Digital Plus JOC (Atmos), Dolby TrueHD, and DTS availability depends on the source, device, and connected outputs.
 

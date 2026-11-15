@@ -443,6 +443,24 @@ private slots:
         QVERIFY2(seek->value()>7100 && seek->value()<7900,qPrintable(QString("seek value %1 / %2, width %3").arg(seek->value()).arg(seek->maximum()).arg(seek->width())));
     }
 #ifdef Q_OS_WIN
+    void remoteDiscMenuRequestsDiscWhenIdle() {
+        luma::MainWindow window;
+        auto *share = window.findChild<QPushButton *>("openLanPlayback");
+        QVERIFY(share);
+        share->click();
+        auto *dialog = window.findChild<luma::LanPlaybackDialog *>("lanPlaybackDialog");
+        QVERIFY(dialog);
+        QPushButton *disc = nullptr;
+        for (auto *button : window.findChildren<QPushButton *>("primary")) {
+            if (button->text() == "Blu-ray 재생")
+                disc = button;
+        }
+        QVERIFY(disc && disc->isEnabled());
+        emit dialog->remoteControlRequested("disc-menu", {});
+        // The UI fixture suppresses hardware access. The disabled button confirms that
+        // the normal asynchronous disc-open path received the remote menu request.
+        QVERIFY(!disc->isEnabled());
+    }
     void mobilePlaybackUsesAuthenticatedLocalHost(){
         const auto source=qEnvironmentVariable("LUMA_UI_LAN_SOURCE");
         if(QGuiApplication::platformName()!="windows" || source.isEmpty())
@@ -548,10 +566,32 @@ private slots:
         auto *menu=manager.get(request("/v1/player/disc-menu.png",token));
         QTRY_VERIFY_WITH_TIMEOUT(menu->isFinished(),12000);
         QCOMPARE(menu->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),204);
+        if (!disc) {
+            auto *volume = window.findChild<QSlider *>("volumeSlider");
+            QVERIFY(volume && volume->isEnabled());
+            const int initialVolume = volume->value();
+            auto volumeRequest = request("/v1/player/control", token);
+            volumeRequest.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            auto *adjustVolume = manager.post(volumeRequest, QByteArray(R"({"action":"volume-up"})"));
+            QTRY_VERIFY_WITH_TIMEOUT(adjustVolume->isFinished(),12000);
+            QCOMPARE(adjustVolume->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),202);
+            QTRY_COMPARE(volume->value(), initialVolume + 5);
+        }
         remoteControl->click();
-        auto *controlRevoked=manager.get(request("/v1/player/disc-menu.png",token));
-        QTRY_VERIFY_WITH_TIMEOUT(controlRevoked->isFinished(),12000);
-        QCOMPARE(controlRevoked->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);
+        QVERIFY(!remoteControl->isChecked());
+        QVERIFY(!qobject_cast<luma::LanPlaybackDialog *>(dialog)->remoteControlEnabled());
+        int revokedStatus = 204;
+        QElapsedTimer revocation;
+        revocation.start();
+        // The helper applies the new grant asynchronously over its stdin.
+        while (revokedStatus == 204 && revocation.elapsed() < 3000) {
+            auto *controlRevoked = manager.get(request("/v1/player/disc-menu.png", token));
+            QTRY_VERIFY_WITH_TIMEOUT(controlRevoked->isFinished(), 3000);
+            revokedStatus = controlRevoked->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            controlRevoked->deleteLater();
+            if (revokedStatus == 204) QTest::qWait(50);
+        }
+        QCOMPARE(revokedStatus, 403);
         auto *beforeShare=manager.get(request("/v1/session",token));
         QTRY_VERIFY_WITH_TIMEOUT(beforeShare->isFinished(),12000);
         QCOMPARE(beforeShare->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),409);
@@ -567,9 +607,17 @@ private slots:
             QCOMPARE(denied->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),403);
             QVERIFY(!dialog->property("sharing").toBool());
             remoteStart->click();
-            auto *requested=manager.post(request("/v1/playback/start",token),QByteArray());
-            QTRY_VERIFY_WITH_TIMEOUT(requested->isFinished(),12000);
-            QCOMPARE(requested->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt(),202);
+            int requestedStatus = 403;
+            QElapsedTimer grant;
+            grant.start();
+            while (requestedStatus == 403 && grant.elapsed() < 3000) {
+                auto *requested = manager.post(request("/v1/playback/start", token), QByteArray());
+                QTRY_VERIFY_WITH_TIMEOUT(requested->isFinished(), 3000);
+                requestedStatus = requested->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                requested->deleteLater();
+                if (requestedStatus == 403) QTest::qWait(50);
+            }
+            QCOMPARE(requestedStatus, 202);
         }
         QTRY_VERIFY2_WITH_TIMEOUT(dialog->property("sharing").toBool(),qPrintable(status->text()),15000);
         auto *session=manager.get(request("/v1/session",token));

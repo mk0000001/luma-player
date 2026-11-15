@@ -2,6 +2,7 @@
 // Actual recognition accuracy is tested separately against the JFK speech sample.
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -43,7 +44,20 @@ int main(int argc,char **argv){
         }
         if(canceled){std::cout<<"LUMA_ABORTED="<<prefix<<std::endl;if(!server || !nextRequest())return 0;continue;}
         if(device=="NPU" && payload.find("npu-fails")!=std::string::npos)return 20;
-        std::ofstream out(prefix+".srt");out<<"1\n00:00:00,000 --> 00:00:01,000\nFixture transcription request "<<requestNumber<<"\n\n";out.close();
+        const auto outroMode = std::getenv("LUMA_FIXTURE_ASR_OUTRO");
+        std::ofstream out(prefix+".srt");
+        if (outroMode) {
+            out << "1\n00:00:00,000 --> 00:00:01,000\nご視聴 ありがとうございました！\n\n";
+            if (std::string_view(outroMode) != "only")
+                out << "2\n00:00:01,000 --> 00:00:02,000\nありがとうございました\n\n";
+        } else {
+            out << "1\n00:00:00,000 --> 00:00:01,000\nFixture transcription request " << requestNumber << "\n\n";
+        }
+        out.close();
+        if (outroMode && std::string_view(outroMode) == "aligned") {
+            std::ofstream sidecar(prefix+".timings.json");
+            sidecar << R"({"schema":1,"format":"luma-asr-timing-v1","alignment":"dtw","audioMs":2500,"segments":[{"startMs":100,"endMs":1100,"text":"御視聴有難うございました。","tokens":[]},{"startMs":1100,"endMs":2000,"text":"ありがとうございました","tokens":[]}]})";
+        }
         if(const auto timing=std::getenv("LUMA_FIXTURE_TOKEN_TIMINGS");timing && (std::string(timing)!="native-only" || !device.empty())){
             std::ofstream sidecar(prefix+".timings.json");
             sidecar<<"{\"schema\":1,\"format\":\"luma-asr-timing-v1\",\"alignment\":\"dtw\",\"audioMs\":2000,\"segments\":[{\"startMs\":200,\"endMs\":2000,\"text\":\"ABCDEFGH\",\"tokens\":[{\"byteStart\":"<<(std::string(timing)=="invalid"?1:0)<<",\"byteEnd\":4,\"startMs\":200,\"endMs\":1800},{\"byteStart\":4,\"byteEnd\":8,\"startMs\":1800,\"endMs\":2000}]}]}";

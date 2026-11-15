@@ -39,12 +39,15 @@
     <string name="pc_controls">PC 플레이어 조작</string>
     <string name="pc_controls_short">PC 조작</string>
     <string name="pc_controls_close">PC 컨트롤러 닫기</string>
+    <string name="pc_disc_menu">Blu-ray 메뉴</string>
+    <string name="pc_disc_menu_hint">미리보기가 비어 있으면 PC 화면을 보면서 조작하세요.</string>
     <string name="disc_menu_preview">Blu-ray 메인 메뉴 화면</string>
     <string name="pc_files_title">PC에서 재생할 파일</string>
     <string name="named_chapter_row">%1$s · %2$s</string>
     <string name="pc_files_empty">PC의 내부망 재생에서 ‘갤탭에서 고를 파일 지정’을 눌러 주세요.</string>
     <string name="pc_control_permission">Windows 내부망 재생에서 PC 플레이어 조작을 허용하세요.</string>
     <string name="pc_control_failed">PC에 조작 요청을 보내지 못했습니다.</string>
+    <string name="pc_control_busy">PC 조작을 처리 중입니다. 잠시 후 다시 눌러 주세요.</string>
     <string name="pair_playback_permission">PC의 내부망 재생에서 현재 미디어의 기기 재생 시작을 허용하거나 PC에서 공유를 시작하세요.</string>
     <string name="pair_playback_pending">PC에 재생을 요청했습니다. 시작되지 않으면 PC에서 재생할 미디어를 확인하세요.</string>
     <string name="remember_not_saved">이 PC를 기억하지 못했습니다. 이번 연결에서 재생할 수 있습니다.</string>

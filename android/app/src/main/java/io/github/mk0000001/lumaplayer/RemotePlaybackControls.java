@@ -37,6 +37,7 @@ final class RemotePlaybackControls {
         void showPlaybackInfo();
         void showUsageNotice();
         void showPcControls();
+        void showDiscMenu();
         void showCaptions();
     }
 
@@ -401,6 +402,7 @@ final class RemotePlaybackControls {
         settings.addRow(R.string.playback_audio_tracks, null, () -> openFromSettings(this::showAudioTracks));
         settings.addSection(R.string.settings_device);
         settings.addRow(R.string.pc_controls, null, () -> openFromSettings(actions::showPcControls));
+        settings.addRow(R.string.pc_disc_menu, null, () -> openFromSettings(actions::showDiscMenu));
         settings.addRow(R.string.wireless_display, null, () -> openFromSettings(actions::showWirelessDisplay));
         settings.addRow(R.string.playback_info_action, null, () -> openFromSettings(actions::showPlaybackInfo));
         settings.addRow(R.string.usage_notice_title, null, () -> openFromSettings(actions::showUsageNotice));

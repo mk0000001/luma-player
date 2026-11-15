@@ -26,6 +26,17 @@ QString srtTime(qint64 milliseconds){
     const auto ms=std::max<qint64>(0,milliseconds);return QString("%1:%2:%3,%4").arg(ms/3600000,2,10,QChar('0')).arg((ms/60000)%60,2,10,QChar('0')).arg((ms/1000)%60,2,10,QChar('0')).arg(ms%1000,3,10,QChar('0'));
 }
 
+bool isGeneratedOutro(const SubtitleCue &cue) {
+    auto text = cue.text.normalized(QString::NormalizationForm_KC);
+    static const QRegularExpression separators(R"([\p{P}\p{Z}\p{Cf}\s]+)");
+    text.remove(separators);
+    if (!text.startsWith(QStringLiteral("ご視聴")) && !text.startsWith(QStringLiteral("御視聴")))
+        return false;
+    const auto thanks = QStringView(text).sliced(3);
+    return thanks == QStringLiteral("ありがとうございました") ||
+           thanks == QStringLiteral("有難うございました");
+}
+
 QString extractionProtocols(const QString &scheme,bool disc){
     if(disc)return "bluray,file";
     if(scheme=="http" || scheme=="https")return "http,https,tcp,tls,crypto,httpproxy";
@@ -233,6 +244,7 @@ void SubtitleJob::completed(int code,QProcess::ExitStatus status){
             cues=std::move(aligned->cues);selectedAlignment_=aligned->alignment;
         }
     }
+    cues.removeIf(isGeneratedOutro);
     const auto &backend=backends_[backendIndex_];
     selectedBackend_=backend.key;
     if(backend.key=="CPU"){

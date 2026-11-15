@@ -34,10 +34,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLException;
 import org.json.JSONException;
@@ -46,10 +49,13 @@ import org.json.JSONException;
 final class ConnectionScreen {
     private static final long DISCOVERY_REFRESH_MS = 5000;
     private static final String AUTO_DISCOVERY_KEY = "autoDiscovery";
+    private static final long PC_COMMAND_INTERVAL_MS = 140; // Host accepts commands at least 125 ms apart.
     private final MainActivity activity;
     private final PcController controller;
     private final ScheduledExecutorService network;
     private final ExecutorService discoveryExecutor = Executors.newSingleThreadExecutor();
+    private final ThreadPoolExecutor pcCommands = new ThreadPoolExecutor(
+            1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(8));
     private final RememberedPcStore remembered;
     private final View home;
     private final View pairScreen;
@@ -70,9 +76,11 @@ final class ConnectionScreen {
     private final Button confirmCode;
     private final Button startPlayback;
     private final Button pcControls;
+    private final Button discMenu;
     private final Runnable refreshDiscovery = this::refreshOrdinaryDiscovery;
     private int mediaRequestGeneration;
-    private boolean controlInFlight;
+    private boolean filePickerInFlight;
+    private volatile int pcCommandGeneration;
     private LanClient waitingClient;
     private LanClient menuClient;
     private ScheduledFuture<?> menuRequest;
@@ -117,6 +125,7 @@ final class ConnectionScreen {
         confirmCode = activity.findViewById(R.id.pair_confirm_button);
         startPlayback = activity.findViewById(R.id.pair_playback_button);
         pcControls = activity.findViewById(R.id.pair_pc_controls);
+        discMenu = activity.findViewById(R.id.pair_disc_menu);
 
         activity.findViewById(R.id.connect_content).requestFocus();
         refresh.setOnClickListener(view -> discover());
@@ -158,6 +167,7 @@ final class ConnectionScreen {
 
     void stop() {
         foreground = false;
+        cancelPendingPcCommands();
         stopMenuPreview();
         controller.reset();
         stopDiscovery();
@@ -191,6 +201,7 @@ final class ConnectionScreen {
         closeVpnSearch();
         closeNearby();
         discoveryExecutor.shutdownNow();
+        pcCommands.shutdownNow();
     }
 
     boolean awaitingNearbySystemUi() {
@@ -257,14 +268,14 @@ final class ConnectionScreen {
     }
 
     void returnToControls(LanClient media) {
+        boolean returnToDiscMenu = controller.isDiscMenuOpen();
         stopMenuPreview();
         controller.reset();
         playing = false;
         waitingClient = media;
         home.setVisibility(View.GONE);
         pairScreen.setVisibility(View.VISIBLE);
-        pcControls.setVisibility(View.VISIBLE);
-        pcControls.setOnClickListener(view -> showPcControls(media));
+        bindPairedControls(media);
         startPlayback.setVisibility(View.VISIBLE);
         startPlayback.setEnabled(true);
         startPlayback.setOnClickListener(view -> network.execute(() -> {
@@ -277,7 +288,7 @@ final class ConnectionScreen {
             }
         }));
         setStatus(pairStatus, R.string.pair_wait_media, false);
-        controller.openOverlay(action -> sendPcAction(media, action));
+        controller.openOverlay(action -> sendPcAction(media, action), returnToDiscMenu);
         startMenuPreview(media);
         checkWaitingClient(media, 0);
     }
@@ -792,8 +803,7 @@ final class ConnectionScreen {
             return;
         }
         clearCode();
-        pcControls.setVisibility(View.VISIBLE);
-        pcControls.setOnClickListener(view -> showPcControls(media));
+        bindPairedControls(media);
         activity.protectPairingForm(false);
         setStatus(pairStatus, R.string.connecting, false);
         startPlayback.setOnClickListener(view -> {
@@ -832,6 +842,19 @@ final class ConnectionScreen {
         controller.toggle(action -> sendPcAction(media, action));
         if (!playing && controller.isOverlayVisible()) startMenuPreview(media);
         else stopMenuPreview();
+    }
+
+    private void bindPairedControls(LanClient media) {
+        pcControls.setVisibility(View.VISIBLE);
+        pcControls.setOnClickListener(view -> showPcControls(media));
+        discMenu.setVisibility(View.VISIBLE);
+        discMenu.setOnClickListener(view -> showDiscMenu(media));
+    }
+
+    void showDiscMenu(LanClient media) {
+        controller.openOverlay(action -> sendPcAction(media, action), true);
+        sendPcAction(media, "disc-menu");
+        if (!playing) startMenuPreview(media);
     }
 
     private void startMenuPreview(LanClient media) {
@@ -876,28 +899,56 @@ final class ConnectionScreen {
             return;
         }
         if (activity.applyStreamingControl(media, action)) return;
-        if (controlInFlight) return;
-        controlInFlight = true;
-        network.execute(() -> {
-            int message = 0;
-            try {
-                media.controlPlayer(action);
-            } catch (LanClient.HttpException error) {
-                message = error.status == 403 || error.status == 404 ? R.string.pc_control_permission : R.string.pc_control_failed;
-            } catch (IOException error) {
-                message = R.string.pc_control_failed;
-            }
-            int result = message;
-            activity.runOnUiThread(() -> {
-                controlInFlight = false;
-                if (foreground && result != 0) Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
+        queuePcCommand(() -> media.controlPlayer(action));
+    }
+
+    @FunctionalInterface
+    private interface PcCommand {
+        void send() throws IOException;
+    }
+
+    private void queuePcCommand(PcCommand command) {
+        if (!foreground || activity.isFinishing()) return;
+        int generation = pcCommandGeneration;
+        try {
+            pcCommands.execute(() -> {
+                if (generation != pcCommandGeneration) return;
+                int message = 0;
+                try {
+                    command.send();
+                } catch (LanClient.HttpException error) {
+                    message = switch (error.status) {
+                        case 401 -> R.string.session_ended;
+                        case 403 -> R.string.pc_control_permission;
+                        case 429 -> R.string.pc_control_busy;
+                        default -> R.string.pc_control_failed;
+                    };
+                } catch (IOException error) {
+                    message = R.string.pc_control_failed;
+                }
+                if (message != 0) {
+                    int result = message;
+                    activity.runOnUiThread(() -> {
+                        if (foreground && generation == pcCommandGeneration)
+                            Toast.makeText(activity, result, Toast.LENGTH_SHORT).show();
+                    });
+                }
+                android.os.SystemClock.sleep(PC_COMMAND_INTERVAL_MS);
             });
-        });
+        } catch (RejectedExecutionException busy) {
+            Toast.makeText(activity, R.string.pc_control_busy, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void cancelPendingPcCommands() {
+        pcCommandGeneration++;
+        pcCommands.getQueue().clear();
     }
 
     private void chooseRemoteFile(LanClient media) {
-        if (controlInFlight) return;
-        controlInFlight = true;
+        if (filePickerInFlight) return;
+        filePickerInFlight = true;
+        int generation = pcCommandGeneration;
         network.execute(() -> {
             List<LanClient.RemoteFile> files;
             try {
@@ -907,8 +958,8 @@ final class ConnectionScreen {
             }
             var entries = files;
             activity.runOnUiThread(() -> {
-                controlInFlight = false;
-                if (!foreground || activity.isFinishing()) return;
+                filePickerInFlight = false;
+                if (!foreground || generation != pcCommandGeneration || activity.isFinishing()) return;
                 if (entries == null || entries.isEmpty()) {
                     Toast.makeText(activity, entries == null ? R.string.pc_control_permission : R.string.pc_files_empty,
                             Toast.LENGTH_LONG).show();
@@ -916,19 +967,12 @@ final class ConnectionScreen {
                 }
                 var labels = entries.stream().map(LanClient.RemoteFile::name).toArray(String[]::new);
                 new AlertDialog.Builder(activity).setTitle(R.string.pc_files_title)
-                        .setItems(labels, (dialog, index) -> openRemoteFile(media, entries.get(index).id()))
+                        .setItems(labels, (dialog, index) -> {
+                            if (generation == pcCommandGeneration)
+                                queuePcCommand(() -> media.openRemoteFile(entries.get(index).id()));
+                        })
                         .setNegativeButton(android.R.string.cancel, null).show();
             });
-        });
-    }
-
-    private void openRemoteFile(LanClient media, String id) {
-        network.execute(() -> {
-            try {
-                media.openRemoteFile(id);
-            } catch (IOException error) {
-                activity.runOnUiThread(() -> Toast.makeText(activity, R.string.pc_control_failed, Toast.LENGTH_SHORT).show());
-            }
         });
     }
 
@@ -1007,8 +1051,11 @@ final class ConnectionScreen {
     }
 
     private void cancelAttempt() {
+        cancelPendingPcCommands();
         pcControls.setVisibility(View.GONE);
         pcControls.setOnClickListener(null);
+        discMenu.setVisibility(View.GONE);
+        discMenu.setOnClickListener(null);
         startPlayback.setVisibility(View.GONE);
         startPlayback.setOnClickListener(null);
         if (request != null) {
