@@ -33,6 +33,7 @@ struct TranslationService::Impl {
     QString runtime,model,selected,log,token;
     AiPreferences preferences;
     TranslationGlossary glossary;
+    bool correctCherryBlossom=false;
     TranslationProfile profile=TranslationProfile::LegacyQwenJson;
     TranslationQueue queue;
     QVector<SubtitleCue> contextCues;
@@ -312,7 +313,7 @@ struct TranslationService::Impl {
                 queue.release(task);active.reset();activeFingerprint.clear();queue.enqueue({task.source});schedule();return;
             }
             const auto target=targets.constFind(task.source);const auto source=target==targets.cend()?task.source:target->text;
-            QString error;const auto korean=parseTranslationResponse(body,&error,profile,source,glossary);
+            QString error;const auto korean=parseTranslationResponse(body,&error,profile,source,glossary,correctCherryBlossom);
             if(korean.isEmpty()){skipCue(task,error);return;}
             if(selected.isEmpty()){
                 if(process)log+=QString::fromUtf8(process->readAll());const auto actual=confirmedTranslationBackend(backends[backendIndex],log);
@@ -331,10 +332,11 @@ void TranslationService::setPreferences(const AiPreferences &preferences){
 }
 AiPreferences TranslationService::preferences()const{return d->preferences;}
 void TranslationService::setModel(QString model){d->clear();d->stop();d->model=model.isEmpty()?QDir(d->runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf"):std::move(model);d->profile=translationProfileForModel(d->model);d->backends.clear();d->backendIndex=-1;d->selected.clear();emit backendSelected({});}
-void TranslationService::setGlossary(const TranslationGlossary &glossary){
-    if(d->glossary==glossary)return;
+void TranslationService::setGlossary(const TranslationGlossary &glossary,bool correctCherryBlossom){
+    if(d->glossary==glossary && d->correctCherryBlossom==correctCherryBlossom)return;
     d->clear();
     d->glossary=glossary;
+    d->correctCherryBlossom=correctCherryBlossom;
 }
 TranslationGlossary TranslationService::glossary()const{return d->glossary;}
 void TranslationService::request(const QStringList &sources){

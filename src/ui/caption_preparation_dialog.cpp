@@ -80,11 +80,14 @@ CaptionPreparationDialog::~CaptionPreparationDialog(){retryingAccelerator_=false
 void CaptionPreparationDialog::setFile(const QString &file){
     if(busy_)return;probe_.cancel();invalidateResult();customOutput_=false;request_.source.source=QFileInfo(file).absoluteFilePath();request_.source.disc=false;request_.source.playlist.clear();request_.source.startMs=0;request_.source.audioTrackId=-1;request_.durationMs=0;request_.source.audioIndex=0;
     request_.translationGlossary=fileGlossary_;
+    request_.correctCherryBlossom=false;
     sourceLabel_->setText(request_.source.source);playlists_->clear();form_->setRowVisible(playlists_,false);form_->setRowVisible(discAudio_,false);form_->setRowVisible(audio_,true);audio_->clear();audio_->setEnabled(true);durationLabel_->setText("미디어 정보 확인 중…");status_->setText("영상 재생 없이 길이와 오디오를 확인합니다.");setDefaultOutput();probing_=true;probeGeneration_=probe_.generation()+1;probe_.inspect(request_.source.source);updateStart();
 }
 void CaptionPreparationDialog::setDisc(const QString &root){
     if(busy_)return;probe_.cancel();probing_=false;invalidateResult();customOutput_=false;const auto preferred=request_.source;const auto preferredDuration=request_.durationMs;const auto disc=inspectDisc(root);
-    request_.translationGlossary=configuredTranslationGlossary(resumeIdentity(disc.root,&disc));
+    const auto discIdentity=resumeIdentity(disc.root,&disc);
+    request_.translationGlossary=configuredTranslationGlossary(discIdentity);
+    request_.correctCherryBlossom=isTukiBudokanDisc(discIdentity);
     const bool usePreferred=disc.valid && preferred.disc && preferredDuration>0 && preferredDuration<=24LL*60*60*1000 && preferred.audioIndex>=0 && preferred.audioIndex<64 && !preferred.playlist.isEmpty() && QFileInfo(localDiscPath(preferred.source))==QFileInfo(disc.root) && matchDiscPlaylist(disc,preferredDuration)==preferred.playlist;
     {QSignalBlocker guard(discAudio_);discAudio_->setValue(usePreferred?preferred.audioIndex+1:1);}
     request_.source.source=disc.root;request_.source.disc=true;request_.source.startMs=0;request_.source.audioTrackId=-1;request_.source.audioIndex=discAudio_->value()-1;request_.durationMs=0;request_.source.playlist.clear();sourceLabel_->setText(disc.label.isEmpty()?root:disc.label+" · "+root);audio_->clear();form_->setRowVisible(audio_,false);form_->setRowVisible(playlists_,true);form_->setRowVisible(discAudio_,true);discAudio_->setEnabled(true);

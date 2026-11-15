@@ -128,12 +128,16 @@ const QStringList sakuraSpellings{"桜","櫻","さくら","サクラ"};
 
 QString correctCherryBlossomTranslation(const QString &korean,const QString &source,const TranslationGlossary &glossary){
     const QString cherryBlossom="벚꽃";
-    const bool expectsCherryBlossom=std::any_of(sakuraSpellings.cbegin(),sakuraSpellings.cend(),[&](const QString &term){
-        return glossary.value(term)==cherryBlossom && source.contains(term);
-    });
-    if(!expectsCherryBlossom)return korean;
+    static const QRegularExpression sourceTerm("("+sakuraSpellings.join('|')+")([ \\t]*(?:さん|ちゃん|さま|様|くん|氏))?");
+    auto sourceMatches=sourceTerm.globalMatch(source);
+    if(!sourceMatches.hasNext())return korean;
+    const auto mention=sourceMatches.next();
+    if(sourceMatches.hasNext() || !mention.captured(2).isEmpty() || glossary.value(mention.captured(1))!=cherryBlossom)
+        return korean;
 
-    static const QRegularExpression transliterated(R"((?<![\p{L}\p{M}\p{N}_])사쿠라(예요|처럼|부터|까지|에게|에서|가|는|를|와|로|랑|의|에|도|만)?(?![\p{L}\p{M}\p{N}_]))");
+    static const QRegularExpression transliterated(
+        R"((?<![\p{L}\p{M}\p{N}_])사쿠라(예요|처럼|부터|까지|에게|에서|가|는|를|와|로|랑|의|에|도|만)?)"
+        R"((?![\p{L}\p{M}\p{N}_]|[ \t]+(?:씨|님|양|군)(?![\p{L}\p{M}\p{N}_])))");
     static const QHash<QString,QString> particles{
         {"가","이"},{"는","은"},{"를","을"},{"와","과"},{"로","으로"},{"랑","이랑"},{"예요","이에요"}
     };
@@ -195,14 +199,17 @@ QString formatTranslationGlossary(const TranslationGlossary &glossary){
 QString translationGlossarySettingsKey(const QString &discIdentity){
     return discIdentity.isEmpty()?QString("translation/glossary"):"translation/discGlossary/"+discIdentity;
 }
+bool isTukiBudokanDisc(const QString &discIdentity){
+    // The fingerprint contains the disc volume and playlist metadata.
+    return discIdentity=="97713fb919552b94746fd62b81028e826e640ea34b0df71d379c09933057278d";
+}
 TranslationGlossary configuredTranslationGlossary(const QString &discIdentity){
     const QSettings settings;
     const auto key=translationGlossarySettingsKey(discIdentity);
     if(settings.contains(key))return parseTranslationGlossary(settings.value(key).toString()).value_or(TranslationGlossary{});
 
     auto glossary=parseTranslationGlossary(settings.value(translationGlossarySettingsKey()).toString()).value_or(TranslationGlossary{});
-    // Tuki Nippon Budokan Blu-ray, identified by its volume and playlist metadata.
-    if(discIdentity=="97713fb919552b94746fd62b81028e826e640ea34b0df71d379c09933057278d"){
+    if(isTukiBudokanDisc(discIdentity)){
         for(const auto &term:sakuraSpellings){
             if(glossary.size()>=maximumGlossaryEntries)break;
             if(!glossary.contains(term))glossary.insert(term,"벚꽃");
@@ -210,7 +217,8 @@ TranslationGlossary configuredTranslationGlossary(const QString &discIdentity){
     }
     return glossary;
 }
-QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target,const TranslationGlossary &glossary){
+QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target,
+                                 const TranslationGlossary &glossary,bool correctCherryBlossom){
     auto fail=[&](const QString &reason){if(error)*error=reason;return QString();};
     if(error)error->clear();
     QJsonParseError parse;const auto document=QJsonDocument::fromJson(response,&parse);
@@ -245,7 +253,7 @@ QString parseTranslationResponse(const QByteArray &response,QString *error,Trans
     const auto lengthLimit=target.isEmpty()?qsizetype(2048):std::min<qsizetype>(2048,std::max<qsizetype>(80,target.size()*4+32));
     if(korean.size()>lengthLimit)return fail("대상 자막보다 지나치게 긴 번역 결과를 제외했습니다.");
     if(!hangul.match(korean).hasMatch()||kana.match(korean).hasMatch())return fail("한국어로 완성되지 않은 번역 결과를 제외했습니다.");
-    return correctCherryBlossomTranslation(korean,target,glossary);
+    return correctCherryBlossom?correctCherryBlossomTranslation(korean,target,glossary):korean;
 }
 namespace {
 QJsonObject cueData(const SubtitleCue &cue){return {{"start_ms",cue.startMs},{"end_ms",cue.endMs},{"text",cue.text}};}

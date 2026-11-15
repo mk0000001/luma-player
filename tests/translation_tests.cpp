@@ -51,13 +51,18 @@ private slots:
         const QString korean="사쿠라가 피었어요. 사쿠라를 보러 갔어요. 사쿠라코도 왔어요.";
         const auto response=responseWithContent(korean);
         const QString source="桜が咲いた。公園を歩いた。";
-        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,glossary),
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,glossary,true),
             QString("벚꽃이 피었어요. 벚꽃을 보러 갔어요. 사쿠라코도 왔어요."));
-        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"人が来た。",glossary),korean);
-        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source),korean);
-        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,{{"桜","사쿠라"}}),korean);
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"人が来た。",glossary,true),korean);
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,glossary),korean);
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,{{"桜","사쿠라"}},true),korean);
         QCOMPARE(parseTranslationResponse(responseWithKorean("사쿠라는 꽃이에요."),nullptr,
-            TranslationProfile::LegacyQwenJson,source,glossary),QString("벚꽃은 꽃이에요."));
+            TranslationProfile::LegacyQwenJson,source,glossary,true),QString("벚꽃은 꽃이에요."));
+        const QString mixed="사쿠라는 벚꽃을 좋아해요.";
+        QCOMPARE(parseTranslationResponse(responseWithContent(mixed),nullptr,profile,
+            "さくらは桜が好き。",{{"さくら","사쿠라"},{"桜","벚꽃"}},true),mixed);
+        const QString named="사쿠라 씨가 걸었어요.";
+        QCOMPARE(parseTranslationResponse(responseWithContent(named),nullptr,profile,"桜さんが歩いた。",glossary,true),named);
     }
     void nearestTranslationWorkRemainsBoundedAndStable(){
         const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"},late{9900,10500,"visible late"};

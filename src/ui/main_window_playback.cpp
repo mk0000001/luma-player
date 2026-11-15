@@ -357,7 +357,8 @@ bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     resumeIdentity_=remote?QString{}:resumeIdentity(source_,disc?&discInfo_:nullptr);
     if(!remote)pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);
     resumeSavedAt_=0;
-    translation_->setGlossary(configuredTranslationGlossary(disc?resumeIdentity_:QString{}));
+    const auto glossaryDisc=disc?resumeIdentity_:QString{};
+    translation_->setGlossary(configuredTranslationGlossary(glossaryDisc),isTukiBudokanDisc(glossaryDisc));
     const auto adapter=effectiveVideoAdapter();
     if(!disc && fileVideoAdapter_!=adapter){
         active_=nullptr;

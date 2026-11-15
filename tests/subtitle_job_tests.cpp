@@ -23,8 +23,11 @@ private slots:
         const auto command = [](const QString &model) {
             return recognitionCommand("runtime", model, "ja", "wave.wav", "out").arguments;
         };
-        QVERIFY(command("D:/Models/ggml-hearttranscriptor-oss-q5_0.bin").contains("-nt"));
+        const auto singing=command("D:/Models/ggml-hearttranscriptor-oss-q5_0.bin");
+        QVERIFY(singing.contains("-nt"));
+        QVERIFY(!singing.contains("-ml"));
         QVERIFY(!command("ggml-large-v3-q5_0.bin").contains("-nt"));
+        QVERIFY(command("ggml-large-v3-q5_0.bin").contains("-ml"));
         QVERIFY(!command("ggml-medium.bin").contains("-nt"));
     }
     void discUsesNavigationTitle() {

@@ -14,6 +14,7 @@ struct CaptionPreparationRequest {
     AiPreferences recognitionPreferences,translationPreferences;
     bool translate=true;
     TranslationGlossary translationGlossary;
+    bool correctCherryBlossom=false;
 };
 struct CaptionPreparationResult {
     CaptionPreparationRequest request;

@@ -13,6 +13,7 @@ using TranslationGlossary=QMap<QString,QString>;
 std::optional<TranslationGlossary> parseTranslationGlossary(const QString &text);
 QString formatTranslationGlossary(const TranslationGlossary &glossary);
 QString translationGlossarySettingsKey(const QString &discIdentity={});
+bool isTukiBudokanDisc(const QString &discIdentity);
 TranslationGlossary configuredTranslationGlossary(const QString &discIdentity={});
 struct TranslationTask {quint64 generation;QString source;};
 class TranslationQueue {
@@ -44,7 +45,8 @@ TranslationLaunch translationLaunch(const TranslationBackend &backend,const QStr
 // Decode JSON once per protocol layer; reject damaged Unicode/model artifacts.
 // Preserve proper names, combining characters and lyric line breaks.
 QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr,
-    TranslationProfile profile=TranslationProfile::LegacyQwenJson,const QString &target={},const TranslationGlossary &glossary={});
+    TranslationProfile profile=TranslationProfile::LegacyQwenJson,const QString &target={},
+    const TranslationGlossary &glossary={},bool correctCherryBlossom=false);
 QJsonObject translationPayload(const QString &source,TranslationProfile profile=TranslationProfile::LegacyQwenJson);
 // Timed keys distinguish identical phrases in different scenes.
 QString translationCueKey(const SubtitleCue &cue);

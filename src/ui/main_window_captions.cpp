@@ -59,7 +59,7 @@ void MainWindow::editTranslationGlossary(){
     }
     if(*glossary==saved)return;
     QSettings().setValue(translationGlossarySettingsKey(discIdentity),formatTranslationGlossary(*glossary));
-    translation_->setGlossary(*glossary);
+    translation_->setGlossary(*glossary,isTukiBudokanDisc(discIdentity));
     translationPending_.clear();
     translationRefresh_.clear();
     clearTranslationSkips();

@@ -42,6 +42,7 @@ ModelArchitecture readModelArchitecture(std::istream &input){
 }
 DecodeOptions selectDecodeOptions(Quality quality,const ModelArchitecture &model,bool noTimestamps){
     DecodeOptions options;
+    if(noTimestamps)options.maxLength=0;
     const bool full=largeV3Shape(model) && model.textLayers==32;
     const bool turbo=largeV3Shape(model) && model.textLayers==4;
     const bool singing=noTimestamps && multilingualMediumShape(model);

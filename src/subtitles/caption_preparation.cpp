@@ -141,6 +141,7 @@ QJsonObject requestJson(const CaptionPreparationRequest &request){
     const auto &s=request.source;
     QJsonObject result{{"source",s.source},{"disc",s.disc},{"playlist",s.playlist},{"language",s.language},{"title",s.title},{"audio_index",s.audioIndex},{"audio_track_id",s.audioTrackId},{"duration_ms",request.durationMs},{"model",request.model},{"translation_model",request.translationModel},{"output_directory",request.outputDirectory},{"translate",request.translate},{"recognition_preferences",preferencesJson(request.recognitionPreferences)},{"translation_preferences",preferencesJson(request.translationPreferences)}};
     if(!request.translationGlossary.isEmpty())result.insert("translation_glossary",formatTranslationGlossary(request.translationGlossary));
+    if(request.correctCherryBlossom)result.insert("correct_cherry_blossom",true);
     return result;
 }
 bool validRequest(const CaptionPreparationRequest &request,QString &error){
@@ -152,6 +153,7 @@ bool validRequest(const CaptionPreparationRequest &request,QString &error){
     if((request.translate||!request.translationModel.isEmpty())&&(!localPath(request.translationModel)||QFileInfo(request.translationModel).suffix().compare("gguf",Qt::CaseInsensitive)!=0))return reject(error,"번역 모델 경로가 잘못되었습니다.");
     if(parseTranslationGlossary(formatTranslationGlossary(request.translationGlossary))!=request.translationGlossary)
         return reject(error,"번역 용어집이 잘못되었습니다.");
+    if(request.correctCherryBlossom && !s.disc)return reject(error,"원본에 맞는 번역 용어집을 선택하세요.");
     return true;
 }
 std::optional<CaptionPreparationRequest> readRequest(const QJsonObject &object,QString &error){
@@ -168,6 +170,7 @@ std::optional<CaptionPreparationRequest> readRequest(const QJsonObject &object,Q
         if(!glossary)return {};
         r.translationGlossary=*glossary;
     }
+    r.correctCherryBlossom=object.value("correct_cherry_blossom").toBool();
     if(!validRequest(r,error)||requestJson(r)!=object)return {};return r;
 }
 std::optional<QJsonObject> jobIdentity(const CaptionPreparationRequest &request,const QString &runtime,QString &error){
@@ -423,7 +426,7 @@ struct CaptionPreparationService::Impl {
         if(!state.result.request.translate){finish();return;}
         state.phase="translation";if(!checkpoint()||!report())return;
         translation=new TranslationService(runtime,q);translation->setPreferences(state.result.request.translationPreferences);translation->setModel(state.result.request.translationModel);
-        translation->setGlossary(state.result.request.translationGlossary);
+        translation->setGlossary(state.result.request.translationGlossary,state.result.request.correctCherryBlossom);
         translation->setContextCues(state.result.originals);translationGeneration=translation->generation();const auto id=generation;
         QObject::connect(translation,&TranslationService::failed,q,[this,id](const QString &message){if(active&&generation==id)fail(message);});
         QObject::connect(translation,&TranslationService::translatedCue,q,[this,id](quint64 child,const QString &key,const QString &source,const QString &korean){

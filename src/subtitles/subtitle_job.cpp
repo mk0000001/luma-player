@@ -60,10 +60,13 @@ ProcessInvocation extractionCommand(const QString &runtime,const RecognitionRequ
 }
 ProcessInvocation recognitionCommand(const QString &runtime,const QString &model,const QString &language,const QString &wav,const QString &prefix){
     QStringList arguments{"-m",model,"-f",wav,"-l",language,"-osrt","-of",prefix,"-t",
-        QString::number(std::clamp(QThread::idealThreadCount()/2,2,8)),"-ml","48","-bs","1","-bo","1","-np"};
-    // HeartTranscriptor's generation config disables decoder timestamp tokens.
+        QString::number(std::clamp(QThread::idealThreadCount()/2,2,8)),"-bs","1","-bo","1","-np"};
+    // Let the player wrap singing captions at grapheme boundaries instead of
+    // letting the standalone CLI split a multibyte character between cues.
     if(QFileInfo(model).fileName().compare("ggml-hearttranscriptor-oss-q5_0.bin",Qt::CaseInsensitive)==0)
         arguments.append("-nt");
+    else
+        arguments.append({"-ml","48"});
     return {executable(runtime,"whisper/whisper-cli","whisper-cli"),arguments};
 }
 QString writeSrt(const QVector<SubtitleCue> &input){

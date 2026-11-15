@@ -38,6 +38,7 @@ int main(){
         const auto singing=selectDecodeOptions(Quality::Auto,medium,true);
         require(singing.beamSearch && singing.maxLength==0 && !singing.flashAttention && singing.dtw==DtwPreset::Medium,
                 "timestamp-free medium did not choose the matching alignment");
+        require(selectDecodeOptions(Quality::Fast,medium,true).maxLength==0,"fast singing decoding must not split UTF-8 between cues");
         require(selectDecodeOptions(Quality::Auto,medium).dtw==DtwPreset::None,"normal medium decoding changed");
         medium.textLayers=23;
         require(selectDecodeOptions(Quality::Auto,medium,true).dtw==DtwPreset::None,"mismatched model accepted medium alignment");

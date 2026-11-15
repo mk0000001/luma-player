@@ -16,7 +16,7 @@ public:
     void setPreferences(const AiPreferences &preferences);
     AiPreferences preferences()const;
     void setModel(QString model={});
-    void setGlossary(const TranslationGlossary &glossary);
+    void setGlossary(const TranslationGlossary &glossary,bool correctCherryBlossom=false);
     TranslationGlossary glossary()const;
     void request(const QStringList &nearestFirst);
     // Replace the current session's raw source buffer, including newly available future cues.
