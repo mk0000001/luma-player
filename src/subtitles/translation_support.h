@@ -43,7 +43,8 @@ QVector<TranslationBackend> translationBackends(const QString &runtime,const AiP
 TranslationLaunch translationLaunch(const TranslationBackend &backend,const QString &model,quint16 port,const QString &token);
 // Decode JSON once per protocol layer; reject damaged Unicode/model artifacts.
 // Preserve proper names, combining characters and lyric line breaks.
-QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr,TranslationProfile profile=TranslationProfile::LegacyQwenJson,const QString &target={});
+QString parseTranslationResponse(const QByteArray &response,QString *error=nullptr,
+    TranslationProfile profile=TranslationProfile::LegacyQwenJson,const QString &target={},const TranslationGlossary &glossary={});
 QJsonObject translationPayload(const QString &source,TranslationProfile profile=TranslationProfile::LegacyQwenJson);
 // Timed keys distinguish identical phrases in different scenes.
 QString translationCueKey(const SubtitleCue &cue);

@@ -1,6 +1,8 @@
 #include <QtTest>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSettings>
+#include <QTemporaryDir>
 #include "subtitles/translation_support.h"
 using namespace luma;
 
@@ -21,7 +23,42 @@ QJsonObject requestData(const QJsonObject &payload){
 
 class TranslationTests : public QObject {
     Q_OBJECT
+    QTemporaryDir settings_;
 private slots:
+    void initTestCase(){
+        QVERIFY(settings_.isValid());
+        QCoreApplication::setOrganizationName("LumaPlayerTranslationTests");
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
+    }
+    void concertGlossaryUsesCherryBlossomForThisDisc(){
+        const QString concertDisc="97713fb919552b94746fd62b81028e826e640ea34b0df71d379c09933057278d";
+        const auto concertGlossary=configuredTranslationGlossary(concertDisc);
+        QCOMPARE(concertGlossary.value("桜"),QString("벚꽃"));
+        QCOMPARE(concertGlossary.value("さくら"),QString("벚꽃"));
+        QVERIFY(!configuredTranslationGlossary("different-disc").contains("桜"));
+        QSettings settings;
+        settings.setValue(translationGlossarySettingsKey(),"青空 → 푸른 하늘");
+        QCOMPARE(configuredTranslationGlossary(concertDisc).value("青空"),QString("푸른 하늘"));
+        settings.setValue(translationGlossarySettingsKey(concertDisc),"桜 → 사쿠라");
+        QCOMPARE(configuredTranslationGlossary(concertDisc),(TranslationGlossary{{"桜","사쿠라"}}));
+        settings.setValue(translationGlossarySettingsKey(concertDisc),QString{});
+        QVERIFY(configuredTranslationGlossary(concertDisc).isEmpty());
+    }
+    void cherryBlossomCorrectionRespectsSourceTermsAndKoreanParticles(){
+        const auto profile=TranslationProfile::HyMt2Plain;
+        const TranslationGlossary glossary{{"桜","벚꽃"}};
+        const QString korean="사쿠라가 피었어요. 사쿠라를 보러 갔어요. 사쿠라코도 왔어요.";
+        const auto response=responseWithContent(korean);
+        const QString source="桜が咲いた。公園を歩いた。";
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,glossary),
+            QString("벚꽃이 피었어요. 벚꽃을 보러 갔어요. 사쿠라코도 왔어요."));
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"人が来た。",glossary),korean);
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source),korean);
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,source,{{"桜","사쿠라"}}),korean);
+        QCOMPARE(parseTranslationResponse(responseWithKorean("사쿠라는 꽃이에요."),nullptr,
+            TranslationProfile::LegacyQwenJson,source,glossary),QString("벚꽃은 꽃이에요."));
+    }
     void nearestTranslationWorkRemainsBoundedAndStable(){
         const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"},late{9900,10500,"visible late"};
         QVector<SubtitleCue> cues{{200000,201000,"too far"},past,{0,2000,"expired"},future,past,cached,late};

@@ -312,7 +312,7 @@ struct TranslationService::Impl {
                 queue.release(task);active.reset();activeFingerprint.clear();queue.enqueue({task.source});schedule();return;
             }
             const auto target=targets.constFind(task.source);const auto source=target==targets.cend()?task.source:target->text;
-            QString error;const auto korean=parseTranslationResponse(body,&error,profile,source);
+            QString error;const auto korean=parseTranslationResponse(body,&error,profile,source,glossary);
             if(korean.isEmpty()){skipCue(task,error);return;}
             if(selected.isEmpty()){
                 if(process)log+=QString::fromUtf8(process->readAll());const auto actual=confirmedTranslationBackend(backends[backendIndex],log);

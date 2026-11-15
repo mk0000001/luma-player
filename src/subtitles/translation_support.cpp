@@ -123,6 +123,36 @@ TranslationLaunch translationLaunch(const TranslationBackend &backend,const QStr
     return command;
 }
 namespace {
+constexpr qsizetype maximumGlossaryEntries=64;
+const QStringList sakuraSpellings{"桜","櫻","さくら","サクラ"};
+
+QString correctCherryBlossomTranslation(const QString &korean,const QString &source,const TranslationGlossary &glossary){
+    const QString cherryBlossom="벚꽃";
+    const bool expectsCherryBlossom=std::any_of(sakuraSpellings.cbegin(),sakuraSpellings.cend(),[&](const QString &term){
+        return glossary.value(term)==cherryBlossom && source.contains(term);
+    });
+    if(!expectsCherryBlossom)return korean;
+
+    static const QRegularExpression transliterated(R"((?<![\p{L}\p{M}\p{N}_])사쿠라(예요|처럼|부터|까지|에게|에서|가|는|를|와|로|랑|의|에|도|만)?(?![\p{L}\p{M}\p{N}_]))");
+    static const QHash<QString,QString> particles{
+        {"가","이"},{"는","은"},{"를","을"},{"와","과"},{"로","으로"},{"랑","이랑"},{"예요","이에요"}
+    };
+    auto matches=transliterated.globalMatch(korean);
+    if(!matches.hasNext())return korean;
+
+    QString corrected;
+    qsizetype previousEnd=0;
+    while(matches.hasNext()){
+        const auto match=matches.next();
+        corrected+=QStringView(korean).sliced(previousEnd,match.capturedStart()-previousEnd);
+        const auto particle=match.captured(1);
+        corrected+=cherryBlossom+particles.value(particle,particle);
+        previousEnd=match.capturedEnd();
+    }
+    corrected+=QStringView(korean).sliced(previousEnd);
+    return corrected;
+}
+
 bool validTranslationUnicode(const QString &text){
     for(qsizetype index=0;index<text.size();++index){
         const auto unit=text.at(index);char32_t scalar=unit.unicode();
@@ -146,7 +176,7 @@ std::optional<TranslationGlossary> parseTranslationGlossary(const QString &text)
     for(const auto &line:text.split('\n')){
         if(line.trimmed().isEmpty())continue;
         const auto fields=line.split(QChar(0x2192));
-        if(fields.size()!=2 || glossary.size()>=64)return {};
+        if(fields.size()!=2 || glossary.size()>=maximumGlossaryEntries)return {};
         const auto source=fields[0].trimmed(),korean=fields[1].trimmed();
         if(source.isEmpty() || korean.isEmpty() || source.size()>100 || korean.size()>100 ||
            !validTranslationUnicode(source) || !validTranslationUnicode(korean) ||
@@ -167,11 +197,20 @@ QString translationGlossarySettingsKey(const QString &discIdentity){
 }
 TranslationGlossary configuredTranslationGlossary(const QString &discIdentity){
     const QSettings settings;
-    const auto common=settings.value(translationGlossarySettingsKey());
-    const auto chosen=discIdentity.isEmpty()?common:settings.value(translationGlossarySettingsKey(discIdentity),common);
-    return parseTranslationGlossary(chosen.toString()).value_or(TranslationGlossary{});
+    const auto key=translationGlossarySettingsKey(discIdentity);
+    if(settings.contains(key))return parseTranslationGlossary(settings.value(key).toString()).value_or(TranslationGlossary{});
+
+    auto glossary=parseTranslationGlossary(settings.value(translationGlossarySettingsKey()).toString()).value_or(TranslationGlossary{});
+    // Tuki Nippon Budokan Blu-ray, identified by its volume and playlist metadata.
+    if(discIdentity=="97713fb919552b94746fd62b81028e826e640ea34b0df71d379c09933057278d"){
+        for(const auto &term:sakuraSpellings){
+            if(glossary.size()>=maximumGlossaryEntries)break;
+            if(!glossary.contains(term))glossary.insert(term,"벚꽃");
+        }
+    }
+    return glossary;
 }
-QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target){
+QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target,const TranslationGlossary &glossary){
     auto fail=[&](const QString &reason){if(error)*error=reason;return QString();};
     if(error)error->clear();
     QJsonParseError parse;const auto document=QJsonDocument::fromJson(response,&parse);
@@ -206,7 +245,7 @@ QString parseTranslationResponse(const QByteArray &response,QString *error,Trans
     const auto lengthLimit=target.isEmpty()?qsizetype(2048):std::min<qsizetype>(2048,std::max<qsizetype>(80,target.size()*4+32));
     if(korean.size()>lengthLimit)return fail("대상 자막보다 지나치게 긴 번역 결과를 제외했습니다.");
     if(!hangul.match(korean).hasMatch()||kana.match(korean).hasMatch())return fail("한국어로 완성되지 않은 번역 결과를 제외했습니다.");
-    return korean;
+    return correctCherryBlossomTranslation(korean,target,glossary);
 }
 namespace {
 QJsonObject cueData(const SubtitleCue &cue){return {{"start_ms",cue.startMs},{"end_ms",cue.endMs},{"text",cue.text}};}

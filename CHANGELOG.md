@@ -2,6 +2,11 @@
 
 ## 한국어
 
+### 0.2.18
+
+- HeartTranscriptor로 생성한 일본어 자막에서 깨진 유니코드가 표시되거나 한국어 번역이 누락되는 문제를 수정했습니다. HeartTranscriptor의 가창 인식 설정과 토큰 정렬로 자막 시간을 계산합니다.
+- 츠키 무도관 Blu-ray용 기본 용어집에 ‘벚꽃’을 추가했습니다. 실시간 자막과 새로 미리 생성하는 자막에 적용됩니다.
+
 ### 0.2.17
 
 - **AI 자막 → 음성 인식 모델**에서 기본 제공 모델과 지정한 폴더의 모델을 목록으로 선택할 수 있습니다. 모델 폴더를 변경하거나 파일 탐색기에서 바로 열 수 있습니다.
@@ -216,6 +221,11 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.18
+
+- Fixed corrupted Unicode and missing Korean translations in Japanese captions generated with HeartTranscriptor. The player uses the model's singing recognition settings and token alignment to calculate cue timing.
+- Added the Korean term for cherry blossoms to the default glossary for the Tuki Budokan Blu-ray. It applies to live captions and newly prepared captions.
 
 ### 0.2.17
 
