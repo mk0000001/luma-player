@@ -17,7 +17,7 @@ function New-LumaInstallerModelEntry {
  if($File.Name -cnotmatch "^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.($extension)$" -or
     [IO.Path]::GetFileName($File.Source) -cne $File.Name -or ![IO.Path]::IsPathFullyQualified($File.Source) -or
     $File.Sha256 -cnotmatch '^[a-f0-9]{64}$' -or [long]$File.Bytes -le 0){throw 'Invalid installer model file.'}
- 'Source: "'+$File.Source+'"; DestDir: "{app}\'+$destination+'"; Components: '+$Component+'; Flags: ignoreversion solidbreak uninsneveruninstall; Check: NeedsInstallFile('''+$destination+'\'+$File.Name+''', '''+$File.Bytes+''', '''+$File.Sha256+''')'
+ 'Source: "'+$File.Source+'"; DestDir: "{app}\'+$destination+'"; Hash: "'+$File.Sha256+'"; Components: '+$Component+'; Flags: ignoreversion solidbreak uninsneveruninstall; Check: NeedsInstallFile('''+$destination+'\'+$File.Name+''', '''+$File.Bytes+''', '''+$File.Sha256+''')'
 }
 
 function New-LumaInstallerCudaArchive {
@@ -37,9 +37,9 @@ function New-LumaInstallerCudaArchive {
 }
 
 function New-LumaInstallerCudaEntry {
- param([string]$Url,[string]$Name,[string]$Sha256,[object[]]$Files)
+ param([string]$Name,[string]$Sha256,[object[]]$Files)
  $size=($Files | Measure-Object Bytes -Sum).Sum
- 'Source: "'+$Url+'"; DestDir: "{app}"; DestName: "'+$Name+'"; ExternalSize: '+$size+'; Hash: "'+$Sha256+'"; Components: cuda; Flags: external download extractarchive recursesubdirs createallsubdirs ignoreversion; Check: NeedsCuda'
+ 'Source: "{tmp}\'+$Name+'"; DestDir: "{app}"; ExternalSize: '+$size+'; Hash: "'+$Sha256+'"; Components: cuda; Flags: external extractarchive recursesubdirs createallsubdirs ignoreversion; Check: NeedsCuda'
 }
 
 function New-LumaInstallerCudaCheck {

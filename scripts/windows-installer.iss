@@ -25,6 +25,7 @@ OutputDir={#Output}
 OutputBaseFilename=LumaPlayer-{#PlayerVersion}-setup.1-{#InstallerFlavor}
 Compression=lzma2/ultra64
 LZMAUseSeparateProcess=yes
+LZMANumBlockThreads=4
 #ifdef IncludeFullModels
 DiskSpanning=yes
 DiskSliceSize=2100000000
@@ -47,6 +48,10 @@ korean.UpdateTargetChanged=설치 대상이 업데이트 확인 이후 변경됐
 english.UpdateTargetChanged=The selected copy changed or differs from the copy checked for this update. Check for updates from the intended installation.
 korean.ComponentsPrompt=이 PC의 그래픽 장치와 메모리에 맞춰 권장 항목을 선택했습니다. 설치할 항목을 바꿀 수 있습니다.
 english.ComponentsPrompt=Setup selected components based on this PC's graphics and memory. You can change the selection before installing.
+korean.CudaDownload=선택한 NVIDIA CUDA 라이브러리를 내려받는 중
+english.CudaDownload=Downloading the selected NVIDIA CUDA libraries
+korean.CudaDownloadFailed=CUDA 라이브러리를 내려받거나 검증하지 못했습니다. 인터넷 연결을 확인하거나 CUDA 선택을 해제한 후 진행하세요.
+english.CudaDownloadFailed=Setup could not download or verify CUDA. Check your internet connection or clear the CUDA selection and continue.
 [Types]
 Name: "compact"; Description: "플레이어만 / Player only"
 Name: "custom"; Description: "직접 선택 / Custom"; Flags: iscustom
@@ -72,10 +77,14 @@ Name: "{group}\LumaPlayer"; Filename: "{app}\LumaPlayer.exe"; WorkingDir: "{app}
 [Run]
 Filename: "{app}\LumaPlayer.exe"; Description: "LumaPlayer 실행 / Launch LumaPlayer"; Flags: nowait postinstall skipifsilent unchecked
 [Code]
+var CudaProgress: TOutputMarqueeProgressWizardPage;
+
 procedure InitializeWizard;
 var Index, Profile: Integer;
     Argument, Selection, ProbePath: String;
 begin
+  if not WizardSilent then
+    CudaProgress := CreateOutputMarqueeProgressPage(CustomMessage('CudaDownload'), '');
   if WizardSilent or (ExpandConstant('{param:LumaCurrentHash|}') <> '') then Exit;
   for Index := 1 to ParamCount do begin
     Argument := UpperCase(ParamStr(Index));
@@ -108,6 +117,70 @@ begin
   WizardForm.SelectComponentsLabel.Caption := CustomMessage('ComponentsPrompt');
 end;
 
+function MatchesFile(Path, ExpectedBytes, ExpectedHash: String): Boolean;
+var Bytes: Int64;
+begin
+  Result := False;
+  if FileSize64(Path, Bytes) and (Bytes = StrToInt64Def(ExpectedBytes, -1)) then
+    Result := CompareText(GetSHA256OfFile(Path), ExpectedHash) = 0;
+end;
+
+function NeedsInstallFile(RelativePath, ExpectedBytes, ExpectedHash: String): Boolean;
+begin
+  Result := not MatchesFile(ExpandConstant('{app}\') + RelativePath, ExpectedBytes, ExpectedHash);
+end;
+
+#include "download-checks.iss"
+
+function PrepareCuda: String;
+var ArchivePath, Curl, Args: String;
+    ExitCode: Integer;
+    Downloaded: Boolean;
+begin
+  Result := '';
+  if not WizardIsComponentSelected('cuda') then Exit;
+  if not NeedsCuda then Exit;
+  ArchivePath := ExpandConstant('{tmp}\{#CudaArchiveName}');
+  if MatchesFile(ArchivePath, '{#CudaDownloadBytes}', '{#CudaSha256}') then Exit;
+
+  Result := CustomMessage('CudaDownloadFailed');
+  Downloaded := False;
+  DeleteFile(ArchivePath);
+  if not WizardSilent then begin
+    CudaProgress.SetText(CustomMessage('CudaDownload'), 'NVIDIA CUDA 12 ({#CudaDownloadMB} MB)');
+    CudaProgress.Show;
+    CudaProgress.Animate;
+  end;
+  try
+    try
+      Log('Downloading selected CUDA runtime from {#CudaUrl}');
+      Curl := ExpandConstant('{sysnative}\curl.exe');
+      if FileExists(Curl) then begin
+        Args := '-q --fail --silent --show-error --location --max-redirs 8 --proto =https --proto-redir =https' +
+          ' --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 1800' +
+          ' --max-filesize {#CudaDownloadBytes} --output "' + ArchivePath + '" "{#CudaUrl}"';
+        if Exec(Curl, Args, ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) then begin
+          Downloaded := ExitCode = 0;
+          Log('Windows curl download exit code: ' + IntToStr(ExitCode));
+        end else
+          Log('Could not launch Windows curl: ' + SysErrorMessage(ExitCode));
+      end else begin
+        DownloadTemporaryFile('{#CudaUrl}', '{#CudaArchiveName}', '{#CudaSha256}', nil);
+        Downloaded := True;
+      end;
+      if Downloaded and MatchesFile(ArchivePath, '{#CudaDownloadBytes}', '{#CudaSha256}') then begin
+        Log('Verified optional CUDA archive SHA-256.');
+        Result := '';
+      end;
+    except
+      Log('Optional CUDA runtime download failed: ' + GetExceptionMessage);
+    end;
+  finally
+    if not WizardSilent then CudaProgress.Hide;
+    if Result <> '' then DeleteFile(ArchivePath);
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var ExpectedHash, PlayerPath: String;
 begin
@@ -119,16 +192,5 @@ begin
       Result := ExpandConstant('{cm:UpdateTargetChanged}')
     else if CompareText(GetSHA256OfFile(PlayerPath), ExpectedHash) <> 0 then
       Result := ExpandConstant('{cm:UpdateTargetChanged}');
+  if Result = '' then Result := PrepareCuda;
 end;
-
-function NeedsInstallFile(RelativePath, ExpectedBytes, ExpectedHash: String): Boolean;
-var Path: String;
-    Bytes: Int64;
-begin
-  Path := ExpandConstant('{app}\') + RelativePath;
-  Result := True;
-  if FileSize64(Path, Bytes) and (Bytes = StrToInt64Def(ExpectedBytes, -1)) then
-    Result := CompareText(GetSHA256OfFile(Path), ExpectedHash) <> 0;
-end;
-
-#include "download-checks.iss"

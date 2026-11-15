@@ -13,7 +13,8 @@ foreach($entry in @(@{name='encoder.xml';component='base';dest='runtime\models';
  $file=[pscustomobject]@{Name=$entry.name;Source=(Join-Path $fixture $entry.name);Bytes=$entry.bytes;Sha256=('1'*64)}
  $line=New-LumaInstallerModelEntry -File $file -Component $entry.component
  if(!$line.StartsWith('Source: "'+$file.Source+'"; DestDir: "{app}\'+$entry.dest+'";') -or
-    $line -notlike '*solidbreak uninsneveruninstall*' -or $line -match '\b(download|external)\b'){
+    $line -notlike ('*Hash: "'+$file.Sha256+'"*') -or $line -notlike '*solidbreak uninsneveruninstall*' -or
+    $line -match '\b(download|external)\b'){
     throw 'An installer model must be embedded, separately compressed, and preserved on uninstall.'
  }
  if($line -notlike ("*', '"+$file.Bytes+"', '*")){throw 'Inno Check must pass the size as text, including weights larger than 2 GiB.'}
@@ -35,6 +36,15 @@ $rejected=$false
 try{Get-LumaInstallerLockedModelFile -SourceDirectory $fixture -Spec $spec | Out-Null}catch{$rejected=$true}
 if(!$rejected){throw 'Changed model bytes entered the installer.'};$count++
 [IO.File]::Delete($modelPath)
+
+$cudaName='LumaPlayer-0.0.0-windows-x64-cuda-runtime.zip'
+$cudaHash='a'*64
+$cuda=New-LumaInstallerCudaEntry -Name $cudaName -Sha256 $cudaHash -Files @(@{Bytes=1})
+if(!$cuda.StartsWith('Source: "{tmp}\'+$cudaName+'";') -or $cuda -notlike ('*Hash: "'+$cudaHash+'"*') -or
+    $cuda -notlike '*external extractarchive*' -or $cuda -match '\bdownload\b'){
+    throw 'CUDA must extract only from the verified installer staging archive.'
+}
+$count++
 
 $archiveFixture=Join-Path $fixture 'download-only-payload'
 New-Item -ItemType Directory -Path (Join-Path $archiveFixture 'runtime/models') -Force | Out-Null

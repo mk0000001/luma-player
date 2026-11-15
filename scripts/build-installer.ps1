@@ -58,17 +58,19 @@ $cudaName="LumaPlayer-$version-windows-x64-cuda-runtime.zip"
 $cudaArchive=Join-Path $outRoot $cudaName
 New-LumaInstallerCudaArchive -Path $cudaArchive -Files $cudaFiles
 $cudaHash=(Get-FileHash -LiteralPath $cudaArchive).Hash.ToLowerInvariant()
-$cudaDownloadMB=[int][math]::Ceiling((Get-Item -LiteralPath $cudaArchive).Length/1e6)
+$cudaDownloadBytes=(Get-Item -LiteralPath $cudaArchive).Length
+$cudaDownloadMB=[int][math]::Ceiling($cudaDownloadBytes/1e6)
 $cudaExpandedBytes=[long]($cudaFiles | Measure-Object Bytes -Sum).Sum
 $baseExpandedBytes=[long]($baseFiles | Measure-Object Bytes -Sum).Sum
 $cudaUrl="https://github.com/mk0000001/luma-player/releases/download/v$version/$cudaName"
-$cudaEntry=New-LumaInstallerCudaEntry $cudaUrl $cudaName $cudaHash $cudaFiles
+$cudaEntry=New-LumaInstallerCudaEntry $cudaName $cudaHash $cudaFiles
 Copy-Item "$PSScriptRoot/windows-installer.iss" ($outRoot+'/windows-installer.iss')
 [IO.File]::WriteAllText($outRoot+'/downloads.iss',$cudaEntry,[Text.UTF8Encoding]::new($true))
 [IO.File]::WriteAllText($outRoot+'/download-checks.iss',($downloadChecks -join "`r`n"),[Text.UTF8Encoding]::new($true))
 [IO.File]::WriteAllLines($outRoot+'/models-standard.iss',[string[]]$standardEntries,[Text.UTF8Encoding]::new($true))
 [IO.File]::WriteAllLines($outRoot+'/models-full.iss',[string[]]$fullEntries,[Text.UTF8Encoding]::new($true))
 $compilerArgs=@("/DPayload=$payloadRoot","/DOutput=$outRoot","/DPlayerVersion=$version",
+                "/DCudaUrl=$cudaUrl","/DCudaArchiveName=$cudaName","/DCudaSha256=$cudaHash","/DCudaDownloadBytes=$cudaDownloadBytes",
                 "/DCudaDownloadMB=$cudaDownloadMB","/DCudaExpandedBytes=$cudaExpandedBytes","/DBaseExpandedBytes=$baseExpandedBytes",
                 "/DTurboBytes=$($turboFile.Bytes)","/DAccurateBytes=$($accurateFile.Bytes)","/DTranslationBytes=$($translationFile.Bytes)")
 $installerScript=Join-Path $outRoot 'windows-installer.iss'
@@ -97,7 +99,7 @@ $fullChecksums=foreach($asset in $fullAssets){
 [IO.File]::WriteAllLines((Join-Path $outRoot ($fullName+'.sha256')),[string[]]$fullChecksums,[Text.UTF8Encoding]::new($false))
 [ordered]@{
  playerVersion=$manifest.version;installerVersion='1';bytes=$exe.Length;sha256=$hash
- cudaArchive=$cudaName;cudaBytes=(Get-Item -LiteralPath $cudaArchive).Length
+ cudaArchive=$cudaName;cudaBytes=$cudaDownloadBytes
  fullAssets=@($fullAssets | Select-Object Name,Length)
  models=@($standardModels.Name)+@($accurateFile.Name,$translationFile.Name)
 } | ConvertTo-Json -Depth 4
