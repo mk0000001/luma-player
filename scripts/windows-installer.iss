@@ -47,11 +47,11 @@ Name: "compact"; Description: "플레이어만 · 오프라인 / Player only (of
 Name: "custom"; Description: "직접 선택 / Custom"; Flags: iscustom
 [Components]
 Name: "core"; Description: "플레이어 · CPU, Vulkan, Intel OpenVINO / Player"; Types: compact custom; Flags: fixed
-Name: "cuda"; Description: "NVIDIA CUDA 12 라이브러리 다운로드 ({#CudaDownloadMB} MB) / CUDA runtime"; Flags: disablenouninstallwarning
-Name: "base"; Description: "Whisper Base + Intel OpenVINO 인코더 다운로드 (172 MB) / Compact ASR"; Flags: disablenouninstallwarning
-Name: "turbo"; Description: "Whisper Turbo 인식 모델 다운로드 (575 MB) / Fast ASR"; Flags: disablenouninstallwarning
-Name: "accurate"; Description: "Whisper full-v3 Q5 인식 모델 다운로드 (1.08 GB) / High-accuracy ASR"; Flags: disablenouninstallwarning
-Name: "translation"; Description: "Hy-MT2 한국어 번역 다운로드 (4.62 GB) / Korean translation"; Flags: disablenouninstallwarning
+Name: "cuda"; Description: "NVIDIA CUDA 12 라이브러리 다운로드 ({#CudaDownloadMB} MB) / CUDA runtime"; ExtraDiskSpaceRequired: {#CudaExpandedBytes}; Flags: disablenouninstallwarning
+Name: "base"; Description: "Whisper Base + Intel OpenVINO 인코더 다운로드 (172 MB) / Compact ASR"; ExtraDiskSpaceRequired: {#BaseExpandedBytes}; Flags: disablenouninstallwarning
+Name: "turbo"; Description: "Whisper Turbo 인식 모델 다운로드 (575 MB) / Fast ASR"; ExtraDiskSpaceRequired: {#TurboBytes}; Flags: disablenouninstallwarning
+Name: "accurate"; Description: "Whisper full-v3 Q5 인식 모델 다운로드 (1.08 GB) / High-accuracy ASR"; ExtraDiskSpaceRequired: {#AccurateBytes}; Flags: disablenouninstallwarning
+Name: "translation"; Description: "Hy-MT2 한국어 번역 다운로드 (4.62 GB) / Korean translation"; ExtraDiskSpaceRequired: {#TranslationBytes}; Flags: disablenouninstallwarning
 [Files]
 Source: "{#Payload}\*"; Excludes: "\setup\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 Source: "{#Payload}\setup\luma-setup-hardware.exe"; Flags: dontcopy noencryption
@@ -87,6 +87,7 @@ begin
   else
     Exit;
   end;
+  WizardForm.TypesCombo.ItemIndex := WizardForm.TypesCombo.Items.Count - 1;
   WizardSelectComponents(Selection);
   WizardForm.SelectComponentsLabel.Caption := CustomMessage('ComponentsPrompt');
 end;

@@ -50,6 +50,8 @@ $cudaArchive=Join-Path $outRoot $cudaName
 New-LumaInstallerCudaArchive -Path $cudaArchive -Files $cudaFiles
 $cudaHash=(Get-FileHash -LiteralPath $cudaArchive).Hash.ToLowerInvariant()
 $cudaDownloadMB=[int][math]::Ceiling((Get-Item -LiteralPath $cudaArchive).Length/1e6)
+$cudaExpandedBytes=[long]($cudaFiles | Measure-Object Bytes -Sum).Sum
+$baseExpandedBytes=[long]($baseFiles | Measure-Object Bytes -Sum).Sum
 $cudaUrl="https://github.com/mk0000001/luma-player/releases/download/v$version/$cudaName"
 $downloads=@(
  New-LumaInstallerArchiveEntry $cudaUrl $cudaName $cudaHash $cudaFiles 'cuda'
@@ -61,7 +63,11 @@ $downloads=@(
 Copy-Item "$PSScriptRoot/windows-installer.iss" ($outRoot+'/windows-installer.iss')
 [IO.File]::WriteAllText($outRoot+'/downloads.iss',($downloads -join "`r`n"),[Text.UTF8Encoding]::new($true))
 [IO.File]::WriteAllText($outRoot+'/download-checks.iss',($downloadChecks -join "`r`n"),[Text.UTF8Encoding]::new($true))
-& $Compiler ('/DPayload='+$payloadRoot) ('/DOutput='+$outRoot) ('/DPlayerVersion='+$version) ('/DInstallerFlavor='+$flavor) ('/DCudaDownloadMB='+$cudaDownloadMB) ($outRoot+'/windows-installer.iss')
+$compilerArgs=@("/DPayload=$payloadRoot","/DOutput=$outRoot","/DPlayerVersion=$version","/DInstallerFlavor=$flavor",
+                "/DCudaDownloadMB=$cudaDownloadMB","/DCudaExpandedBytes=$cudaExpandedBytes","/DBaseExpandedBytes=$baseExpandedBytes",
+                "/DTurboBytes=$($a.highQualityModel.bytes)","/DAccurateBytes=$($a.accurateModel.bytes)","/DTranslationBytes=$($t.qualityModel.bytes)",
+                (Join-Path $outRoot 'windows-installer.iss'))
+& $Compiler @compilerArgs
 if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
 $exe=Get-Item ($outRoot+"/LumaPlayer-$version-setup.1-$flavor.exe")
 $hash=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
