@@ -177,7 +177,7 @@ bool eligibleVersion(const Version &candidate, const Version &installed)
 
 bool isInstallerName(const QString &version, const QString &name)
 {
-    static const QRegularExpression suffix(QStringLiteral(R"(\A[1-9][0-9]{0,5}-windows-x64-cuda\.exe\z)"));
+    static const QRegularExpression suffix(QStringLiteral(R"(\A[1-9][0-9]{0,5}-windows-x64(?:-cuda)?\.exe\z)"));
     const auto prefix = QStringLiteral("LumaPlayer-") + version + QStringLiteral("-setup.");
     return name.startsWith(prefix) && suffix.match(name.mid(prefix.size())).hasMatch();
 }

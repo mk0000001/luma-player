@@ -6,23 +6,37 @@ $root=Split-Path -Parent $PSScriptRoot
 $a=Get-Content "$root/dependencies.lock.json" -Raw | ConvertFrom-Json
 $t=Get-Content "$root/translation-dependencies.lock.json" -Raw | ConvertFrom-Json
 $count=0
-foreach($spec in @($a.accurateModel,$t.qualityModel)){
- $line=New-LumaInstallerModelEntry -Spec $spec -Destination 'runtime/models' -Component 'accurate'
+foreach($entry in @(@{spec=$a.highQualityModel;component='turbo';destination='runtime/models'},
+                   @{spec=$a.accurateModel;component='accurate';destination='runtime/models'},
+                   @{spec=$t.qualityModel;component='translation';destination='runtime/translation/models'})){
+ $spec=$entry.spec
+ $line=New-LumaInstallerModelEntry -Spec $spec -Destination $entry.destination -Component $entry.component
  if($line -notlike ('*Hash: "'+$spec.sha256+'"*') -or $line -notlike '*external download ignoreversion*'){throw 'missing-native-integrity-enforcement'}
  $count++
  foreach($field in @('url','file','sha256','bytes')){
   $copy=$spec | ConvertTo-Json -Depth 9 | ConvertFrom-Json
   switch($field){url{$copy.url='http://evil.invalid/model'} file{$copy.file='../escape.bin'} sha256{$copy.sha256='invalid'} bytes{$copy.bytes=-1}}
-  $rejected=$false;try{New-LumaInstallerModelEntry -Spec $copy -Destination 'runtime/models' -Component 'accurate' | Out-Null}catch{$rejected=$true}
+  $rejected=$false;try{New-LumaInstallerModelEntry -Spec $copy -Destination $entry.destination -Component $entry.component | Out-Null}catch{$rejected=$true}
   if(!$rejected){throw "accepted-invalid-$field"};$count++
  }
 }
 $fixture=Join-Path $root ('.deps/installer-tests/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+$archiveFixture=Join-Path $fixture 'download-only-payload'
+New-Item -ItemType Directory -Path (Join-Path $archiveFixture 'runtime/models') -Force | Out-Null
+$weight=Join-Path $archiveFixture 'runtime/models/ggml-test.bin'
+[IO.File]::WriteAllText($weight,'test only')
+$rejected=$false
+try{Assert-LumaInstallerOptionalFilesOmitted -Directory $archiveFixture}catch{$rejected=$_.Exception.Message -like '*model*'}
+if(!$rejected){throw 'The installer accepted embedded AI weights.'}
+[IO.File]::Delete($weight)
+Assert-LumaInstallerOptionalFilesOmitted -Directory $archiveFixture
+$count+=2
+
 [IO.File]::WriteAllText((Join-Path $fixture 'manifest.json'),'{}')
 $caught=$false
-try{& "$root/scripts/build-installer.ps1" -Payload $fixture -Output ($fixture+'/new-output') -Compiler 'never-executed'}catch{$caught=$_.Exception.Message -eq 'Immutable payload manifest hash mismatch'}
-if(!$caught -or (Test-Path ($fixture+'/new-output'))){throw 'mutated manifest was not rejected before output creation'}
+try{& "$root/scripts/build-installer.ps1" -Payload $fixture -Output ($fixture+'-new-output') -Compiler 'never-executed'}catch{$caught=$_.Exception.Message -eq 'Immutable payload manifest hash mismatch'}
+if(!$caught -or (Test-Path ($fixture+'-new-output'))){throw 'mutated manifest was not rejected before output creation'}
 $count++
 $caught=$false
 try{& "$root/scripts/build-installer.ps1" -Payload $fixture -Output $fixture -Compiler 'never-executed'}catch{$caught=$_.Exception.Message -like 'Use a new installer output*'}

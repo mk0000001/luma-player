@@ -4,7 +4,7 @@
 
 포터블에는 번역 실행기와 Whisper large-v3-turbo Q5 음성 인식 모델이 들어갑니다. `windows-x64` 코어는 CUDA를 생략하고, `windows-x64-cuda`는 음성 인식·번역 CUDA 실행기를 함께 포함합니다. **번역 가중치는 두 구성 모두 별도 선택 설치**입니다. 번역 모델 없이도 영상·음성 재생, 원문 자막과 일본어 한글 독음을 사용할 수 있습니다. 설치할 때 인터넷을 쓰며, 완료 후 인식·번역은 로컬에서 실행합니다. 외부 API 계정·키·Python은 필요하지 않습니다.
 
-Windows 패키지의 첫 일반 실행이나 설정의 **AI 가속 설정**에서 GPU와 사용 가능한 NPU를 확인하고 라이브러리를 설치할 수 있습니다. NVIDIA에는 CUDA, AMD Radeon과 Intel GPU에는 Vulkan, Intel GPU와 NPU에는 OpenVINO를 권장합니다. 권장 여부와 관계없이 설치할 수 있습니다. Vulkan·OpenVINO 음성 인식 런타임은 패키지에 포함되며, 이 두 항목의 설치 버튼은 번역 런타임을 추가하거나 복구합니다. 설치 후 LumaPlayer를 다시 열어 장치를 확인하세요.
+Windows 설치 화면에서 하드웨어에 따라 CUDA와 모델을 추천합니다. 기존 설치에서 가속 라이브러리를 관리하려면 **설정 → AI 가속 설정**을 여세요. NVIDIA에는 CUDA, AMD Radeon과 Intel GPU에는 Vulkan, Intel GPU와 NPU에는 OpenVINO를 권장합니다. Vulkan·OpenVINO 음성 인식 런타임은 기본 패키지에 포함되며, 설정의 이 두 항목은 번역 런타임을 추가하거나 복구합니다. [Windows 설치 안내](WINDOWS-INSTALLER.md)
 
 ### 번역 모델 선택
 
@@ -66,13 +66,13 @@ full-v3의 자동 모드는 모델 구조를 확인하고 beam 5와 공식 DTW t
 `windows-x64-cuda` ZIP에는 두 CUDA 실행기가 이미 들어 있습니다. 전체 `runtime` 폴더를 함께 유지하고, 아래 추가 설치 명령은 CUDA를 생략한 코어에서 사용하세요. 호환 NVIDIA 드라이버가 있는 **Windows x64**가 대상입니다. 번역 CUDA:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-translation-cuda.ps1"
+powershell.exe -NoProfile -File ".\tools\install-translation-cuda.ps1"
 ```
 
 음성 인식 CUDA:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-cuda.ps1"
+powershell.exe -NoProfile -File ".\tools\install-asr-cuda.ps1"
 ```
 
 두 명령 모두 `-PlayerDirectory "D:\Apps\LumaPlayer"`를 지원합니다. 번역 실행기는 `runtime/translation/cuda`, 음성 인식 플러그인은 `runtime/ai`에 들어갑니다. CUDA 포함 ZIP은 동일한 NVIDIA `cudart64_12.dll`·`cublas64_12.dll`·`cublasLt64_12.dll`을 `runtime/cuda`에 한 번만 두고, 엔진별 GGML DLL은 분리합니다. 수동 설치기는 기존 엔진별 배치도 지원합니다. DLL을 다른 폴더로 옮기거나 서로 교체하지 마세요.
@@ -101,7 +101,7 @@ pwsh -File scripts/package-windows.ps1 -BuildDirectory build-next -IncludeCuda
 
 The portable player includes the translation runtime and Whisper large-v3-turbo Q5 ASR model. The `windows-x64` core omits CUDA, while `windows-x64-cuda` bundles both ASR and translation CUDA runtimes. **Translation weights remain optional in both.** Playback, source captions and Japanese Hangul readings work without translation weights. Installation uses the internet; subsequent recognition/translation runs locally, without an external API account/key or Python.
 
-On the first normal launch of a Windows package, or under **AI 가속 설정** in Settings, LumaPlayer scans GPU and available NPU hardware and offers acceleration packages. It recommends CUDA for NVIDIA, Vulkan for AMD Radeon and Intel GPUs, and OpenVINO for Intel GPUs and NPUs. Every package remains selectable regardless of the recommendation. Vulkan and OpenVINO recognition libraries are bundled, and their install buttons add or repair the translation runtime. Reopen LumaPlayer after installation to refresh device detection.
+Windows Setup recommends CUDA and models based on the hardware. Open **AI 가속 설정** in Settings to manage libraries after installation. Choose CUDA for NVIDIA, Vulkan for AMD Radeon and Intel GPUs, or OpenVINO for supported Intel GPUs and NPUs. Vulkan and OpenVINO recognition libraries are part of the standard payload, and their settings buttons add or repair the translation runtime. [Windows setup guide](WINDOWS-INSTALLER.md)
 
 ### Choose a translation model
 
@@ -152,8 +152,8 @@ Full-v3 automatic mode verifies the architecture, then uses beam 5 and the offic
 The `windows-x64-cuda` ZIP already includes both runtimes. Keep its complete `runtime` folder. Use the following optional installers with core ZIPs, on **Windows x64 with a compatible NVIDIA driver**:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-translation-cuda.ps1"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-cuda.ps1"
+powershell.exe -NoProfile -File ".\tools\install-translation-cuda.ps1"
+powershell.exe -NoProfile -File ".\tools\install-asr-cuda.ps1"
 ```
 
 Both support `-PlayerDirectory "D:\Apps\LumaPlayer"`. Translation installs into `runtime/translation/cuda`; the ASR plugin installs into `runtime/ai`. CUDA ZIPs keep one verified copy of NVIDIA's `cudart64_12.dll`, `cublas64_12.dll` and `cublasLt64_12.dll` in `runtime/cuda`, while keeping engine-specific GGML DLLs isolated. Manual installers also support the existing per-engine layout. Do not move or interchange these DLLs.

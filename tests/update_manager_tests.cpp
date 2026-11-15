@@ -97,6 +97,7 @@ private slots:
     void stableChannelSkipsPrereleases();
     void ignoresUnpublishedAndUnsignedReleases();
     void ignoresReleasesWithAmbiguousAssetMetadata();
+    void acceptsTheStandardWindowsInstaller();
     void requiresStrictlyNewerSemver();
     void verifiesExactSignedBytes();
     void rejectsSignedWrongScopeAndDowngrades();
@@ -148,6 +149,21 @@ void UpdateManagerTests::ignoresReleasesWithAmbiguousAssetMetadata()
     const auto newest = newestRelease(json({ambiguous, release("0.2.0-beta.10")}), "0.2.0-beta.2");
     QVERIFY(newest);
     QCOMPARE(newest->version, QString("0.2.0-beta.10"));
+}
+
+void UpdateManagerTests::acceptsTheStandardWindowsInstaller()
+{
+    const QString name = "LumaPlayer-0.2.0-beta.10-setup.1-windows-x64.exe";
+    auto data = manifestJson;
+    data.replace("-windows-x64-cuda.exe", "-windows-x64.exe");
+    auto response = release("0.2.0-beta.10");
+    response["assets"] = QJsonArray{asset("luma-update.json", data.size()), asset("luma-update.sig", 64), asset(name, 4)};
+    const auto found = newestRelease(json({response}), "0.2.0-beta.2");
+    QVERIFY(found);
+    const auto signedData = signFixture(data);
+    const auto manifest = verifiedManifest(data, signedData.signature, *found, "0.2.0-beta.2", signedData.coordinates);
+    QVERIFY(manifest);
+    QCOMPARE(manifest->file, name);
 }
 
 void UpdateManagerTests::requiresStrictlyNewerSemver()

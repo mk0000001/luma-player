@@ -2,18 +2,18 @@
 
 ## 한국어
 
-릴리스의 Windows x64 기본 설치 EXE 또는 NVIDIA CUDA 포함 설치 EXE로 LumaPlayer를 설치합니다.
+릴리스의 Windows x64 설치 EXE로 LumaPlayer를 설치합니다.
 
 1. 설치 EXE를 실행하고 언어·설치 폴더를 선택합니다. 관리자 권한은 필요하지 않습니다. 기본 위치는 사용자 로컬 앱 폴더입니다.
-2. 기본 설치는 오프라인에서 진행하며 두 설치 파일 모두 Turbo 음성 인식 모델을 포함합니다. full-v3 Q5 음성 인식(약 1.08 GB)이나 Hy-MT2 한국어 번역(약 4.62 GB)이 필요하면 다운로드할 모델을 선택하세요. 업데이트할 때도 같은 화면에서 추가 다운로드를 선택할 수 있습니다.
-3. 모델의 고정 HTTPS 주소와 SHA-256을 검증합니다. 이미 같은 폴더에 유효한 모델이 있으면 재사용합니다. 실패하면 설치 화면에서 재시도하거나 취소할 수 있습니다. 설치 화면의 다운로드 진행률을 확인하세요.
-4. 시작 메뉴에서 LumaPlayer를 실행합니다. **설정 → AI 가속 설정**을 열면 하드웨어를 확인하고 CUDA, Vulkan, OpenVINO를 선택할 수 있습니다. 가속 설치 도우미는 Windows의 PowerShell 실행 정책을 따릅니다. 기존 모델 선택은 유지합니다. 새 설치의 기본 인식기는 Turbo이며 AI 자막 설정의 모델 선택에서 full-v3를 선택할 수 있습니다. 한국어 번역기는 설치된 Hy-MT2를 우선 발견합니다.
+2. 설치 화면에서 GPU·드라이버·메모리를 확인해 추천 항목을 체크합니다. 호환 NVIDIA GPU를 감지하면 CUDA를 추천합니다. RAM 16 GB급과 전용 VRAM 4 GB급부터 Whisper Turbo를, 그 아래는 Whisper Base와 OpenVINO 인코더를 추천합니다. RAM 32 GB급과 전용 VRAM 12 GB급부터 한국어 번역 모델 Hy-MT2도 추천합니다. 필요한 항목을 직접 바꾸거나 **플레이어만 · 오프라인**을 선택할 수 있습니다.
+3. 설치 프로그램은 고정 HTTPS 주소에서 선택한 항목을 받아 SHA-256을 확인합니다. 같은 폴더에 검증된 모델과 CUDA 라이브러리가 있으면 재사용합니다. 앱에서 시작한 업데이트도 설치 화면에서 항목을 직접 추가할 수 있습니다. 자동 선택은 일반 설치 화면에서만 적용됩니다.
+4. 시작 메뉴에서 LumaPlayer를 실행합니다. **AI 자막 → 음성 인식 모델 선택**에서 설치한 모델을 바꿀 수 있습니다. 한국어 번역기는 설치된 Hy-MT2를 찾습니다. **설정 → AI 가속 설정**에서 별도 가속 라이브러리를 설치할 수도 있습니다.
 
-플레이어 약 3.63 GB와 추가 모델 약 5.71 GB가 필요하며, 다운로드 임시 파일을 위한 공간도 확보하세요(약 16 GB 여유 권장). 제거 프로그램은 추가 다운로드 모델과 사용자 설정·자막을 보존합니다. 디스크 키·미디어·인식한 상용 자막은 포함하지 않습니다. 설치 EXE는 코드 서명되지 않았습니다.
+Whisper Base와 인코더는 약 172 MB, Turbo는 약 575 MB, full-v3 Q5는 약 1.08 GB, Hy-MT2는 약 4.62 GB입니다. CUDA 크기와 설치에 필요한 공간은 설치 화면에 표시됩니다. 제거 프로그램은 다운로드한 모델과 사용자 설정·자막을 보존합니다. 설치 EXE는 코드 서명되지 않았습니다.
 
-별도 라이브러리도 함께 설치합니다: CUDA 12 실행 라이브러리(cudart·cuBLAS·cuBLASLt), 음성인식/번역 실행기, Qt 6, Visual C++ 실행 DLL, libVLC·libmpv·FFmpeg, OpenVINO 실행 라이브러리, Noto Sans. 사용자 앱 폴더에 설치하므로 시스템 PATH·드라이버를 바꾸거나 별도 CUDA Toolkit·Visual Studio를 요구하지 않습니다. NVIDIA GPU 가속은 호환 장치 드라이버가 있어야 하며 Intel NPU도 해당 장치 드라이버가 필요합니다. 장치 드라이버는 이 설치기가 자동 교체하거나 재부팅하지 않습니다.
+CPU·Vulkan·Intel OpenVINO 실행기, Qt 6, Visual C++ 실행 DLL, libVLC·libmpv·FFmpeg과 Noto Sans는 기본 설치에서 제공합니다. 선택한 CUDA 12 런타임은 설치 폴더에 내려받아 사용합니다. CUDA Toolkit이나 Visual Studio 설치는 필요 없으며 가속에는 해당 장치의 호환 드라이버가 필요합니다.
 
-설치기를 빌드하려면 공식 Inno Setup **6.7.4**와 현재 버전의 기본 또는 CUDA 포터블 폴더를 준비하세요. `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`를 실행합니다. 패키지 파일의 크기·해시와 소스 커밋을 확인하고 새 출력 폴더에 설치 EXE를 만듭니다. 모델 URL은 저장소 잠금 파일에서 읽습니다.
+설치기를 빌드하려면 공식 Inno Setup **6.7.4**, 네이티브 Windows 빌드와 잠금 파일에 지정한 Base 인코더·CUDA 개발 캐시를 준비하세요. `scripts/package-windows.ps1 -StageOnly -ForInstaller`로 만든 폴더를 `scripts/build-installer.ps1 -Payload <폴더> -Output <새 출력 폴더> -Compiler <ISCC.exe> -ManifestSha256 <manifest.json의 SHA-256>`에 전달합니다. 설치 EXE와 별도 CUDA 아카이브·체크섬을 같은 버전의 GitHub 릴리스에 올립니다. 0.2.15 설치 EXE의 `-cuda` 접미사는 0.2.14 이하 업데이트와 호환하기 위해 사용합니다.
 
 ### 설치가 차단될 때
 
@@ -25,15 +25,15 @@
 
 ## English
 
-Choose the standard or NVIDIA CUDA-bundled Windows x64 setup EXE from Releases. Run it and select the language, destination, and components. Installation is per user and needs no administrator rights.
+Run the Windows x64 setup EXE from Releases, then select the language, destination and components. Installation is per user and needs no administrator rights.
 
-The default setup runs offline and both installers include Turbo. Choose the optional downloads for full-v3 Q5 ASR (1.08 GB), Hy-MT2 Korean translation (4.62 GB), or both during installation or an update. Immutable HTTPS URLs and SHA-256 enforce model integrity. Setup reuses valid models at the destination and offers retry or cancellation if a download fails.
+Interactive setup checks the GPU, driver, and memory and preselects suitable components. It recommends CUDA on supported NVIDIA hardware, Whisper Turbo from the 16 GB RAM and 4 GB dedicated VRAM class, and Whisper Base with its OpenVINO encoder on smaller systems. Hy-MT2 is recommended from the 32 GB RAM and 12 GB dedicated VRAM class. Change selections or choose **Player only (offline)**. App-initiated updates offer manual selections.
 
-Launch from the Start Menu. Open **Settings → AI acceleration** to check the hardware and choose CUDA, Vulkan, or OpenVINO. The acceleration installer follows the Windows PowerShell execution policy. Existing model choices are preserved. Fresh installations use Turbo by default, and full-v3 is available in AI caption settings. Installed Hy-MT2 is discovered preferentially. Allow approximately 16 GB free for the player, optional models, and download staging. Uninstall preserves downloaded optional models and user settings and captions. The EXE is unsigned.
+Setup downloads selected components over pinned HTTPS URLs and checks their SHA-256 hashes. It reuses verified models and CUDA libraries already at the destination. Whisper Base with its encoder is about 172 MB, Turbo about 575 MB, full-v3 Q5 about 1.08 GB, and Hy-MT2 about 4.62 GB. Setup shows the CUDA download size. Uninstall preserves downloaded models, user settings and captions. The setup EXE is unsigned.
 
-Build with official Inno Setup 6.7.4 and the current standard or CUDA payload using `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. The builder verifies the manifest entries and source commit, reads model pins from the repository lock files, and writes the EXE to a new output folder.
+Build with official Inno Setup 6.7.4, the native Windows build, and the pinned Base encoder and CUDA development caches. Stage with `scripts/package-windows.ps1 -StageOnly -ForInstaller`, then call `scripts/build-installer.ps1 -Payload <folder> -Output <new folder> -Compiler <ISCC.exe> -ManifestSha256 <manifest SHA-256>`. Publish the installer, CUDA archive, and checksums together on the versioned GitHub release. The `-cuda` filename suffix in 0.2.15 preserves compatibility with updaters through 0.2.14.
 
-Dependencies are installed alongside the application: CUDA 12 runtime (cudart/cuBLAS/cuBLASLt), ASR/translation runners, Qt 6, Visual C++ runtime DLLs, libVLC/libmpv/FFmpeg, OpenVINO runtime and Noto Sans. No separate CUDA Toolkit/Visual Studio or global PATH change is required. NVIDIA GPU and Intel NPU execution still require compatible device drivers; the installer does not replace drivers or reboot the system.
+The standard payload contains CPU, Vulkan and Intel OpenVINO runners, Qt 6, the Visual C++ runtime, libVLC/libmpv/FFmpeg, and Noto Sans. Select CUDA to install its runtime into the LumaPlayer directory. GPU and NPU acceleration require compatible device drivers. Use **AI 자막 → 음성 인식 모델 선택** to switch between installed models, and **설정 → AI 가속 설정** to manage additional runtimes.
 
 ### If installation is blocked
 

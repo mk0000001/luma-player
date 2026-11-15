@@ -2,6 +2,10 @@
 
 ## 한국어
 
+### 0.2.15
+
+- Windows 설치 EXE에서 NVIDIA CUDA 런타임과 AI 모델을 분리했습니다. 설치 화면이 GPU·메모리에 맞춰 선택 항목을 추천하고, 선택한 항목을 설치 중에 내려받습니다.
+
 ### 0.2.14
 
 - 기본 Windows 설치에 포함된 Turbo로 오프라인 설치를 완료합니다. 추가 인식·번역 모델 다운로드와 AI 가속 설치는 직접 선택합니다.
@@ -201,6 +205,10 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.15
+
+- Removed the NVIDIA CUDA runtime and AI weights from the Windows setup EXE. Setup recommends components based on the GPU and memory and downloads the selections during installation.
 
 ### 0.2.14
 

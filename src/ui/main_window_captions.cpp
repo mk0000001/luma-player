@@ -212,6 +212,11 @@ void MainWindow::automaticCaptionsChanged(bool enabled){
     if(subtitleFileLoader_)subtitleFileLoader_->cancel();presentationDirty_=true;QSettings().setValue("subtitles/aiEnabled",enabled);
     if(lanRemotePlayback_)return;
     if(enabled){
+        if(model_.isEmpty()){
+            aiStatus_->setText("설치 프로그램에서 인식 모델을 받거나, 보유한 모델을 선택하세요.");
+            bufferStatus_->setText("음성 인식 모델이 필요합니다.");
+            return;
+        }
         preparedCaptions_.reset();preparedApplied_=false;externalCues_.clear();aiFailed_=false;bufferBypass_=false;
         captionPrefillPending_=true;aiRetryCount_=0;nextAiAttemptMs_=0;
         if(active_)active_->setSubtitle(-1);
@@ -227,7 +232,7 @@ void MainWindow::automaticCaptionsChanged(bool enabled){
 }
 
 bool MainWindow::liveCaptioningActive()const{
-    return active_ && !active_->state().failed && !lanRemotePlayback_ && aiEnabled_->isChecked()
+    return active_ && !active_->state().failed && !model_.isEmpty() && !lanRemotePlayback_ && aiEnabled_->isChecked()
         && !preparedCaptions_ && externalCues_.isEmpty();
 }
 

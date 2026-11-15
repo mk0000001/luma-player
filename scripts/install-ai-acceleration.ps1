@@ -128,12 +128,17 @@ function Test-LumaSharedCudaAcceleration {
     try{
         $path=Get-LumaCudaScopedPath -Directory $Directory -RelativePath 'manifest.json'
         $manifest=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
-        if($manifest.cudaRuntimeLayout -cne 'shared-nvidia'){return $false}
-        $files=@($manifest.files | Where-Object {$_.path -match '^runtime/(?:cuda/|translation/cuda/|ai/ggml-cuda\.dll$)'})
+        if($manifest.cudaRuntimeLayout -cne 'shared-nvidia'){
+            $path=Get-LumaCudaScopedPath -Directory $Directory -RelativePath 'runtime/cuda/manifest.json'
+            if((Get-Item -LiteralPath $path -ErrorAction Stop).Length -gt 64KB){return $false}
+            $manifest=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
+        $files=@($manifest.files | Where-Object {$_.path -match '^runtime/(?:cuda/|translation/cuda/|ai/(?:asr-cuda-licenses/|ggml-cuda\.dll$))'})
         foreach($required in 'runtime/ai/ggml-cuda.dll','runtime/cuda/cudart64_12.dll','runtime/cuda/cublas64_12.dll','runtime/cuda/cublasLt64_12.dll','runtime/translation/cuda/llama-server.exe','runtime/translation/cuda/ggml-cuda.dll'){
             if(@($files | Where-Object path -CEQ $required).Count -ne 1){return $false}
         }
         foreach($entry in $files){
+            if($entry.sha256 -notmatch '^[a-f0-9]{64}$' -or [long]$entry.bytes -le 0){return $false}
             if(!(Test-LumaCudaFile (Get-LumaCudaScopedPath -Directory $Directory -RelativePath $entry.path) $entry.sha256 $entry.bytes)){return $false}
         }
         return $true

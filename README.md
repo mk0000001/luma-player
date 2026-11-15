@@ -19,9 +19,9 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 [최신 Windows·Android·Linux 다운로드와 업데이트 안내](https://github.com/mk0000001/luma-player/releases/latest)
 
-Windows에서 Radeon·Intel GPU는 기본 설치 파일을 사용하세요. 두 설치본에 Turbo 음성 인식 모델이 포함됩니다. full-v3 Q5와 Hy-MT2 한국어 번역이 필요하면 설치 화면에서 모델 다운로드를 선택하세요. 추가 다운로드는 약 5.71 GB입니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+Windows 설치 화면은 GPU와 메모리를 확인해 CUDA 라이브러리와 AI 모델을 추천합니다. 선택한 항목은 설치 중 내려받으며, **플레이어만 · 오프라인**으로 설치할 수도 있습니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
-시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 처음 설치한 경우 기본 인식 모델은 Turbo입니다. 설치한 full-v3 Q5는 **음성 인식 모델 선택**에서 고를 수 있습니다.
+시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. 모델을 설치한 뒤 **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. 모델을 여러 개 설치했다면 **음성 인식 모델 선택**에서 원하는 것을 고르세요.
 
 ### 최소·권장 사양과 실제 테스트
 
@@ -75,9 +75,9 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 
 [Latest downloads and update instructions for Windows, Android, and Linux](https://github.com/mk0000001/luma-player/releases/latest)
 
-On Windows, use the standard installer for Radeon and Intel GPUs. Both installers include the Turbo speech recognition model. Select the optional downloads in setup for full-v3 Q5 and Hy-MT2 Korean translation, totaling about 5.71 GB. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
+On Windows, Setup checks the GPU and memory to recommend CUDA libraries and AI models. It downloads the selected components during installation. Choose **Player only (offline)** to install without downloads. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
 
-Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language and caption lines in **AI 자막**. Fresh installations use Turbo by default. To use full-v3 Q5, select it in **음성 인식 모델 선택**.
+Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. After installing a model, choose the spoken language and caption lines in **AI 자막**. Switch between installed models in **음성 인식 모델 선택**.
 
 ### Estimated minimum, recommended, and tested hardware
 

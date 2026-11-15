@@ -429,7 +429,7 @@ void MainWindow::publishLanCaptions(){
     if(!lanPlaybackDialog_ || !lanPlaybackDialog_->isSharing() || !active_)return;
     const auto position=captionPosition();
     const auto ahead=coverage_.bufferedAhead(position,active_->state().durationMs);
-    const bool canAI=captionTimelineAvailable();
+    const bool canAI=captionTimelineAvailable() && !model_.isEmpty();
     const bool enabled=liveCaptioningActive();
     const QString state=preparedApplied_?"prepared":!externalCues_.isEmpty()?"file":
         !enabled?"off":aiFailed_ && nextAiAttemptMs_<=0?"failed":!canAI?"waiting":

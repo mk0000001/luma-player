@@ -1,21 +1,32 @@
-param([string]$Version,[string]$OutputDirectory='dist',[string]$BuildDirectory='build',[switch]$IncludeTranslationModel,[switch]$IncludeCuda,[switch]$AllowDirtySource,[switch]$StageOnly)
+param([string]$Version,[string]$OutputDirectory='dist',[string]$BuildDirectory='build',[switch]$IncludeTranslationModel,[switch]$IncludeCuda,[switch]$AllowDirtySource,[switch]$StageOnly,[switch]$ForInstaller)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'package-support.ps1')
+if($ForInstaller -and (!$StageOnly -or $IncludeCuda -or $IncludeTranslationModel)){
+    throw 'Installer staging requires -StageOnly and downloads CUDA and model files separately.'
+}
 if (!$Version) { $Version=(Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() }
 if ($Version -notmatch '^\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$') { throw 'Invalid semantic version' }
 if ((Get-Content -LiteralPath (Join-Path $projectRoot 'VERSION') -Raw).Trim() -ne $Version) { throw 'Package version differs from VERSION' }
 $source=Get-LumaPackageSource -ProjectRoot $projectRoot -AllowDirtySource:$AllowDirtySource
 $paths=Get-LumaPackagePaths -ProjectRoot $projectRoot -Version $Version -BuildDirectory $BuildDirectory -OutputDirectory $OutputDirectory -IncludeCuda:$IncludeCuda
 Assert-LumaPackageTargetsFree -Paths $paths
-$asrFiles=@(Get-LumaPackageAsrFiles -ProjectRoot $projectRoot)
+$asrFiles=if(!$ForInstaller){@(Get-LumaPackageAsrFiles -ProjectRoot $projectRoot)}
 $cudaFiles=@();if($IncludeCuda){$cudaFiles=@(Get-LumaPackageCudaFiles -ProjectRoot $projectRoot)}
 $executable=Join-Path $paths.BuildRoot 'LumaPlayer.exe'
 if(!(Test-Path -LiteralPath $executable) -or [Diagnostics.FileVersionInfo]::GetVersionInfo($executable).ProductVersion -ne $Version) { throw 'Executable product version differs from VERSION; rebuild the selected build directory.' }
 $package=$paths.Package
+if($ForInstaller){
+    $probe=Join-Path $paths.BuildRoot 'luma-setup-hardware.exe'
+    if(!(Test-Path -LiteralPath $probe -PathType Leaf)){throw 'Rebuild the Windows installer hardware probe with the player.'}
+}
 New-Item -ItemType Directory -Path $package | Out-Null
 Copy-Item -LiteralPath $executable,(Join-Path $projectRoot 'README.md'),(Join-Path $projectRoot 'CHANGELOG.md'),(Join-Path $projectRoot 'LICENSE'),(Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'),(Join-Path $projectRoot 'translation-dependencies.lock.json') -Destination $package
 Copy-LumaPackageTrackedDocuments -ProjectRoot $projectRoot -Destination $package
+if($ForInstaller){
+    $setupDirectory=New-Item -ItemType Directory -Path (Join-Path $package 'setup')
+    Copy-Item -LiteralPath $probe -Destination $setupDirectory.FullName
+}
 New-Item -ItemType Directory -Path (Join-Path $package 'tools') -Force | Out-Null
 foreach($name in 'install-ai-acceleration.ps1','install-translation.ps1','install-translation-cuda.ps1','install-asr-cuda.ps1','install-asr-model.ps1','install-asr-encoder.ps1','measure-asr.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $package 'tools') }
 Copy-Item -LiteralPath (Join-Path $package 'docs/INSTALL-TRANSLATION.md') -Destination (Join-Path $package 'tools/README-translation.md')
@@ -23,11 +34,11 @@ $lock = Get-Content -LiteralPath (Join-Path $projectRoot 'dependencies.lock.json
 $qt = $lock.windows | Where-Object id -eq 'qt'
 & (Join-Path $projectRoot ('.deps/'+$qt.target+'/bin/windeployqt.exe')) --release --no-translations --no-opengl-sw --no-system-d3d-compiler (Join-Path $package 'LumaPlayer.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Qt deployment failed' }
-& (Join-Path $PSScriptRoot 'stage-runtime.ps1') -Destination $package -SkipTranslationModel:(!$IncludeTranslationModel) -IncludeCuda:$IncludeCuda
+& (Join-Path $PSScriptRoot 'stage-runtime.ps1') -Destination $package -SkipAsrModels:$ForInstaller -SkipTranslationModel:(!$IncludeTranslationModel) -IncludeCuda:$IncludeCuda
 if($IncludeCuda){Move-LumaPackageCudaSharedRuntime -Files $cudaFiles -Directory $package}
 Assert-LumaPackagePublicFiles -Directory $package
 if($IncludeCuda){Assert-LumaPackageCudaFiles -Files $cudaFiles -Directory $package}else{Assert-LumaPackageCoreCudaOmitted -Directory $package}
-Assert-LumaPackageAsrFiles -Files $asrFiles -Directory (Join-Path $package 'runtime/models')
+if(!$ForInstaller){Assert-LumaPackageAsrFiles -Files $asrFiles -Directory (Join-Path $package 'runtime/models')}
 Assert-LumaPackageTranslationModel -Directory $package -IncludeTranslationModel:$IncludeTranslationModel
 Assert-LumaPackageSourceUnchanged -ProjectRoot $projectRoot -Source $source
 $manifestFiles=@(Get-LumaPackageManifestFiles -Directory $package)

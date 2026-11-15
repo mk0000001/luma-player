@@ -1,4 +1,4 @@
-param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino,[switch]$IncludeAsrCuda,[switch]$IncludeCuda)
+param([string]$Destination = 'build',[switch]$SkipLocalAi,[switch]$SkipAsrModels,[switch]$SkipTranslation,[switch]$SkipTranslationModel,[switch]$IncludeTranslationOpenVino,[switch]$IncludeAsrCuda,[switch]$IncludeCuda)
 $ErrorActionPreference = 'Stop'
 if ($IncludeCuda) {
     if ($SkipLocalAi -or $SkipTranslation) { throw 'IncludeCuda requires both local ASR and translation runtimes.' }
@@ -28,10 +28,10 @@ foreach ($name in 'libaacs.dll','libbdplus.dll','libgcrypt-20.dll','libgpg-error
     Copy-Item -LiteralPath (Join-Path $vlc $name) -Destination (Join-Path $runtime 'tools' $name) -Force
 }
 & (Join-Path $PSScriptRoot 'build-mobile-host.ps1') -Destination (Join-Path $runtime 'tools')
-$model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
-if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
-$highQualityModel=$dependencyLock.highQualityModel
-if ($highQualityModel) {
+if (!$SkipAsrModels) {
+    $model = Join-Path $projectRoot '.deps\models\ggml-base.bin'
+    if (Test-Path -LiteralPath $model) { Copy-Item -LiteralPath $model -Destination (Join-Path $runtime 'models') -Force }
+    $highQualityModel=$dependencyLock.highQualityModel
     if ($highQualityModel.file -notmatch '^[A-Za-z0-9_.-]+\.bin$' -or $highQualityModel.sha256 -notmatch '^[a-f0-9]{64}$') { throw 'Invalid pinned high-quality ASR model metadata.' }
     $highQualityPath=Join-Path $projectRoot ('.deps/models/'+$highQualityModel.file)
     if (Test-Path -LiteralPath $highQualityPath -PathType Leaf) {
@@ -59,9 +59,11 @@ if (!$SkipLocalAi) {
     # Preserve the SDK's flat NPU plugin/compiler/loader/VM layout in the ASR folder.
     Copy-Item -Path "$openVino/runtime/bin/intel64/Release/*.dll" -Destination (Join-Path $runtime 'ai') -Force
     Get-ChildItem -LiteralPath "$openVino/runtime/3rdparty/tbb/bin" -Filter '*.dll' | Where-Object Name -NotMatch '_debug' | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $runtime 'ai') -Force }
-    foreach($name in 'ggml-base-encoder-openvino.xml','ggml-base-encoder-openvino.bin') {
-        $encoder = Join-Path $projectRoot ".deps/models-openvino/$name"
-        if(Test-Path -LiteralPath $encoder) { Copy-Item -LiteralPath $encoder -Destination (Join-Path $runtime 'models') -Force }
+    if (!$SkipAsrModels) {
+        foreach($name in 'ggml-base-encoder-openvino.xml','ggml-base-encoder-openvino.bin') {
+            $encoder = Join-Path $projectRoot ".deps/models-openvino/$name"
+            if(Test-Path -LiteralPath $encoder) { Copy-Item -LiteralPath $encoder -Destination (Join-Path $runtime 'models') -Force }
+        }
     }
     if($IncludeAsrCuda) {
         . (Join-Path $PSScriptRoot 'install-asr-cuda.ps1')

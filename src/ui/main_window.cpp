@@ -20,6 +20,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QLabel>
@@ -35,12 +36,19 @@ namespace luma {
 
 MainWindow::MainWindow(QWidget *parent):QMainWindow(parent),job_({},this){
     setWindowTitle("LumaPlayer");resize(1440,900);setMinimumSize(1080,680);setAcceptDrops(true);setWindowIcon(playerApplicationIcon());
+    model_=QSettings().value("ai/model").toString();
+    if(!QFileInfo(model_).isFile()){
+        model_.clear();
+        const QDir models(QCoreApplication::applicationDirPath()+"/runtime/models");
+        for(const auto *name:{"ggml-large-v3-turbo-q5_0.bin","ggml-large-v3-q5_0.bin","ggml-base.bin"}){
+            const auto candidate=models.filePath(name);
+            if(QFileInfo(candidate).isFile()){model_=candidate;break;}
+        }
+    }
     buildUi();fullscreenControls_=new FullscreenControls(this,transport_,surface_);
     connect(static_cast<VideoSurface*>(surface_),&VideoSurface::urlsDropped,this,&MainWindow::openDroppedUrls);
     connect(fullscreenControls_,&FullscreenControls::reservedHeightChanged,captions_,&CaptionOverlay::setBottomInset);captions_->setBottomInset(fullscreenControls_->reservedHeight());
     captureGuard_=new CaptureGuard(this);captureGuard_->watch(static_cast<VideoSurface*>(surface_)->videoWindow());captureGuard_->watch(captions_);
-    const auto qualityModel=QCoreApplication::applicationDirPath()+"/runtime/models/ggml-large-v3-turbo-q5_0.bin";
-    model_=QSettings().value("ai/model",QFileInfo::exists(qualityModel)?qualityModel:QCoreApplication::applicationDirPath()+"/runtime/models/ggml-base.bin").toString();
     lastUnmutedVolume_=QSettings().value("playback/lastUnmutedVolume",70).toInt();qApp->installEventFilter(this);
     translation_=new TranslationService({},this);
     const auto qualityTranslation=QCoreApplication::applicationDirPath()+"/runtime/translation/models/Hy-MT2-7B-Q4_K_M.gguf";

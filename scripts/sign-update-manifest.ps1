@@ -94,9 +94,9 @@ try {
         }
     }
     $installer = Get-Item -LiteralPath $InstallerPath -Force
-    $installerPattern = '\ALumaPlayer-' + [regex]::Escape($Version) + '-setup\.[1-9][0-9]{0,5}-windows-x64-cuda\.exe\z'
+    $installerPattern = '\ALumaPlayer-' + [regex]::Escape($Version) + '-setup\.[1-9][0-9]{0,5}-windows-x64(?:-cuda)?\.exe\z'
     if ($installer.PSIsContainer -or ($installer.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $installer.Name -cnotmatch $installerPattern) {
-        throw 'Select the Windows x64 CUDA installer for the exact release version.'
+        throw 'Select the Windows x64 installer for the exact release version.'
     }
 
     $installerStream = [IO.File]::Open($installer.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
