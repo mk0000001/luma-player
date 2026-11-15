@@ -63,6 +63,11 @@ private slots:
             "さくらは桜が好き。",{{"さくら","사쿠라"},{"桜","벚꽃"}},true),mixed);
         const QString named="사쿠라 씨가 걸었어요.";
         QCOMPARE(parseTranslationResponse(responseWithContent(named),nullptr,profile,"桜さんが歩いた。",glossary,true),named);
+        const QString possessive="사쿠라 씨의 친구가 왔어요.";
+        QCOMPARE(parseTranslationResponse(responseWithContent(possessive),nullptr,profile,"桜の友だちが来た。",glossary,true),possessive);
+        const QString compound="사쿠라 반이 왔어요.";
+        QCOMPARE(parseTranslationResponse(responseWithContent(compound),nullptr,profile,
+            "桜組が来た。",{{"桜","벚꽃"},{"桜組","사쿠라 반"}},true),compound);
     }
     void nearestTranslationWorkRemainsBoundedAndStable(){
         const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"},late{9900,10500,"visible late"};

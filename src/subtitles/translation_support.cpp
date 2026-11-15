@@ -132,12 +132,17 @@ QString correctCherryBlossomTranslation(const QString &korean,const QString &sou
     auto sourceMatches=sourceTerm.globalMatch(source);
     if(!sourceMatches.hasNext())return korean;
     const auto mention=sourceMatches.next();
-    if(sourceMatches.hasNext() || !mention.captured(2).isEmpty() || glossary.value(mention.captured(1))!=cherryBlossom)
+    const auto alias=mention.captured(1);
+    if(sourceMatches.hasNext() || !mention.captured(2).isEmpty() || glossary.value(alias)!=cherryBlossom)
         return korean;
+    for(auto term=glossary.cbegin();term!=glossary.cend();++term){
+        // A longer saved headword takes precedence over its shorter alias.
+        if(term.key().size()>alias.size() && term.key().contains(alias) && source.contains(term.key()))return korean;
+    }
 
     static const QRegularExpression transliterated(
         R"((?<![\p{L}\p{M}\p{N}_])사쿠라(예요|처럼|부터|까지|에게|에서|가|는|를|와|로|랑|의|에|도|만)?)"
-        R"((?![\p{L}\p{M}\p{N}_]|[ \t]+(?:씨|님|양|군)(?![\p{L}\p{M}\p{N}_])))");
+        R"((?![\p{L}\p{M}\p{N}_]|[ \t]+(?:씨|님|양|군)(?:께서|에게|의|가|이|는|은|를|을|도|만)?(?![\p{L}\p{M}\p{N}_])))");
     static const QHash<QString,QString> particles{
         {"가","이"},{"는","은"},{"를","을"},{"와","과"},{"로","으로"},{"랑","이랑"},{"예요","이에요"}
     };
