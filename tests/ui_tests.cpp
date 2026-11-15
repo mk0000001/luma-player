@@ -9,6 +9,7 @@
 #include <QTimer>
 #include <QFile>
 #include <QFileDialog>
+#include <QLocale>
 #include "ui/caption_overlay.h"
 #include "ui/theme.h"
 #include <QFontDatabase>
@@ -103,6 +104,8 @@ public:
     Q_INVOKABLE void recordOpenedModelFolder(const QUrl &url){openedModelFolder_=url;}
 private slots:
     void initTestCase(){
+        // Offscreen file dialogs resolve MIME labels on worker threads.
+        QLocale::setDefault(QLocale::c());
         qputenv("LUMA_DISABLE_HOST_STORAGE_PROBES","1");
         QCoreApplication::setOrganizationName("LumaPlayerTests");
         QCoreApplication::setApplicationName("UiTests");
