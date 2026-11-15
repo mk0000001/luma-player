@@ -3,6 +3,7 @@
 #include "caption_overlay.h"
 #include "video_surface.h"
 #include "player_controls.h"
+#include "recognition_model_picker.h"
 #include "theme.h"
 #include "media/platform_features.h"
 #include "subtitles/subtitle_file.h"
@@ -255,7 +256,11 @@ void MainWindow::buildUi(){
     choice(aiLayout,"음성 인식 가속",aiMode_);aiMode_->setObjectName("aiMode");aiMode_->addItem("자동 · 설치 테스트 기준","auto");aiMode_->addItem("NPU 우선 · 수동 선택","npu");aiMode_->addItem("GPU","gpu");aiMode_->addItem("CPU","cpu");setSavedChoice(aiMode_,"ai/mode","auto");
     npuStatus_=label({},"muted");npuStatus_->setObjectName("npuCalibrationStatus");npuStatus_->setWordWrap(true);aiLayout->addWidget(npuStatus_);
     choice(aiLayout,"AI GPU",aiGpu_);aiGpu_->setObjectName("aiGpu");aiGpu_->addItem("자동 GPU 선택",QString{});const auto savedGpu=QSettings().value("ai/gpu").toString();if(!savedGpu.isEmpty()){aiGpu_->addItem("저장된 GPU · "+savedGpu,savedGpu);aiGpu_->setCurrentIndex(1);}
-    auto *model=button("음성 인식 모델 선택","subtle");aiLayout->addWidget(model);accelerator_=label("음성 인식 · 실행 대기","muted");accelerator_->setObjectName("accelerator");accelerator_->setWordWrap(true);aiLayout->addWidget(accelerator_);
+    auto *modelPicker=new RecognitionModelPicker(aiTab);
+    model_=modelPicker->selectedModel();
+    aiLayout->addWidget(modelPicker);
+    connect(modelPicker,&RecognitionModelPicker::modelChanged,this,&MainWindow::selectRecognitionModel);
+    accelerator_=label("음성 인식 · 실행 대기","muted");accelerator_->setObjectName("accelerator");accelerator_->setWordWrap(true);aiLayout->addWidget(accelerator_);
     aiLayout->addSpacing(6);aiLayout->addWidget(label("표시할 자막","section"));originalEnabled_=new QCheckBox("원문");originalEnabled_->setObjectName("originalEnabled");originalEnabled_->setChecked(QSettings().value("subtitles/original",true).toBool());aiLayout->addWidget(originalEnabled_);
     readingEnabled_=new QCheckBox("일본어 한글 독음");readingEnabled_->setObjectName("readingEnabled");readingEnabled_->setChecked(QSettings().value("subtitles/hangul",true).toBool());readingEnabled_->setEnabled(reading_.available());if(!reading_.available())readingEnabled_->setToolTip(reading_.error());aiLayout->addWidget(readingEnabled_);
     translationEnabled_=new QCheckBox("한국어 번역");translationEnabled_->setObjectName("translationEnabled");translationEnabled_->setChecked(QSettings().value("subtitles/translation",true).toBool());aiLayout->addWidget(translationEnabled_);
@@ -270,7 +275,7 @@ void MainWindow::buildUi(){
     choice(aiLayout,"번역 가속",translationMode_);translationMode_->setObjectName("translationMode");translationMode_->addItem("자동 · 사용 가능한 가속","auto");translationMode_->addItem("GPU 우선","gpu");translationMode_->addItem("CPU","cpu");translationMode_->addItem("NPU · 호환 모델/런타임 필요","npu");setSavedChoice(translationMode_,"translation/mode","auto");
     choice(aiLayout,"번역 GPU",translationGpu_);translationGpu_->setObjectName("translationGpu");translationGpu_->addItem("자동 GPU 선택",QString{});const auto savedTranslationGpu=QSettings().value("translation/gpu").toString();if(!savedTranslationGpu.isEmpty()){translationGpu_->addItem("저장된 GPU · "+savedTranslationGpu,savedTranslationGpu);translationGpu_->setCurrentIndex(1);}
     auto *translationNote=label("음성 인식과 별도로 선택합니다. 실제 사용 장치는 위에 표시됩니다.","muted");translationNote->setWordWrap(true);aiLayout->addWidget(translationNote);
-    aiStatus_=label(model_.isEmpty()?"설치 프로그램에서 인식 모델을 받거나, 보유한 모델을 선택하세요.":"AI 자동자막 실행 대기","muted");aiStatus_->setWordWrap(true);aiLayout->addWidget(aiStatus_);auto *note=label("독음·번역은 원문과 별도로 보관됩니다. 노래나 배경음이 강하면 인식 정확도가 낮아질 수 있습니다.","muted");note->setWordWrap(true);aiLayout->addWidget(note);auto *save=button("표시 자막 저장","primary");aiLayout->addWidget(save);aiLayout->addStretch();const int aiTabIndex=tabs->addTab(scrollPanel(aiTab),"AI 자막");
+    aiStatus_=label(model_.isEmpty()?"모델 폴더에 음성 인식 모델(.bin)을 넣어 주세요.":"AI 자동자막 실행 대기","muted");aiStatus_->setWordWrap(true);aiLayout->addWidget(aiStatus_);auto *note=label("독음·번역은 원문과 별도로 보관됩니다. 노래나 배경음이 강하면 인식 정확도가 낮아질 수 있습니다.","muted");note->setWordWrap(true);aiLayout->addWidget(note);auto *save=button("표시 자막 저장","primary");aiLayout->addWidget(save);aiLayout->addStretch();const int aiTabIndex=tabs->addTab(scrollPanel(aiTab),"AI 자막");
     auto *settingsTab=new QWidget;auto *settingsLayout=new QVBoxLayout(settingsTab);settingsLayout->setContentsMargins(17,18,17,18);settingsLayout->setSpacing(12);
     addCaptionAppearance(settingsLayout,captions_);
     settingsLayout->addWidget(label("PLAYBACK & PRIVACY","section"));
@@ -415,7 +420,6 @@ void MainWindow::buildUi(){
     connect(subs_,&QComboBox::activated,this,[this]{if(active_){subtitleFileLoader_->cancel();aiEnabled_->setChecked(false);externalCues_.clear();presentationDirty_=true;rebuildManagedCaptions();active_->setSubtitle(subs_->currentData().toInt());}});
     connect(chapters_,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){selectChapter(item->data(Qt::UserRole).toInt());});
     connect(external,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"자막 열기",{},"텍스트 자막 (*.srt *.ass *.ssa *.vtt *.smi *.sami)");if(!path.isEmpty())loadCaptionFile(path);});
-    connect(model,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"Whisper 모델",{},"Whisper 모델 (*.bin)");if(!path.isEmpty()){resetSubtitleSession(true);model_=path;QSettings().setValue("ai/model",path);updateNpuStatus();aiStatus_->setText("음성 인식 모델 선택됨");if(liveCaptioningActive())job_.warmUp(model_);scheduleSubtitles();}});
     connect(translationModel,&QPushButton::clicked,this,[this]{const auto path=QFileDialog::getOpenFileName(this,"로컬 번역 모델",{},"GGUF 모델 (*.gguf)");if(!path.isEmpty()){translation_->cancel();translationPending_.clear();translationRefresh_.clear();clearTranslationSkips();if(!preparedCaptions_)translations_.clear();translationFailed_=false;QSettings().setValue("translation/model",path);translation_->setModel(path);rebuildManagedCaptions();scheduleTranslations();if(preparedCaptions_)translationStatus_->setText("선택한 모델은 다음 자막 생성부터 사용합니다.");}});
     connect(translationGlossary,&QPushButton::clicked,this,&MainWindow::editTranslationGlossary);
     connect(aiMode_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(aiGpu_,&QComboBox::activated,this,&MainWindow::updateAiPreferences);connect(videoGpu_,&QComboBox::activated,this,&MainWindow::changeVideoAdapter);

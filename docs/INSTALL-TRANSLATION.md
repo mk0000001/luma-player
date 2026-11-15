@@ -45,7 +45,7 @@ Kotoba-Whisper v2.0 Q5는 일본어용 선택 모델입니다. [고정 공식 �
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-model.ps1" -Profile japanese
 ```
 
-`-PlayerDirectory`로 다른 플레이어 폴더를 지정할 수 있습니다. 설치기는 저장된 모델 선택을 바꾸지 않습니다. **AI 자막 → 음성 인식 모델 선택**에서 `runtime/models/ggml-kotoba-whisper-v2.0-q5_0.bin`을 선택하고 음성 언어를 일본어로 맞추세요. 다른 언어에는 기존 Turbo 모델을 다시 선택할 수 있습니다. 이 모델에 맞는 OpenVINO NPU 인코더는 포함하지 않으며, 실제 지원되는 GPU/CPU 경로와 [표본 검증 범위](asr-model-validation.md)를 확인하세요.
+`-PlayerDirectory`로 다른 플레이어 폴더를 지정할 수 있습니다. 설치 후에도 이전 모델 선택이 저장됩니다. **AI 자막 → 음성 인식 모델** 목록에서 **Kotoba-Whisper v2.0 · Q5**를 고르고 음성 언어를 일본어로 맞추세요. 다른 언어에는 목록에서 Turbo를 고를 수 있습니다. NPU로 실행하려면 별도의 Kotoba용 OpenVINO 인코더가 필요합니다. [실제 지원되는 GPU/CPU 경로와 표본 검증](asr-model-validation.md)
 
 ### alpha.7 선택 full large-v3 음성 인식 모델
 
@@ -57,7 +57,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-mod
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-model.ps1" -Profile accurate
 ```
 
-다른 플레이어 폴더에는 `-PlayerDirectory "D:\Apps\LumaPlayer"`를 추가합니다. 설치기는 원문 MIT 고지, 고정 revision·크기·SHA-256을 검증하며, 저장된 모델 선택은 바꾸지 않습니다. 설치 후 **AI 자막 → 음성 인식 모델 선택**에서 `runtime/models/ggml-large-v3-q5_0.bin`을 직접 선택하세요. 기존 Turbo 또는 Kotoba 파일을 다시 선택하면 해당 모델로 돌아갑니다. 기본 Turbo와 Kotoba의 자동 디코딩 경로는 유지합니다.
+다른 플레이어 폴더에는 `-PlayerDirectory "D:\Apps\LumaPlayer"`를 추가합니다. 설치기는 원문 MIT 고지와 고정 리비전, 파일 크기, SHA-256을 확인합니다. 설치 후에도 이전 모델 선택이 저장됩니다. **AI 자막 → 음성 인식 모델** 목록에서 **Whisper large-v3 · Q5**를 고르세요. 같은 목록에서 Turbo 또는 Kotoba를 다시 선택할 수 있습니다.
 
 full-v3의 자동 모드는 모델 구조를 확인하고 beam 5와 공식 DTW token 시각을 사용합니다. 유효한 시각은 자막 페이지까지 전달하며, 정렬 정보 검증을 통과하지 못한 cue는 coarse 시간에 폴백합니다. 고정 지연 보정을 추가하거나 이미 알고 있는 가사를 강제 정렬하는 기능은 아닙니다. `accurate`라는 이름이 모든 문구·노래의 정확도 향상을 보장하지 않습니다. 공개 일본어 16초 한 구간의 CUDA 실행·부분 정렬 관측과 수동 발성 시각 검증의 차이는 [모델 검증 안내](asr-model-validation.md)를 확인하세요. 이 full-v3 모델용 NPU 인코더는 포함하지 않습니다.
 
@@ -131,7 +131,7 @@ Kotoba-Whisper v2.0 Q5 is an optional Japanese model. The installer verifies the
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-model.ps1" -Profile japanese
 ```
 
-Use `-PlayerDirectory` for another player folder. Installation preserves the saved model choice: select `runtime/models/ggml-kotoba-whisper-v2.0-q5_0.bin` through **AI 자막 → 음성 인식 모델 선택**, with Japanese speech selected. Switch back to Turbo for other languages. No matching OpenVINO NPU encoder is included; check the actual GPU/CPU route and [validation scope](asr-model-validation.md).
+Use `-PlayerDirectory` for another player folder. The previous model choice is saved across installation. Choose **Kotoba-Whisper v2.0 · Q5** from the **Speech recognition model** list under **AI captions** and set the speech language to Japanese. Choose Turbo for other languages. NPU use requires the optional Kotoba OpenVINO encoder. [GPU/CPU support and validation scope](asr-model-validation.md)
 
 ### alpha.7 optional full large-v3 speech-recognition model
 
@@ -143,7 +143,7 @@ Close the app and run from its extracted folder:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\tools\install-asr-model.ps1" -Profile accurate
 ```
 
-Add `-PlayerDirectory "D:\Apps\LumaPlayer"` for another player folder. The installer verifies the original MIT notice, pinned revision, size and SHA-256, while preserving the saved model choice. After installation, manually select `runtime/models/ggml-large-v3-q5_0.bin` through **AI 자막 → 음성 인식 모델 선택**. Select the existing Turbo or Kotoba file to return to it. Their automatic decoding paths remain unchanged.
+Add `-PlayerDirectory "D:\Apps\LumaPlayer"` for another player folder. The installer verifies the original MIT notice, pinned revision, file size, and SHA-256. The previous model choice is saved across installation. Choose **Whisper large-v3 · Q5** from the **Speech recognition model** list under **AI captions**. You can return to Turbo or Kotoba from the same list.
 
 Full-v3 automatic mode verifies the architecture, then uses beam 5 and the official DTW token points. Valid timing reaches caption pages, with coarse-time fallback for cues whose alignment metadata fails validation. It adds no fixed-delay correction or forced alignment of supplied lyrics. The `accurate` name does not guarantee better wording or song recognition. See [model validation](asr-model-validation.md) for the public Japanese 16-second CUDA/partial-alignment observations and their distinction from manual phonetic QA. No NPU encoder for this full-v3 model is included.
 

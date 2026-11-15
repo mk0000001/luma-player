@@ -110,6 +110,28 @@ void MainWindow::updateNpuStatus(){
     if(aiMode_->currentData()=="npu" && !result.eligible)npuStatus_->setText(npuStatus_->text()+"\n현재는 NPU를 수동 선택했습니다. 실패하면 GPU로 전환합니다.");
 }
 
+void MainWindow::selectRecognitionModel(const QString &path) {
+    if (model_ == path)
+        return;
+    model_ = path;
+    updateNpuStatus();
+    if (preparedApplied_) {
+        aiStatus_->setText("모델 변경은 다음 자막 생성에 적용됩니다.");
+        return;
+    }
+    resetSubtitleSession(true);
+    if (model_.isEmpty()) {
+        job_.shutdown();
+        releaseCaptionBuffer(true);
+        aiStatus_->setText("모델 폴더에 음성 인식 모델(.bin)을 넣어 주세요.");
+        return;
+    }
+    aiStatus_->setText("음성 인식 모델 선택됨");
+    if (liveCaptioningActive())
+        job_.warmUp(model_);
+    scheduleSubtitles();
+}
+
 void MainWindow::updateTranslationPreferences(){
     applyTranslationPreferences(true);
 }
@@ -213,7 +235,7 @@ void MainWindow::automaticCaptionsChanged(bool enabled){
     if(lanRemotePlayback_)return;
     if(enabled){
         if(model_.isEmpty()){
-            aiStatus_->setText("설치 프로그램에서 인식 모델을 받거나, 보유한 모델을 선택하세요.");
+            aiStatus_->setText("모델 폴더에 음성 인식 모델(.bin)을 넣어 주세요.");
             bufferStatus_->setText("음성 인식 모델이 필요합니다.");
             return;
         }

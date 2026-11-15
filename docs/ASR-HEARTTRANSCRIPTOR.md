@@ -6,8 +6,8 @@ HeartTranscriptor-oss는 HeartMuLa 팀이 Whisper Medium을 가창 데이터에 
 
 ### 설치
 
-1. [모델 릴리스](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1)에서 `ggml-hearttranscriptor-oss-q5_0.bin`을 받아 플레이어의 `runtime/models` 폴더에 두세요. 배포 파일의 크기와 SHA-256은 [의존성 잠금 파일](../dependencies.lock.json)의 `singingModel` 항목에 있습니다.
-2. 플레이어의 **AI 자막 → 음성 인식 모델 선택**에서 해당 파일을 선택하세요. 일본어 노래에는 인식 언어를 **일본어**로 지정하세요. 한국어 자막은 기존 로컬 번역 설정에서 켤 수 있습니다.
+1. **AI 자막 → 폴더 열기**를 누르고 내려받은 `ggml-hearttranscriptor-oss-q5_0.bin`을 그 폴더에 넣으세요. 모델을 다른 곳에 보관하려면 **모델 폴더 변경**을 누르세요. [모델 릴리스](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1) · [파일 크기와 SHA-256](../dependencies.lock.json)
+2. **음성 인식 모델** 목록에서 **HeartTranscriptor · 가창 · Q5**를 고르세요. 일본어 노래에는 인식 언어를 **일본어**로 지정하세요. 한국어 자막은 로컬 번역 설정에서 켤 수 있습니다.
 
 이 변경이 포함된 Windows 패키지는 플레이어 폴더에서 `./tools/install-asr-model.ps1 -Profile singing`을 실행하면 모델을 검증하고 설치합니다. 소스 체크아웃의 스크립트는 `./scripts/install-asr-model.ps1 -Profile singing`입니다. 모델 선택은 플레이어에서 저장합니다.
 
@@ -24,8 +24,8 @@ HeartTranscriptor-oss is HeartMuLa's Whisper Medium model fine-tuned on singing.
 
 ### Install
 
-1. Download `ggml-hearttranscriptor-oss-q5_0.bin` from the [model release](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1) and put it in the player's `runtime/models` directory. The `singingModel` entry records the file size and SHA-256. [Dependency lock file](../dependencies.lock.json)
-2. Select the file under **AI captions → Choose speech recognition model**. Set the recognition language to **Japanese** for Japanese lyrics. Enable Korean captions in the existing local translation settings.
+1. Use **Open folder** under **AI captions** and place the downloaded `ggml-hearttranscriptor-oss-q5_0.bin` in that folder. Use **Change model folder** to store models elsewhere. [Model release](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1) · [File size and SHA-256](../dependencies.lock.json)
+2. Choose **HeartTranscriptor · 가창 · Q5** from the **Speech recognition model** list. Set the recognition language to **Japanese** for Japanese lyrics. Enable Korean captions in the local translation settings.
 
 For Windows packages containing this change, run `./tools/install-asr-model.ps1 -Profile singing` from the player directory to verify and install the model. In a source checkout, use `./scripts/install-asr-model.ps1 -Profile singing`. The player saves the selected model.
 

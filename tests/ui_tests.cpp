@@ -4,6 +4,7 @@
 #include <QClipboard>
 #include <QCryptographicHash>
 #include <QDialog>
+#include <QDesktopServices>
 #include <QLabel>
 #include <QTimer>
 #include <QFile>
@@ -63,6 +64,11 @@
 class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
+    QUrl openedModelFolder_;
+    static bool writeModelFixture(const QString &path,const QByteArray &bytes="lmgg-test"){
+        QFile file(path);
+        return file.open(QIODevice::WriteOnly) && file.write(bytes)==bytes.size();
+    }
     bool answerConsent(luma::MainWindow &window,const QString &name,bool accept){
         bool seen=false;
         QTimer::singleShot(0,&window,[&]{
@@ -93,6 +99,8 @@ class UiTests:public QObject {
         enabled->setChecked(true);
         return true;
     }
+public:
+    Q_INVOKABLE void recordOpenedModelFolder(const QUrl &url){openedModelFolder_=url;}
 private slots:
     void initTestCase(){
         qputenv("LUMA_DISABLE_HOST_STORAGE_PROBES","1");
@@ -102,6 +110,87 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void recognitionModelListRefreshesAndSavesSelection(){
+        QTemporaryDir folder,oldLocation;
+        QVERIFY(folder.isValid() && oldLocation.isValid());
+        const auto heart=folder.filePath("ggml-hearttranscriptor-oss-q5_0.bin");
+        const auto previous=oldLocation.filePath("previous-custom.bin");
+        const auto encoder=folder.filePath("ggml-base-encoder-openvino.bin");
+        const auto unrelated=folder.filePath("data.bin");
+        const auto partial=folder.filePath("partial.bin");
+        QVERIFY(writeModelFixture(heart));
+        QVERIFY(writeModelFixture(previous));
+        QVERIFY(writeModelFixture(encoder,"non-model"));
+        QVERIFY(writeModelFixture(unrelated,"unrelated bytes"));
+        QVERIFY(writeModelFixture(partial,{}));
+        QSettings().setValue("ai/modelDirectory",folder.path());
+        QSettings().setValue("ai/model",previous);
+        {
+            luma::MainWindow window;
+            auto *models=window.findChild<QComboBox*>("recognitionModelList");
+            QVERIFY(models);
+            QCOMPARE(models->currentData().toString(),previous);
+            const int heartItem=models->findData(heart);
+            QVERIFY(heartItem>=0);
+            QVERIFY(models->itemText(heartItem).contains("HeartTranscriptor"));
+            QCOMPARE(models->findData(encoder),-1);
+            QCOMPARE(models->findData(unrelated),-1);
+            QCOMPARE(models->findData(partial),-1);
+            models->setCurrentIndex(heartItem);
+            emit models->activated(heartItem);
+            QCOMPARE(QSettings().value("ai/model").toString(),heart);
+            QCOMPARE(window.diagnostics().value("asrModel").toString(),QFileInfo(heart).fileName());
+            QVERIFY(writeModelFixture(partial));
+            QTRY_VERIFY_WITH_TIMEOUT(models->findData(partial)>=0,5000);
+            const auto added=folder.filePath("newly-added.BIN");
+            QVERIFY(writeModelFixture(added));
+            QTRY_VERIFY_WITH_TIMEOUT(models->findData(added)>=0,5000);
+            QVERIFY(QFile::remove(added));
+            QTRY_COMPARE_WITH_TIMEOUT(models->findData(added),-1,5000);
+            QCOMPARE(models->currentData().toString(),heart);
+        }
+        luma::MainWindow restored;
+        auto *models=restored.findChild<QComboBox*>("recognitionModelList");
+        QVERIFY(models);
+        QCOMPARE(models->currentData().toString(),heart);
+    }
+    void recognitionModelFolderCanChangeAndOpen(){
+        QTemporaryDir first,second;
+        QVERIFY(first.isValid() && second.isValid());
+        const auto path=second.filePath("folder-model.bin");
+        QVERIFY(writeModelFixture(path));
+        QSettings().setValue("ai/modelDirectory",first.path());
+        const bool previousDialogSetting=QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+        QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,true);
+        const auto restoreDialogs=qScopeGuard([previousDialogSetting]{
+            QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs,previousDialogSetting);
+        });
+        luma::MainWindow window;
+        auto *change=window.findChild<QPushButton*>("changeRecognitionModelFolder");
+        auto *open=window.findChild<QPushButton*>("openRecognitionModelFolder");
+        auto *models=window.findChild<QComboBox*>("recognitionModelList");
+        QVERIFY(change && open && models);
+        bool dialogSeen=false;
+        QTimer::singleShot(0,&window,[&]{
+            if(auto *dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget())){
+                dialogSeen=true;
+                QTimer::singleShot(2000,dialog,&QDialog::reject);
+                dialog->setDirectory(second.path());
+                dialog->selectFile(second.path());
+                static_cast<QDialog*>(dialog)->accept();
+            }
+        });
+        change->click();
+        QVERIFY(dialogSeen);
+        QCOMPARE(QSettings().value("ai/modelDirectory").toString(),second.path());
+        QVERIFY(models->findData(path)>=0);
+
+        openedModelFolder_=QUrl{};
+        QDesktopServices::setUrlHandler("file",this,"recordOpenedModelFolder");
+        const auto restoreHandler=qScopeGuard([]{QDesktopServices::unsetUrlHandler("file");});
+        open->click();
+        QCOMPARE(openedModelFolder_,QUrl::fromLocalFile(second.path()));
+    }
     void automaticStorageProbesStayDisabledInUiTests(){
         luma::MainWindow window;
         auto *label=window.findChild<QLabel*>("connectedDiscLabel");

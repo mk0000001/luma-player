@@ -214,6 +214,7 @@ private:
     void updateAiPreferences();
     void automaticCaptionsChanged(bool enabled);
     void updateNpuStatus();
+    void selectRecognitionModel(const QString &path);
     void updateTranslationPreferences();
     void changeVideoAdapter();
     QString effectiveVideoAdapter() const;

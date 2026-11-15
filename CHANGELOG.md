@@ -2,6 +2,11 @@
 
 ## 한국어
 
+### 0.2.17
+
+- **AI 자막 → 음성 인식 모델**에서 기본 제공 모델과 지정한 폴더의 모델을 목록으로 선택할 수 있습니다. 모델 폴더를 변경하거나 파일 탐색기에서 바로 열 수 있습니다.
+- 목록은 모델 파일이 추가되거나 빠지면 갱신됩니다. 선택한 모델과 폴더는 저장됩니다.
+
 ### 0.2.16
 
 - 첫 실행에서 PC의 내부망 기기 검색과 Android의 PC 자동 검색을 켭니다. 승인해 연결한 기기에는 재생 조작 권한을 기본으로 부여합니다. 검색과 조작 설정은 사용자가 바꾼 값을 저장합니다.
@@ -211,6 +216,11 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.17
+
+- Choose a bundled or user-provided speech recognition model from the list under **AI captions**. Change the model folder or open it in the file manager.
+- The list refreshes when model files are added or removed. The selected model and folder are saved.
 
 ### 0.2.16
 
