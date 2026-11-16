@@ -66,9 +66,9 @@ class UiTests:public QObject {
     Q_OBJECT
     QTemporaryDir settings_;
     QUrl openedModelFolder_;
-    static bool writeModelFixture(const QString &path,const QByteArray &bytes="lmgg-test"){
+    static bool writeModelFixture(const QString &path,const QByteArray &bytes="lmgg-test",qint64 size=-1){
         QFile file(path);
-        return file.open(QIODevice::WriteOnly) && file.write(bytes)==bytes.size();
+        return file.open(QIODevice::WriteOnly) && file.write(bytes)==bytes.size() && (size<0 || file.resize(size));
     }
     bool answerConsent(luma::MainWindow &window,const QString &name,bool accept){
         bool seen=false;
@@ -118,7 +118,7 @@ private slots:
         QVERIFY(folder.isValid());
         const auto heart=folder.filePath("ggml-hearttranscriptor-oss-q5_0.bin");
         const auto base=folder.filePath("ggml-base.bin");
-        QVERIFY(writeModelFixture(heart));
+        QVERIFY(writeModelFixture(heart,"lmgg-test",luma::heartTranscriptorModelBytes));
         QVERIFY(writeModelFixture(base));
         QSettings().setValue("ai/modelDirectory",folder.path());
         {
@@ -145,7 +145,7 @@ private slots:
         const auto encoder=folder.filePath("ggml-base-encoder-openvino.bin");
         const auto unrelated=folder.filePath("data.bin");
         const auto partial=folder.filePath("partial.bin");
-        QVERIFY(writeModelFixture(heart));
+        QVERIFY(writeModelFixture(heart,"lmgg-test",luma::heartTranscriptorModelBytes));
         QVERIFY(writeModelFixture(previous));
         QVERIFY(writeModelFixture(encoder,"non-model"));
         QVERIFY(writeModelFixture(unrelated,"unrelated bytes"));

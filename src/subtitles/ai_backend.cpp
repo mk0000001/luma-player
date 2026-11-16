@@ -15,7 +15,11 @@
 namespace luma {
 bool isWhisperGgmlModel(const QString &path){
     QFile model(path);
-    return QFileInfo(model).isFile() && model.open(QIODevice::ReadOnly) && model.read(4)=="lmgg";
+    const QFileInfo info(model);
+    if(!info.isFile())return false;
+    if(info.fileName().compare(heartTranscriptorModelFile,Qt::CaseInsensitive)==0 && info.size()!=heartTranscriptorModelBytes)
+        return false;
+    return model.open(QIODevice::ReadOnly) && model.read(4)=="lmgg";
 }
 
 QString defaultRecognitionModel(const QString &runtime){

@@ -1,8 +1,10 @@
 #pragma once
 #include <QString>
 #include <QVector>
+#include "luma_version.h"
 namespace luma {
-inline constexpr char heartTranscriptorModelFile[]="ggml-hearttranscriptor-oss-q5_0.bin";
+inline constexpr char heartTranscriptorModelFile[]=LUMA_HEART_MODEL_FILE;
+inline constexpr qint64 heartTranscriptorModelBytes=LUMA_HEART_MODEL_BYTES;
 bool isWhisperGgmlModel(const QString &path);
 QString defaultRecognitionModel(const QString &runtime);
 struct AiPreferences {QString mode="auto",gpuDevice;};

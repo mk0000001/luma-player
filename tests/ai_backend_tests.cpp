@@ -59,9 +59,12 @@ private slots:
         const auto singing=root.filePath(QString("models/")+heartTranscriptorModelFile);
         QVERIFY(writeFixtureFile(base,"lmgg-base"));
         QCOMPARE(defaultRecognitionModel(root.path()),base);
-        QVERIFY(writeFixtureFile(singing,"incomplete"));
+        QVERIFY(writeFixtureFile(singing,"lmgg-incomplete"));
         QCOMPARE(defaultRecognitionModel(root.path()),base);
-        QVERIFY(writeFixtureFile(singing,"lmgg-heart"));
+        QFile complete(singing);
+        QVERIFY(complete.open(QIODevice::ReadWrite));
+        QVERIFY(complete.resize(heartTranscriptorModelBytes));
+        complete.close();
         QCOMPARE(defaultRecognitionModel(root.path()),singing);
     }
     void qualifiedLocalProfileSelectsNpu(){
