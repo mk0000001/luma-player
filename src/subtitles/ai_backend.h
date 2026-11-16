@@ -2,6 +2,9 @@
 #include <QString>
 #include <QVector>
 namespace luma {
+inline constexpr char heartTranscriptorModelFile[]="ggml-hearttranscriptor-oss-q5_0.bin";
+bool isWhisperGgmlModel(const QString &path);
+QString defaultRecognitionModel(const QString &runtime);
 struct AiPreferences {QString mode="auto",gpuDevice;};
 struct AiBackend {QString key,program,device,encoder;};
 enum class NpuCalibrationState { Missing, Invalid, Stale, Rejected, Qualified };

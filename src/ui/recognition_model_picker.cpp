@@ -1,11 +1,11 @@
 #include "recognition_model_picker.h"
 #include "player_controls.h"
+#include "subtitles/ai_backend.h"
 
 #include <QBoxLayout>
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
-#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
@@ -18,6 +18,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <algorithm>
 
 namespace luma {
 namespace {
@@ -31,7 +32,7 @@ QString modelName(const QString &fileName) {
         {"ggml-large-v3-q5_0.bin", "Whisper large-v3 · Q5"},
         {"ggml-base.bin", "Whisper Base"},
         {"ggml-kotoba-whisper-v2.0-q5_0.bin", "Kotoba-Whisper v2.0 · Q5"},
-        {"ggml-hearttranscriptor-oss-q5_0.bin", "HeartTranscriptor · 가창 · Q5"}
+        {heartTranscriptorModelFile, "HeartTranscriptor · 가창 · Q5"}
     };
     return names.value(fileName.toLower(), fileName);
 }
@@ -115,8 +116,7 @@ void RecognitionModelPicker::refreshModels() {
         for (const auto &file : QDir(path).entryInfoList({"*.bin"}, QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase)) {
             if (file.fileName().endsWith("-encoder-openvino.bin", Qt::CaseInsensitive))
                 continue;
-            QFile input(file.absoluteFilePath());
-            if (input.open(QIODevice::ReadOnly) && input.read(4) == "lmgg")
+            if (isWhisperGgmlModel(file.absoluteFilePath()))
                 paths.append(file.absoluteFilePath());
             else
                 watched.append(file.absoluteFilePath());
@@ -159,6 +159,12 @@ void RecognitionModelPicker::refreshModels() {
         }
         int index = models_->findData(previous);
         if (index < 0) index = models_->findData(saved);
+        if (index < 0) {
+            const auto singing = std::find_if(paths.cbegin(), paths.cend(), [](const QString &path) {
+                return QFileInfo(path).fileName().compare(heartTranscriptorModelFile, Qt::CaseInsensitive) == 0;
+            });
+            if (singing != paths.cend()) index = models_->findData(*singing);
+        }
         if (index < 0) {
             for (const auto *name : {"ggml-large-v3-turbo-q5_0.bin", "ggml-large-v3-q5_0.bin", "ggml-base.bin"}) {
                 index = models_->findData(bundled.absoluteFilePath(name));

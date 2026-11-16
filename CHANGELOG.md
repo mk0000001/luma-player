@@ -2,6 +2,11 @@
 
 ## 한국어
 
+### 0.2.19
+
+- Windows 단일 파일 설치본과 전체 모델 설치본에 HeartTranscriptor Q5를 포함했습니다. 기본 설치와 앱 업데이트에서도 오프라인으로 모델을 설치합니다.
+- 직접 선택한 인식 모델이 없으면 HeartTranscriptor Q5를 기본으로 사용합니다. 저장한 모델은 계속 사용할 수 있습니다.
+
 ### 0.2.18
 
 - HeartTranscriptor로 생성한 일본어 자막에서 깨진 유니코드가 표시되거나 한국어 번역이 누락되는 문제를 수정했습니다. 네이티브 인식 엔진은 HeartTranscriptor의 가창 설정과 토큰 정렬로 자막 시간을 계산합니다.
@@ -221,6 +226,11 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.19
+
+- Bundled HeartTranscriptor Q5 in both Windows installers. Standard setup and app updates install the model offline.
+- HeartTranscriptor Q5 is selected by default when there is no saved speech recognition model. Existing model selections are preserved.
 
 ### 0.2.18
 

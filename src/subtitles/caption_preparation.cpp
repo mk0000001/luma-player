@@ -355,7 +355,7 @@ struct CaptionPreparationService::Impl {
         QString error;
         if(request.source.source.startsWith("file:",Qt::CaseInsensitive)){const QUrl url(request.source.source);request.source.source=url.isLocalFile()?url.toLocalFile():QString{};}
         else if(request.source.disc)request.source.source=localDiscPath(request.source.source);
-        if(request.model.isEmpty())request.model=QDir(runtime).filePath("models/ggml-base.bin");
+        if(request.model.isEmpty())request.model=defaultRecognitionModel(runtime);
         if(request.translate&&request.translationModel.isEmpty()){const auto quality=QDir(runtime).filePath("translation/models/Hy-MT2-7B-Q4_K_M.gguf");request.translationModel=QFileInfo::exists(quality)?quality:QDir(runtime).filePath("translation/models/Qwen3-4B-Q4_K_M.gguf");}
         if(!validRequest(request,error)){fail(error,false);return;}
         const auto canonicalSource=QFileInfo(request.source.source).canonicalFilePath(),canonicalModel=QFileInfo(request.model).canonicalFilePath();

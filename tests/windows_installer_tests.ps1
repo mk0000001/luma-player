@@ -6,7 +6,8 @@ $root=Split-Path -Parent $PSScriptRoot
 $count=0
 $fixture=Join-Path $root ('.deps/installer-tests/'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
-foreach($entry in @(@{name='encoder.xml';component='base';dest='runtime\models';bytes=20L},
+foreach($entry in @(@{name='ggml-hearttranscriptor-oss-q5_0.bin';component='core';dest='runtime\models';bytes=539212484L},
+                   @{name='encoder.xml';component='base';dest='runtime\models';bytes=20L},
                    @{name='turbo.bin';component='turbo';dest='runtime\models';bytes=50L},
                    @{name='accurate.bin';component='accurate';dest='runtime\models';bytes=100L},
                    @{name='quality.gguf';component='translation';dest='runtime\translation\models';bytes=4624648896L})){
@@ -18,6 +19,7 @@ foreach($entry in @(@{name='encoder.xml';component='base';dest='runtime\models';
     throw 'An installer model must be embedded, separately compressed, and preserved on uninstall.'
  }
  if($line -notlike ("*', '"+$file.Bytes+"', '*")){throw 'Inno Check must pass the size as text, including weights larger than 2 GiB.'}
+ if($line -notlike "*Components: $($entry.component);*"){throw 'The model was assigned to the wrong setup component.'}
  $count++
  $file.Name='../escape.bin'
  $rejected=$false

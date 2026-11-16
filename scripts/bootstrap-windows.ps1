@@ -68,6 +68,7 @@ if (!$SkipAiModel) {
     $models = Join-Path $dependencyRoot 'models'
     New-Item -ItemType Directory -Path $models -Force | Out-Null
     Get-LumaBootstrapFile $lock.model.url (Join-Path $models $lock.model.file) $lock.model.sha256 240
+    Get-LumaBootstrapFile $lock.singingModel.url (Join-Path $models $lock.singingModel.file) $lock.singingModel.sha256 240
     if($lock.highQualityModel) { Get-LumaBootstrapFile $lock.highQualityModel.url (Join-Path $models $lock.highQualityModel.file) $lock.highQualityModel.sha256 240 }
     if (!$SkipLocalAi) {
         $encoderArchive = Join-Path $downloads $lock.encoder.archive
@@ -79,5 +80,5 @@ if (!$SkipAiModel) {
             if($LASTEXITCODE -ne 0) { throw 'OpenVINO encoder extraction failed' }
         }
     }
-    Write-Output 'Verified multilingual Whisper model'
+    Write-Output 'Verified Whisper and HeartTranscriptor model files'
 }

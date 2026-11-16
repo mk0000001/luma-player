@@ -113,6 +113,30 @@ private slots:
         QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings_.path());
     }
     void init(){QSettings().clear();}
+    void heartTranscriptorIsDefaultUntilTheUserChoosesAModel(){
+        QTemporaryDir folder;
+        QVERIFY(folder.isValid());
+        const auto heart=folder.filePath("ggml-hearttranscriptor-oss-q5_0.bin");
+        const auto base=folder.filePath("ggml-base.bin");
+        QVERIFY(writeModelFixture(heart));
+        QVERIFY(writeModelFixture(base));
+        QSettings().setValue("ai/modelDirectory",folder.path());
+        {
+            luma::MainWindow window;
+            auto *models=window.findChild<QComboBox*>("recognitionModelList");
+            QVERIFY(models);
+            QCOMPARE(QFileInfo(models->currentData().toString()).fileName(),QFileInfo(heart).fileName());
+            QCOMPARE(window.diagnostics().value("asrModel").toString(),QFileInfo(heart).fileName());
+            const int baseIndex=models->findData(base);
+            QVERIFY(baseIndex>=0);
+            models->setCurrentIndex(baseIndex);
+            emit models->activated(baseIndex);
+        }
+        luma::MainWindow restarted;
+        auto *models=restarted.findChild<QComboBox*>("recognitionModelList");
+        QVERIFY(models);
+        QCOMPARE(models->currentData().toString(),base);
+    }
     void recognitionModelListRefreshesAndSavesSelection(){
         QTemporaryDir folder,oldLocation;
         QVERIFY(folder.isValid() && oldLocation.isValid());

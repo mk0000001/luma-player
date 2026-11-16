@@ -53,10 +53,10 @@ english.CudaDownload=Downloading the selected NVIDIA CUDA libraries
 korean.CudaDownloadFailed=CUDA 라이브러리를 내려받거나 검증하지 못했습니다. 인터넷 연결을 확인하거나 CUDA 선택을 해제한 후 진행하세요.
 english.CudaDownloadFailed=Setup could not download or verify CUDA. Check your internet connection or clear the CUDA selection and continue.
 [Types]
-Name: "compact"; Description: "플레이어만 / Player only"
+Name: "compact"; Description: "기본 설치 / Standard setup"
 Name: "custom"; Description: "직접 선택 / Custom"; Flags: iscustom
 [Components]
-Name: "core"; Description: "플레이어 · CPU, Vulkan, Intel OpenVINO / Player"; Types: compact custom; Flags: fixed
+Name: "core"; Description: "플레이어 · HeartTranscriptor Q5 / Player and default ASR"; Types: compact custom; Flags: fixed
 Name: "cuda"; Description: "NVIDIA CUDA 12 라이브러리 다운로드 ({#CudaDownloadMB} MB) / CUDA runtime"; ExtraDiskSpaceRequired: {#CudaExpandedBytes}; Flags: disablenouninstallwarning
 Name: "base"; Description: "Whisper Base + Intel OpenVINO 인코더 / Compact ASR"; ExtraDiskSpaceRequired: {#BaseExpandedBytes}; Flags: disablenouninstallwarning
 Name: "turbo"; Description: "Whisper Turbo 인식 모델 / Fast ASR"; ExtraDiskSpaceRequired: {#TurboBytes}; Flags: disablenouninstallwarning

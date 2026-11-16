@@ -63,7 +63,7 @@ ProcessInvocation recognitionCommand(const QString &runtime,const QString &model
         QString::number(std::clamp(QThread::idealThreadCount()/2,2,8)),"-bs","1","-bo","1","-np"};
     // Let the player wrap singing captions at grapheme boundaries instead of
     // letting the standalone CLI split a multibyte character between cues.
-    if(QFileInfo(model).fileName().compare("ggml-hearttranscriptor-oss-q5_0.bin",Qt::CaseInsensitive)==0)
+    if(QFileInfo(model).fileName().compare(heartTranscriptorModelFile,Qt::CaseInsensitive)==0)
         arguments.append("-nt");
     else
         arguments.append({"-ml","48"});
@@ -142,7 +142,7 @@ void SubtitleJob::sendQueuedRequest(){
 }
 void SubtitleJob::warmUp(const QString &model){
     if(busy() || preferences_.mode=="cpu")return;
-    const auto selected=model.isEmpty()?QDir(runtime_).filePath("models/ggml-base.bin"):model;if(!QFileInfo::exists(selected))return;
+    const auto selected=model.isEmpty()?defaultRecognitionModel(runtime_):model;if(!QFileInfo::exists(selected))return;
     if(rejectionModel_!=selected){rejected_.clear();rejectionModel_=selected;++warmupEpoch_;}model_=selected;warmupEnabled_=true;
     const auto candidates=recognitionBackends(runtime_,model_,preferences_);
     for(const auto &backend:candidates){
@@ -165,7 +165,7 @@ void SubtitleJob::setPreferences(const AiPreferences &preferences){
 }
 bool SubtitleJob::begin(const RecognitionRequest &request,const QString &model){
     if(busy())cancel();else{++generation_;temp_.reset();}
-    request_=request;request_.startMs=std::max<qint64>(0,request_.startMs);request_.durationMs=std::clamp<qint64>(request_.durationMs,1,60000);model_=model.isEmpty()?QDir(runtime_).filePath("models/ggml-base.bin"):model;
+    request_=request;request_.startMs=std::max<qint64>(0,request_.startMs);request_.durationMs=std::clamp<qint64>(request_.durationMs,1,60000);model_=model.isEmpty()?defaultRecognitionModel(runtime_):model;
     if(request_.disc && !QRegularExpression("^[0-9]{5}$").match(request_.playlist).hasMatch()){emit failed("선택된 디스크 타이틀의 플레이리스트를 확인할 수 없습니다.");return false;}
     if(!QFileInfo::exists(model_)){emit failed("음성인식 모델을 찾을 수 없습니다. Whisper 모델을 선택하세요.");return false;}
     if(rejectionModel_!=model_){rejected_.clear();rejectionModel_=model_;++warmupEpoch_;}warmupEnabled_=true;

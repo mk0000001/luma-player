@@ -51,6 +51,19 @@ struct NpuProfileFixture {
 class AiBackendTests:public QObject {
     Q_OBJECT
 private slots:
+    void automaticRecognitionUsesTheBundledSingingModelWhenReadable(){
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QVERIFY(QDir(root.path()).mkpath("models"));
+        const auto base=root.filePath("models/ggml-base.bin");
+        const auto singing=root.filePath(QString("models/")+heartTranscriptorModelFile);
+        QVERIFY(writeFixtureFile(base,"lmgg-base"));
+        QCOMPARE(defaultRecognitionModel(root.path()),base);
+        QVERIFY(writeFixtureFile(singing,"incomplete"));
+        QCOMPARE(defaultRecognitionModel(root.path()),base);
+        QVERIFY(writeFixtureFile(singing,"lmgg-heart"));
+        QCOMPARE(defaultRecognitionModel(root.path()),singing);
+    }
     void qualifiedLocalProfileSelectsNpu(){
         QTemporaryDir root;NpuProfileFixture fixture;QVERIFY(fixture.create(root.path()));
         const auto status=npuCalibrationStatus(fixture.runtime,fixture.model,fixture.driver);

@@ -13,6 +13,17 @@
 #include <cmath>
 #include <optional>
 namespace luma {
+bool isWhisperGgmlModel(const QString &path){
+    QFile model(path);
+    return QFileInfo(model).isFile() && model.open(QIODevice::ReadOnly) && model.read(4)=="lmgg";
+}
+
+QString defaultRecognitionModel(const QString &runtime){
+    const QDir models(QDir(runtime).filePath("models"));
+    const auto singing=models.filePath(heartTranscriptorModelFile);
+    return isWhisperGgmlModel(singing)?singing:models.filePath("ggml-base.bin");
+}
+
 namespace {
 bool encoderCandidate(const QFileInfo &model,const QString &stem){
     const QFileInfo xml(stem+".xml"),bin(stem+".bin");

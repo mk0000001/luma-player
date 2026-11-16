@@ -19,7 +19,7 @@ Blu-ray 메뉴를 열고, 보고 싶은 장면으로 이동하고, 외국어 대
 
 [최신 Windows·Android·Linux 다운로드와 업데이트 안내](https://github.com/mk0000001/luma-player/releases/latest)
 
-Windows 설치 화면은 GPU와 메모리를 확인해 CUDA 라이브러리와 AI 모델을 추천합니다. 한국어 번역까지 설치하려면 **전체 모델 포함 설치**의 EXE와 번호가 붙은 `.bin` 파일을 같은 폴더에 받으세요. 선택한 모델은 설치본에서 풀고, CUDA를 선택하면 설치 중에 내려받습니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
+Windows 설치본에는 기본 음성 인식 모델인 **HeartTranscriptor Q5**가 들어 있습니다. 설치 화면은 GPU와 메모리에 따라 CUDA 라이브러리와 추가 모델을 추천합니다. 한국어 번역까지 설치하려면 **전체 모델 포함 설치**의 EXE와 번호가 붙은 `.bin` 파일을 같은 폴더에 받으세요. 선택한 모델은 설치본에서 풀고, CUDA를 선택하면 설치 중에 내려받습니다. [Windows 설치·모델 선택 안내](docs/WINDOWS-INSTALLER.md)
 
 시작 메뉴에서 **LumaPlayer**를 열고 **Blu-ray 재생**을 누르거나 영상 파일을 여세요. **AI 자막**에서 음성 언어와 표시할 줄을 고릅니다. **음성 인식 모델** 목록에서 사용할 모델을 선택하세요. 모델 파일을 추가할 때는 **폴더 열기**를 누르고, 위치를 바꾸려면 **모델 폴더 변경**을 누르세요.
 
@@ -75,7 +75,7 @@ We wanted an open-source Blu-ray player that could open disc menus, jump to a fa
 
 [Latest downloads and update instructions for Windows, Android, and Linux](https://github.com/mk0000001/luma-player/releases/latest)
 
-On Windows, Setup checks the GPU and memory to recommend CUDA libraries and AI models. For Korean translation, save the **full model setup** EXE and all its numbered `.bin` files in the same folder. Setup extracts selected models and downloads CUDA if selected. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
+Windows Setup includes **HeartTranscriptor Q5**, the default speech recognition model. Setup checks the GPU and memory to recommend CUDA libraries and additional models. For Korean translation, save the **full model setup** EXE and all its numbered `.bin` files in the same folder. Setup extracts selected models and downloads CUDA if selected. [Windows installation and model selection](docs/WINDOWS-INSTALLER.md)
 
 Open **LumaPlayer** from the Start Menu and select **Blu-ray 재생** or open a video file. Choose the spoken language, caption lines, and speech recognition model under **AI 자막**. Use **폴더 열기** to add model files to the current folder or **모델 폴더 변경** to choose another location.
 

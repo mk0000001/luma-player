@@ -6,6 +6,8 @@ HeartTranscriptor-oss는 HeartMuLa 팀이 Whisper Medium을 가창 데이터에 
 
 ### 설치
 
+Windows 0.2.19 이상 설치본은 HeartTranscriptor Q5를 함께 설치합니다. 첫 실행의 기본 인식 모델이며, **AI 자막 → 음성 인식 모델**에서 저장한 선택이 우선합니다. 아래는 모델 파일을 별도로 추가할 때 사용하는 방법입니다.
+
 1. **AI 자막 → 폴더 열기**를 누르고 내려받은 `ggml-hearttranscriptor-oss-q5_0.bin`을 그 폴더에 넣으세요. 모델을 다른 곳에 보관하려면 **모델 폴더 변경**을 누르세요. [모델 릴리스](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1) · [파일 크기와 SHA-256](../dependencies.lock.json)
 2. **음성 인식 모델** 목록에서 **HeartTranscriptor · 가창 · Q5**를 고르세요. 일본어 노래에는 인식 언어를 **일본어**로 지정하세요. 한국어 자막은 로컬 번역 설정에서 켤 수 있습니다.
 
@@ -23,6 +25,8 @@ HeartTranscriptor-oss는 HeartMuLa 팀이 Whisper Medium을 가창 데이터에 
 HeartTranscriptor-oss is HeartMuLa's Whisper Medium model fine-tuned on singing. LumaPlayer converted the official weights to Whisper GGML for its local recognition engine and quantized them to Q5_0. The model file is 539,212,484 bytes, or approximately 514 MiB. [Official model card](https://huggingface.co/HeartMuLa/HeartTranscriptor-oss/tree/ee842de9aeec454236badef2205dea47a1fd8410) · [Apache 2.0 license text](../LICENSES/HeartTranscriptor-Apache-2.0.txt)
 
 ### Install
+
+Windows 0.2.19 and later installers include HeartTranscriptor Q5. It is the first-launch default, and choices saved under **AI captions → Speech recognition model** take precedence. Use the following steps to add the model manually.
 
 1. Use **Open folder** under **AI captions** and place the downloaded `ggml-hearttranscriptor-oss-q5_0.bin` in that folder. Use **Change model folder** to store models elsewhere. [Model release](https://github.com/mk0000001/luma-player/releases/tag/hearttranscriptor-ggml-v1) · [File size and SHA-256](../dependencies.lock.json)
 2. Choose **HeartTranscriptor · 가창 · Q5** from the **Speech recognition model** list. Set the recognition language to **Japanese** for Japanese lyrics. Enable Korean captions in the local translation settings.

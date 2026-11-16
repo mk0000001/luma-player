@@ -44,9 +44,16 @@ $t=Get-Content "$PSScriptRoot/../translation-dependencies.lock.json" -Raw | Conv
 $standardModels=@(Get-LumaPackageAsrFiles -ProjectRoot $projectRoot)
 $baseFiles=@($standardModels | Where-Object Name -CNE $a.highQualityModel.file)
 $turboFile=$standardModels | Where-Object Name -CEQ $a.highQualityModel.file
+$singingFile=Get-LumaInstallerLockedModelFile -SourceDirectory (Join-Path $projectRoot '.deps/models') -Spec $a.singingModel
+$singingLicenseName=[string]$a.singingModel.licenseFile
+if($singingLicenseName -cnotmatch '^[A-Za-z0-9_.-]+\.txt$' -or
+   (Get-FileHash -LiteralPath "$payloadRoot/licenses/LICENSES/$singingLicenseName").Hash -ine $a.singingModel.licenseSha256){
+    throw 'Bundled HeartTranscriptor license differs from its pin'
+}
 $accurateFile=Get-LumaInstallerLockedModelFile -SourceDirectory (Join-Path $projectRoot '.deps/models') -Spec $a.accurateModel
 $translationFile=Get-LumaInstallerLockedModelFile -SourceDirectory (Join-Path $projectRoot '.deps/translation/models') -Spec $t.qualityModel
 $standardEntries=@(
+ New-LumaInstallerModelEntry $singingFile 'core'
  foreach($file in $baseFiles) { New-LumaInstallerModelEntry $file 'base' }
  New-LumaInstallerModelEntry $turboFile 'turbo'
 )
@@ -101,5 +108,5 @@ $fullChecksums=foreach($asset in $fullAssets){
  playerVersion=$manifest.version;installerVersion='1';bytes=$exe.Length;sha256=$hash
  cudaArchive=$cudaName;cudaBytes=$cudaDownloadBytes
  fullAssets=@($fullAssets | Select-Object Name,Length)
- models=@($standardModels.Name)+@($accurateFile.Name,$translationFile.Name)
+ models=@($singingFile.Name)+@($standardModels.Name)+@($accurateFile.Name,$translationFile.Name)
 } | ConvertTo-Json -Depth 4

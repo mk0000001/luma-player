@@ -11,7 +11,7 @@ function Get-LumaInstallerLockedModelFile {
 }
 
 function New-LumaInstallerModelEntry {
- param($File,[ValidateSet('base','turbo','accurate','translation')][string]$Component)
+ param($File,[ValidateSet('core','base','turbo','accurate','translation')][string]$Component)
  $destination=if($Component -eq 'translation'){'runtime\translation\models'}else{'runtime\models'}
  $extension=switch($Component){translation{'gguf'} base{'bin|xml'} default{'bin'}}
  if($File.Name -cnotmatch "^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.($extension)$" -or
