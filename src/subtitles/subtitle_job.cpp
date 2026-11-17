@@ -2,6 +2,7 @@
 #include "runtime_environment.h"
 #include "pcm_buffer.h"
 #include "recognition_timing.h"
+#include "lyric_captions.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -260,6 +261,10 @@ void SubtitleJob::completed(int code,QProcess::ExitStatus status){
         cue.tokens.clear();
     }
     cues.removeIf([](const SubtitleCue &cue){return cue.text.isEmpty() || isGeneratedOutro(cue);});
+    if(tukiBudokan_ || QFileInfo(model_).fileName().compare(heartTranscriptorModelFile,Qt::CaseInsensitive)==0){
+        cues=splitTimedLyrics(cues,tukiBudokan_);
+        cues.removeIf(isGeneratedOutro);
+    }
     const auto &backend=backends_[backendIndex_];
     selectedBackend_=backend.key;
     if(backend.key=="CPU"){

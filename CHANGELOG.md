@@ -2,6 +2,12 @@
 
 ## 한국어
 
+### 0.2.20
+
+- 가창 자막을 구절별로 나누고 각 구절의 시작과 끝을 인식 토큰 시간에 맞춥니다. 실시간 자막과 새로 미리 생성하는 자막에 적용됩니다.
+- 츠키 무도관 Blu-ray의 ‘사쿠라 키미 와타시’를 별도 자막으로 띄웁니다. 독음은 ‘사쿠라 키미 와타시’, 번역은 ‘벚꽃, 너, 나’입니다.
+- 같은 디스크의 기본 용어집에서 ‘스타게이저’를 ‘천문학자’로 번역합니다.
+
 ### 0.2.19
 
 - Windows 단일 파일 설치본과 전체 모델 설치본에 HeartTranscriptor Q5를 포함했습니다. 기본 설치와 앱 업데이트에서도 오프라인으로 모델을 설치합니다.
@@ -226,6 +232,12 @@
 - 당시 기록은 이력이며 alpha.2의 새 빌드·패키지 검증을 대신하지 않음.
 
 ## English
+
+### 0.2.20
+
+- Singing captions are split into phrases and placed at the start and end times of their recognized tokens. This applies to live captions and newly prepared captions.
+- On the tuki. Budokan Blu-ray, “Sakura Kimi Watashi” appears as its own caption with the Korean reading “사쿠라 키미 와타시” and translation “벚꽃, 너, 나”.
+- The default glossary for this disc translates “stargazer” as “천문학자” (astronomer).
 
 ### 0.2.19
 

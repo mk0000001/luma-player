@@ -5,8 +5,7 @@
 #include <algorithm>
 #include <utility>
 namespace luma {
-namespace {
-bool validTokenTimings(const SubtitleCue &cue){
+bool validSubtitleTokenTimings(const SubtitleCue &cue){
     if(cue.tokens.isEmpty())return false;
     qsizetype next=0;qint64 previousEnd=cue.startMs;
     for(const auto &token:cue.tokens){
@@ -17,6 +16,7 @@ bool validTokenTimings(const SubtitleCue &cue){
     return next==cue.text.size();
 }
 
+namespace {
 int graphemeUnits(QStringView text){
     for(qsizetype index=0;index<text.size();++index){
         const auto first=text[index];
@@ -102,7 +102,7 @@ static QVector<SubtitleCue> makeCaptionPages(const QVector<SubtitleCue> &cues,in
     QVector<SubtitleCue> result;maxUnits=std::max(1,maxUnits);minPageMs=std::max<qint64>(1,minPageMs);
     for(const auto &cue:cues){
         if(cue.startMs<0 || cue.endMs<=cue.startMs || cue.text.trimmed().isEmpty())continue;
-        const bool timed=validTokenTimings(cue);
+        const bool timed=validSubtitleTokenTimings(cue);
         QVector<CaptionGrapheme> characters;QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,cue.text);qsizetype start=0,end=0;
         while((end=finder.toNextBoundary())>=0){
             static const QString sentenceEnds=QStringLiteral("。！？!?;；.\n");

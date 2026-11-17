@@ -36,6 +36,8 @@ private slots:
         const auto concertGlossary=configuredTranslationGlossary(concertDisc);
         QCOMPARE(concertGlossary.value("桜"),QString("벚꽃"));
         QCOMPARE(concertGlossary.value("さくら"),QString("벚꽃"));
+        QCOMPARE(concertGlossary.value("サクラキミワタシ"),QString("벚꽃, 너, 나"));
+        QCOMPARE(concertGlossary.value("スターゲイザー"),QString("천문학자"));
         QVERIFY(!configuredTranslationGlossary("different-disc").contains("桜"));
         QSettings settings;
         settings.setValue(translationGlossarySettingsKey(),"青空 → 푸른 하늘");
@@ -68,6 +70,32 @@ private slots:
         const QString compound="사쿠라 반이 왔어요.";
         QCOMPARE(parseTranslationResponse(responseWithContent(compound),nullptr,profile,
             "桜組が来た。",{{"桜","벚꽃"},{"桜組","사쿠라 반"}},true),compound);
+    }
+    void tukiTitlesAndStargazerRespectGlossaryScope(){
+        const TranslationGlossary glossary{
+            {"サクラキミワタシ","벚꽃, 너, 나"},{"桜","벚꽃"},
+            {"スターゲイザー","천문학자"},{"スターゲイザ","천문학자"},{"Stargazer","천문학자"}};
+        QCOMPARE(fixedTukiTranslation("桜 君 私",glossary),QString("벚꽃, 너, 나"));
+        QCOMPARE(fixedTukiTranslation("「サクラ、キミ、ワタシ」",glossary),QString("벚꽃, 너, 나"));
+        QVERIFY(fixedTukiTranslation("桜君私たち",glossary).isEmpty());
+        QVERIFY(fixedTukiTranslation("桜君私",{}).isEmpty());
+        auto custom=glossary;custom["桜君私"]="내 용어";
+        QVERIFY(fixedTukiTranslation("桜君私",custom).isEmpty());
+        QCOMPARE(fixedTukiTranslation("スターゲイザ",glossary),QString("천문학자"));
+        QCOMPARE(fixedTukiTranslation("「スターゲイザー」",glossary),QString("천문학자"));
+        const auto response=responseWithContent("스타게이자를 만났어요.");
+        const auto profile=TranslationProfile::HyMt2Plain;
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"スターゲイザーに会った。",glossary,true),
+                 QString("천문학자를 만났어요."));
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"stargazerに会った。",glossary,true),
+                 QString("천문학자를 만났어요."));
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"別の人に会った。",glossary,true),
+                 QString("스타게이자를 만났어요."));
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"スターゲイザーに会った。",glossary,false),
+                 QString("스타게이자를 만났어요."));
+        custom["スターゲイザー"]="고유 이름";
+        QCOMPARE(parseTranslationResponse(response,nullptr,profile,"スターゲイザーに会った。",custom,true),
+                 QString("스타게이자를 만났어요."));
     }
     void nearestTranslationWorkRemainsBoundedAndStable(){
         const SubtitleCue past{9500,10000,"past"},future{10500,11000,"future"},cached{10000,11000,"cached"},late{9900,10500,"visible late"};

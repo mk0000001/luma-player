@@ -357,11 +357,17 @@ void MainWindow::resetSubtitleSession(bool preserveExternal){
 QVector<SubtitleCue> MainWindow::originalCues()const{return !externalCues_.isEmpty()?externalCues_:aiEnabled_->isChecked()?generatedCues_:QVector<SubtitleCue>{};}
 
 QVector<SubtitleCue> MainWindow::displayCues(qint64 start,qint64 end)const{
+    const bool tukiLyrics=externalCues_.isEmpty() && isTukiBudokanDisc(resumeIdentity_);
+    const auto glossary=tukiLyrics && translationEnabled_->isChecked()?translation_->glossary():TranslationGlossary{};
     QVector<SubtitleCue> result;for(const auto &source:presentationCues_){
         if(source.endMs<start || source.startMs>end)continue;
         QStringList lines;if(originalEnabled_->isChecked())lines.append(source.text);
         if(readingEnabled_->isChecked() && !readings_.value(source.text).isEmpty())lines.append(readings_.value(source.text));
-        if(translationEnabled_->isChecked()){const auto korean=translations_.value(translationCueKey(source));if(!korean.isEmpty())lines.append(korean);}
+        if(translationEnabled_->isChecked()){
+            auto korean=tukiLyrics?fixedTukiTranslation(source.text,glossary):QString{};
+            if(korean.isEmpty())korean=translations_.value(translationCueKey(source));
+            if(!korean.isEmpty())lines.append(korean);
+        }
         if(!lines.isEmpty())result.append({source.startMs,source.endMs,lines.join('\n')});
     }return result;
 }
@@ -387,7 +393,8 @@ void MainWindow::rebuildManagedCaptions(){
             }
         }
     }
-    if(readingEnabled_->isChecked())for(const auto &cue:presentationCues_)if(!readings_.contains(cue.text))readings_.insert(cue.text,reading_.reading(cue.text));
+    const bool tukiLyrics=isTukiBudokanDisc(resumeIdentity_) && (externalCues_.isEmpty() || preparedApplied_);
+    if(readingEnabled_->isChecked())for(const auto &cue:presentationCues_)if(!readings_.contains(cue.text))readings_.insert(cue.text,reading_.reading(cue.text,tukiLyrics));
     captions_->setCues(displayCues());
     if(active_)captions_->setPosition(active_->state().positionMs);
     publishLanCaptions();

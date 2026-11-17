@@ -383,7 +383,10 @@ struct CaptionPreparationService::Impl {
         }
         owns=true;if(!checkpoint())return;
         if(state.next==request.durationMs){beginTranslations();return;}
-        recognition=new SubtitleJob(runtime,q);recognition->setPreferences(request.recognitionPreferences);const auto id=generation;
+        recognition=new SubtitleJob(runtime,q);
+        recognition->setPreferences(request.recognitionPreferences);
+        recognition->setTukiBudokan(request.correctCherryBlossom);
+        const auto id=generation;
         QObject::connect(recognition,&SubtitleJob::progress,q,[this,id](const QString &message){
             if(!active||generation!=id||state.phase!="recognition")return;
             const auto notice=acceleratorRejection(message);

@@ -358,7 +358,9 @@ bool MainWindow::openSourceImpl(const QString &source,bool preparedOpen,qint64 p
     if(!remote)pendingResume_=resumeHistory_.find(resumeIdentity_,-1,preparedDiscDurationMs==0);
     resumeSavedAt_=0;
     const auto glossaryDisc=disc?resumeIdentity_:QString{};
-    translation_->setGlossary(configuredTranslationGlossary(glossaryDisc),isTukiBudokanDisc(glossaryDisc));
+    const bool tukiBudokan=isTukiBudokanDisc(glossaryDisc);
+    job_.setTukiBudokan(tukiBudokan);
+    translation_->setGlossary(configuredTranslationGlossary(glossaryDisc),tukiBudokan);
     const auto adapter=effectiveVideoAdapter();
     if(!disc && fileVideoAdapter_!=adapter){
         active_=nullptr;

@@ -15,6 +15,7 @@ QString formatTranslationGlossary(const TranslationGlossary &glossary);
 QString translationGlossarySettingsKey(const QString &discIdentity={});
 bool isTukiBudokanDisc(const QString &discIdentity);
 TranslationGlossary configuredTranslationGlossary(const QString &discIdentity={});
+QString fixedTukiTranslation(const QString &source,const TranslationGlossary &glossary);
 struct TranslationTask {quint64 generation;QString source;};
 class TranslationQueue {
 public:

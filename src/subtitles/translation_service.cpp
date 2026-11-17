@@ -203,6 +203,13 @@ struct TranslationService::Impl {
         if(reply)return;
         if(!active)active=queue.take();if(!active)return;
         const auto task=*active;
+        if(correctCherryBlossom){
+            const auto target=targets.constFind(task.source);
+            const auto korean=fixedTukiTranslation(target==targets.cend()?task.source:target->text,glossary);
+            if(!korean.isEmpty()){
+                queue.complete(task,korean);active.reset();publish(task,korean);pruneTargets();schedule();return;
+            }
+        }
         if(const auto cached=queue.cached(task.source)){
             const auto payload=targets.contains(task.source)?payloadFor(task):QJsonObject{};
             if(!targets.contains(task.source) || (!payload.isEmpty() && fingerprints.value(task.source)==fingerprint(payload))){
@@ -349,6 +356,7 @@ void TranslationService::request(const QStringList &sources){
 }
 void TranslationService::setContextCues(const QVector<SubtitleCue> &originals){d->contextCues=originals;}
 bool TranslationService::needsTranslation(const SubtitleCue &cue)const{
+    if(d->correctCherryBlossom && !fixedTukiTranslation(cue.text,d->glossary).isEmpty())return false;
     const auto key=translationCueKey(cue);
     if(!d->targets.contains(key) || !d->queue.cached(key))return true;
     const auto payload=d->payloadFor({d->queue.generation(),key});

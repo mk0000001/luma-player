@@ -1,4 +1,5 @@
 #include "japanese_reading.h"
+#include "lyric_captions.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -104,7 +105,8 @@ JapaneseReading::JapaneseReading(const QString &runtime):d(std::make_unique<Impl
 JapaneseReading::~JapaneseReading()=default;
 bool JapaneseReading::available()const{return d->tagger!=nullptr;}
 QString JapaneseReading::error()const{return d->error;}
-QString JapaneseReading::reading(const QString &text)const{
+QString JapaneseReading::reading(const QString &text,bool tukiBudokan)const{
+    if(tukiBudokan && isSakuraKimiWatashi(text))return QStringLiteral("사쿠라 키미 와타시");
     if(!available() || text.isEmpty() || text.size()>8192)return {};
     QString clean=text;clean.remove(QRegularExpression("<[^>]*>"));
     if(!std::any_of(clean.cbegin(),clean.cend(),[](QChar c){return kana(c) || (c.unicode()>=0x4e00 && c.unicode()<=0x9fff);}))return {};

@@ -37,6 +37,12 @@ private slots:
         QCOMPARE(reader.reading("私は音楽が好きです。"),QString("와타시와 옹가쿠가 스키데스。"));
         QCOMPARE(reader.reading("ゆっくり歩いていた。"),QString("육쿠리 아루이테이타。"));
     }
+    void concertTitleUsesKimiEvenWithoutTheDictionary(){
+        JapaneseReading reader("/nonexistent/luma-runtime");
+        QCOMPARE(reader.reading("桜君私",true),QString("사쿠라 키미 와타시"));
+        QCOMPARE(reader.reading("さくら・きみ・わたし",true),QString("사쿠라 키미 와타시"));
+        QVERIFY(reader.reading("桜君私").isEmpty());
+    }
     void missingDictionaryKeepsOriginal(){JapaneseReading reader("/nonexistent/luma-runtime");QVERIFY(!reader.available());QVERIFY(!reader.error().isEmpty());QCOMPARE(reader.annotate("音楽"),QString("音楽"));}
 };
 QTEST_GUILESS_MAIN(ReadingTests)

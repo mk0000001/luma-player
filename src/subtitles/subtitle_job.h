@@ -31,6 +31,7 @@ public:
     QString selectedDevice()const{return selectedDevice_;}
     QString selectedAlignment()const{return selectedAlignment_;}
     void setPreferences(const AiPreferences &preferences);
+    void setTukiBudokan(bool enabled){tukiBudokan_=enabled;}
     AiPreferences preferences()const{return preferences_;}
     RecognitionRequest currentRequest()const{return request_;}
     bool busy() const;
@@ -62,6 +63,7 @@ private:
     int acceleratorTimeoutMs_=90000;
     QString selectedBackend_,selectedAccelerator_,selectedDevice_;
     QString selectedAlignment_="segment";
+    bool tukiBudokan_=false;
     AiPreferences preferences_;
     QString resultPrefix_,rejectionModel_;
     QVector<AiBackend> backends_;

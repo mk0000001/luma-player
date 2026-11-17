@@ -10,7 +10,7 @@ public:
     ~JapaneseReading();
     bool available() const;
     QString error() const;
-    QString reading(const QString &text) const;
+    QString reading(const QString &text,bool tukiBudokan=false) const;
     QString annotate(const QString &text) const;
 private:
     struct Impl;

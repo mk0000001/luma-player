@@ -1,4 +1,5 @@
 #include "translation_support.h"
+#include "lyric_captions.h"
 #include <QSettings>
 #include "runtime_environment.h"
 #include <QDir>
@@ -125,6 +126,39 @@ TranslationLaunch translationLaunch(const TranslationBackend &backend,const QStr
 namespace {
 constexpr qsizetype maximumGlossaryEntries=64;
 const QStringList sakuraSpellings{"桜","櫻","さくら","サクラ"};
+const QStringList stargazerSpellings{"スターゲイザー","スターゲイザ","スターゲーザー","Stargazer"};
+const QString sakuraTitle="サクラキミワタシ",sakuraKorean="벚꽃, 너, 나",stargazerKorean="천문학자";
+
+const QRegularExpression &stargazerTerm(){
+    static const QRegularExpression term(
+        QStringLiteral(R"((?<![\p{Katakana}ー])(?:スターゲイザー?|スターゲーザー)(?![\p{Katakana}ー])|(?<![\p{Latin}\p{N}_])stargazer(?![\p{Latin}\p{N}_]))"),
+        QRegularExpression::CaseInsensitiveOption);
+    return term;
+}
+
+bool usesDefaultStargazer(const QString &source,const TranslationGlossary &glossary){
+    auto matches=stargazerTerm().globalMatch(source);
+    if(!matches.hasNext())return false;
+    while(matches.hasNext()){
+        const auto alias=matches.next().captured();
+        const auto canonical=alias.compare("Stargazer",Qt::CaseInsensitive)==0?QString("Stargazer"):alias;
+        if(glossary.value(alias,glossary.value(canonical))!=stargazerKorean)return false;
+        for(auto term=glossary.cbegin();term!=glossary.cend();++term){
+            if(term.key().size()>alias.size() && term.key().contains(alias) &&
+               source.contains(term.key()) && term.value()!=stargazerKorean)return false;
+        }
+    }
+    return true;
+}
+
+QString correctStargazerTranslation(QString korean,const QString &source,const TranslationGlossary &glossary){
+    if(!usesDefaultStargazer(source,glossary))return korean;
+    static const QRegularExpression transliterated(
+        QStringLiteral(R"((?<![\p{L}\p{M}\p{N}_])(?:스타[ \t]*게이[저자]|stargazer))"
+                       R"((?=(?:예요|였어요|였다|처럼|부터|까지|에게|에서|가|는|를|와|로|랑|의|에|도|만)?(?![\p{L}\p{M}\p{N}_])))"),
+        QRegularExpression::CaseInsensitiveOption);
+    return korean.replace(transliterated,stargazerKorean);
+}
 
 QString correctCherryBlossomTranslation(const QString &korean,const QString &source,const TranslationGlossary &glossary){
     const QString cherryBlossom="벚꽃";
@@ -215,12 +249,33 @@ TranslationGlossary configuredTranslationGlossary(const QString &discIdentity){
 
     auto glossary=parseTranslationGlossary(settings.value(translationGlossarySettingsKey()).toString()).value_or(TranslationGlossary{});
     if(isTukiBudokanDisc(discIdentity)){
-        for(const auto &term:sakuraSpellings){
-            if(glossary.size()>=maximumGlossaryEntries)break;
-            if(!glossary.contains(term))glossary.insert(term,"벚꽃");
-        }
+        const auto add=[&](const QString &term,const QString &korean){
+            if(glossary.size()<maximumGlossaryEntries && !glossary.contains(term))glossary.insert(term,korean);
+        };
+        for(const auto &term:sakuraSpellings)add(term,"벚꽃");
+        add(sakuraTitle,sakuraKorean);
+        for(const auto &term:stargazerSpellings)add(term,stargazerKorean);
     }
     return glossary;
+}
+QString fixedTukiTranslation(const QString &source,const TranslationGlossary &glossary){
+    const auto text=source.trimmed();
+    if(glossary.value(sakuraTitle)==sakuraKorean && isSakuraKimiWatashi(text)){
+        // A saved spelling or longer headword may designate a proper name.
+        for(auto term=glossary.cbegin();term!=glossary.cend();++term){
+            if(isSakuraKimiWatashi(term.key()) && term.value()!=sakuraKorean)return {};
+            if(sakuraSpellings.contains(term.key()) && text.contains(term.key()) && term.value()!="벚꽃")return {};
+        }
+        return sakuraKorean;
+    }
+    auto term=QStringView(text);
+    while(!term.isEmpty() && term.front().isPunct())term=term.sliced(1).trimmed();
+    while(!term.isEmpty() && term.back().isPunct())term.chop(1);
+    term=term.trimmed();
+    const auto match=stargazerTerm().matchView(term);
+    if(match.hasMatch() && match.capturedLength()==term.size() && usesDefaultStargazer(term.toString(),glossary))
+        return stargazerKorean;
+    return {};
 }
 QString parseTranslationResponse(const QByteArray &response,QString *error,TranslationProfile profile,const QString &target,
                                  const TranslationGlossary &glossary,bool correctCherryBlossom){
@@ -258,7 +313,11 @@ QString parseTranslationResponse(const QByteArray &response,QString *error,Trans
     const auto lengthLimit=target.isEmpty()?qsizetype(2048):std::min<qsizetype>(2048,std::max<qsizetype>(80,target.size()*4+32));
     if(korean.size()>lengthLimit)return fail("대상 자막보다 지나치게 긴 번역 결과를 제외했습니다.");
     if(!hangul.match(korean).hasMatch()||kana.match(korean).hasMatch())return fail("한국어로 완성되지 않은 번역 결과를 제외했습니다.");
-    return correctCherryBlossom?correctCherryBlossomTranslation(korean,target,glossary):korean;
+    if(correctCherryBlossom){
+        korean=correctCherryBlossomTranslation(korean,target,glossary);
+        korean=correctStargazerTranslation(korean,target,glossary);
+    }
+    return korean;
 }
 namespace {
 QJsonObject cueData(const SubtitleCue &cue){return {{"start_ms",cue.startMs},{"end_ms",cue.endMs},{"text",cue.text}};}

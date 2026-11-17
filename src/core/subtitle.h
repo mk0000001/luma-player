@@ -11,6 +11,7 @@ struct SubtitleTokenTiming {
     bool operator==(const SubtitleTokenTiming &)const=default;
 };
 struct SubtitleCue { qint64 startMs = 0, endMs = 0; QString text; QVector<SubtitleTokenTiming> tokens; };
+bool validSubtitleTokenTimings(const SubtitleCue &cue);
 QVector<SubtitleCue> parseSrt(const QString &text);
 QVector<SubtitleCue> captionPages(const QVector<SubtitleCue> &cues,int maxUnits=60,qint64 minPageMs=900);
 // The original page boundaries are part of prepared project keys and exported SRTs.

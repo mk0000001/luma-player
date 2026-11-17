@@ -23,6 +23,19 @@ class TranslationServiceTests:public QObject{
     }
     QByteArray contents(const QString &name){QFile f(name);if(!f.open(QIODevice::ReadOnly))return {};return f.readAll();}
 private slots:
+    void exactConcertLyricDoesNotWaitForTheLocalModel(){
+        QTemporaryDir dir;
+        TranslationService service(dir.path());
+        service.setGlossary({{"サクラキミワタシ","벚꽃, 너, 나"}},true);
+        const SubtitleCue cue{1505749,1507669,"桜君私"};
+        QSignalSpy results(&service,&TranslationService::translatedCue),errors(&service,&TranslationService::failed);
+        service.requestCues({cue});
+        QTRY_COMPARE(results.size(),1);
+        QCOMPARE(results[0][1].toString(),translationCueKey(cue));
+        QCOMPARE(results[0][3].toString(),QString("벚꽃, 너, 나"));
+        QCOMPARE(errors.size(),0);
+        QVERIFY(!service.needsTranslation(cue));
+    }
     void liveWindowReplacesExpiredQueuedAndRunningCues(){
         QTemporaryDir dir;const auto model=prepare(dir);
         TranslationService service(dir.path());service.setModel(model);service.setPreferences({"cpu",{}});service.setTimeouts(2000,1000);
