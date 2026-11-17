@@ -75,6 +75,15 @@ private slots:
             QCOMPARE(split[0].endMs,cue.endMs);
         }
     }
+    void longPhrasesKeepStargazerInOneCue(){
+        const SubtitleCue song{0,6500,"遥か遠い星スターゲイザー歌う",{
+            {0,5,0,3000},{5,3,3000,4200},{8,4,4200,5400},{12,2,5400,6500}}};
+        const auto phrases=splitTimedLyrics({song},true);
+        QCOMPARE(phrases.size(),2);
+        QCOMPARE(phrases[0].text,QString("遥か遠い星スターゲイザー"));
+        QCOMPARE(phrases[0].endMs,qint64(5400));
+        QCOMPARE(phrases[1].startMs,qint64(5400));
+    }
     void malformedRangesAndTimesAreRejected_data(){
         QTest::addColumn<int>("variant");for(int i=0;i<9;++i)QTest::newRow(qPrintable(QString::number(i)))<<i;
     }

@@ -17,6 +17,12 @@ bool onlyPunctuationOrSpace(QStringView text){
     return std::all_of(text.begin(),text.end(),[](QChar ch){return ch.isPunct() || ch.isSpace();});
 }
 
+bool insideSpelledWord(QChar left,QChar right){
+    if(left.script()==QChar::Script_Latin && right.script()==QChar::Script_Latin)return true;
+    const auto katakana=[](QChar ch){return ch.script()==QChar::Script_Katakana || ch==u'ー' || ch==u'ｰ';};
+    return katakana(left) && katakana(right);
+}
+
 SubtitleCue lyricSlice(const SubtitleCue &cue,qsizetype first,qsizetype past){
     const auto &tokens=cue.tokens;
     auto begin=tokens[first].textStart;
@@ -54,6 +60,7 @@ void appendTimedPhrases(QVector<SubtitleCue> &result,const SubtitleCue &cue,cons
         const auto elapsed=previous.endMs-cue.tokens[first].startMs;
         if(elapsed<shortestPhraseMs)continue;
         if(cue.tokens[past-1].endMs-next.startMs<shortestPhraseMs)break;
+        if(insideSpelledWord(cue.text.at(next.textStart-1),cue.text.at(next.textStart)))continue;
         const auto left=QStringView(cue.text).first(next.textStart);
         const auto trimmed=left.trimmed();
         const auto right=QStringView(cue.text).sliced(next.textStart).trimmed();
@@ -77,8 +84,9 @@ void appendTimedPhrases(QVector<SubtitleCue> &result,const SubtitleCue &cue,cons
 }
 }
 
-bool isSakuraKimiWatashi(QStringView text){
-    const auto match=sakuraKimiWatashi().matchView(text);
+bool isSakuraKimiWatashi(const QString &source){
+    const QStringView text(source);
+    const auto match=sakuraKimiWatashi().match(source);
     return match.hasMatch() && onlyPunctuationOrSpace(text.first(match.capturedStart())) &&
            onlyPunctuationOrSpace(text.sliced(match.capturedEnd()));
 }
@@ -102,7 +110,7 @@ QVector<SubtitleCue> splitTimedLyrics(const QVector<SubtitleCue> &cues,bool tuki
 
         qsizetype remaining=0;
         if(tukiBudokan){
-            auto matches=sakuraKimiWatashi().globalMatchView(text);
+            auto matches=sakuraKimiWatashi().globalMatch(cue.text);
             while(matches.hasNext()){
                 const auto match=matches.next();
                 const auto firstToken=std::partition_point(tokens.cbegin()+remaining,tokens.cend(),

@@ -272,8 +272,9 @@ QString fixedTukiTranslation(const QString &source,const TranslationGlossary &gl
     while(!term.isEmpty() && term.front().isPunct())term=term.sliced(1).trimmed();
     while(!term.isEmpty() && term.back().isPunct())term.chop(1);
     term=term.trimmed();
-    const auto match=stargazerTerm().matchView(term);
-    if(match.hasMatch() && match.capturedLength()==term.size() && usesDefaultStargazer(term.toString(),glossary))
+    const auto standalone=term.toString();
+    const auto match=stargazerTerm().match(standalone);
+    if(match.hasMatch() && match.capturedLength()==term.size() && usesDefaultStargazer(standalone,glossary))
         return stargazerKorean;
     return {};
 }
