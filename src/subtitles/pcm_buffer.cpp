@@ -16,7 +16,7 @@ PcmBuffer::PcmBuffer(QString runtime,QObject *parent):QObject(parent),runtime_(s
 PcmBuffer::~PcmBuffer(){cancel();}
 void PcmBuffer::cancel(){pending_=false;poll_.stop();if(reader_.state()!=QProcess::NotRunning){reader_.kill();reader_.waitForFinished(1500);}}
 void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
-    const auto key=r.source+'\n'+r.playlist+'\n'+QString::number(r.audioTrackId)+'\n'+QString::number(r.audioIndex);
+    const auto key=r.source+'\n'+r.playlist+'\n'+QString::number(r.audioTrackId)+'\n'+QString::number(r.audioIndex)+'\n'+QString::number(r.readAtFullSpeed);
     const auto cachedBytes=cache_?QFileInfo(cache_->filePath("audio.pcm")).size():0;
     const auto availableEnd=cacheStart_+cachedBytes/32;
     const bool covers=key_==key && r.startMs>=cacheStart_ && r.startMs+r.durationMs<=availableEnd;
@@ -27,7 +27,7 @@ void PcmBuffer::prepare(const RecognitionRequest &r,const QString &wav){
         auto command=extractionCommand(runtime_,r,cache_->filePath("audio.pcm"));
         const auto length=command.arguments.indexOf("-t");if(length>=0){command.arguments.removeAt(length);command.arguments.removeAt(length);}
         const auto codec=command.arguments.indexOf("-c:a");command.arguments.insert(codec+2,"s16le");command.arguments.insert(codec+2,"-f");
-        const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number((CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs)/1000)}+command.arguments.mid(seek);
+        if(!r.readAtFullSpeed){const auto seek=command.arguments.indexOf("-ss");command.arguments=command.arguments.mid(0,seek)+QStringList{"-readrate","1","-readrate_initial_burst",QString::number((CaptionCoverage::prefetchMs+CaptionCoverage::chunkMs)/1000)}+command.arguments.mid(seek);}
         error_.clear();reader_.setProgram(command.program);reader_.setArguments(command.arguments);reader_.start();
     }
     start_=r.startMs;duration_=std::clamp<qint64>(r.durationMs,1,60000);wav_=wav;pending_=true;poll_.start();check();

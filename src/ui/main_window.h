@@ -4,14 +4,16 @@
 #include <QSet>
 #include <QHash>
 #include <QJsonObject>
+#include <QPointer>
 #include "core/disc.h"
 #include "core/resume_history.h"
 #include "media/playback.h"
 #include "subtitles/subtitle_job.h"
 #include "subtitles/japanese_reading.h"
+#include "subtitles/caption_preparation.h"
 class QLabel;class QPushButton;class QComboBox;class QSlider;class QListWidget;class QPlainTextEdit;class QCheckBox;class QUrl;
 namespace luma {
-class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;
+class CaptionOverlay;class FullscreenControls;class CaptureGuard;class AiDeviceProbe;class TranslationService;class TranslationDeviceProbe;class SubtitleFileLoader;class CaptionPreparationDialog;
 class MainWindow:public QMainWindow {
     Q_OBJECT
 public:
@@ -20,6 +22,7 @@ public:
     void openSource(const QString &source);
     void enableAutomaticSubtitles(const QString &language);
     bool loadCaptionFile(const QString &path);
+    bool loadPreparedCaptionProject(const QString &path);
     QJsonObject diagnostics()const;
 protected:
     bool eventFilter(QObject *object,QEvent *event)override;
@@ -56,6 +59,9 @@ private:
     QVector<SubtitleCue> generatedCues_,externalCues_;
     QVector<SubtitleCue> presentationCues_;
     bool presentationDirty_=true;
+    std::optional<CaptionPreparationResult> preparedCaptions_;
+    bool preparedApplied_=false;
+    QPointer<CaptionPreparationDialog> preparationDialog_;
     QHash<QString,QString> readings_,translations_;
     QSet<QString> translationPending_;
     QSet<QString> translationSkipped_;
@@ -77,11 +83,13 @@ private:
     int recoveryAudio_=-1,recoverySubtitle_=-1;
     QVector<SubtitleCue> recoveryExternalCues_;
     bool wantsPlayback()const;
+    bool liveCaptioningActive()const;
     bool captionTimelineAvailable()const;
     void selectChapter(int id);
     void selectAudio(int id);
     void selectTitle(int id);
     void buildUi();
+    void openSourceImpl(const QString &source,bool preparedOpen);
     void bindEngine(PlaybackEngine *engine);
     void recoverVideoOutput(PlaybackEngine *engine,const QString &message);
     void discoverDisc();
@@ -92,6 +100,7 @@ private:
     void applyCapturePolicy();
     void updateDisplayStatus();
     void updateAiPreferences();
+    void automaticCaptionsChanged(bool enabled);
     void updateNpuStatus();
     void updateTranslationPreferences();
     void changeVideoAdapter();
@@ -116,6 +125,9 @@ private:
     void openDroppedUrls(const QList<QUrl> &urls);
     void cancelSubtitleWork();
     void rebuildManagedCaptions();
+    void showCaptionPreparation();
+    void playPreparedCaptions(CaptionPreparationResult result);
+    void applyPreparedCaptions();
     QVector<SubtitleCue> originalCues()const;
     QVector<SubtitleCue> displayCues()const;
 };

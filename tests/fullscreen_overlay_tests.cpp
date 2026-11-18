@@ -4,6 +4,7 @@
 #include <QMenu>
 #include <QCursor>
 #include <QCloseEvent>
+#include <QDialog>
 #include "ui/fullscreen_controls.h"
 #include "ui/input_activity.h"
 #include "ui/native_capture_observer.h"
@@ -26,6 +27,16 @@ class FullscreenOverlayTests:public QObject {
     Q_OBJECT
 private slots:
     void initTestCase(){QFont font=qApp->font();font.setPointSize(10);qApp->setFont(font);}
+    void modalDialogKeepsTransportBehindUntilClosed_data(){QTest::addColumn<bool>("fullscreen");QTest::newRow("windowed")<<false;QTest::newRow("fullscreen")<<true;}
+    void modalDialogKeepsTransportBehindUntilClosed(){
+        QFETCH(bool,fullscreen);QWidget host;host.resize(800,600);auto *layout=new QVBoxLayout(&host);
+        QWidget video,controls;controls.setFixedHeight(108);layout->addWidget(&video,1);layout->addWidget(&controls);
+        luma::FullscreenControls controller(&host,&controls,&video);host.show();controller.setActive(fullscreen);QTRY_VERIFY(controls.isVisible());
+        QDialog dialog(&host);dialog.setModal(true);dialog.show();QTRY_COMPARE(QApplication::activeModalWidget(),&dialog);
+        QTRY_VERIFY(!controls.isVisible());QCOMPARE(controller.reservedHeight(),0);
+        controller.activity();QCoreApplication::processEvents();QVERIFY(!controls.isVisible());
+        dialog.close();QTRY_VERIFY(controls.isVisible());QVERIFY(controller.reservedHeight()>0);
+    }
 #ifdef Q_OS_WIN
     void nativeCaptureNotificationSurvivesCompletedClickAndIgnoresOtherEvents(){
         luma::NativeCaptureObserver observer;QVERIFY(observer.available());

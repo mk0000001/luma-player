@@ -58,8 +58,9 @@ int main(int argc,char **argv){
     if(argc<2)return 1;const std::string output=argv[argc-1];
     if(output.size()>4 && output.substr(output.size()-4)==".pcm"){
         if(const auto log=std::getenv("LUMA_FIXTURE_PCM_STARTS")){std::ofstream starts(log,std::ios::app);starts<<"start\n";}
+        if(const auto log=std::getenv("LUMA_FIXTURE_PCM_ARGUMENTS")){std::ofstream arguments(log,std::ios::app);for(int i=1;i<argc;++i)arguments<<argv[i]<<'\t';arguments<<'\n';}
         if(source=="stall-pcm.wav")std::this_thread::sleep_for(std::chrono::seconds(5));
-        const int seconds=source=="buffered-pcm.wav"?16:source=="empty-pcm.wav"?0:1;
+        const int seconds=source.find("buffered-pcm.wav")!=std::string::npos?16:source=="empty-pcm.wav"?0:1;
         std::ofstream out(output,std::ios::binary);out<<std::string(seconds*32000,'p');out.close();return source=="failed-pcm.wav"?9:out?0:1;
     }
     std::ofstream out(output,std::ios::binary);source.resize(128,'\0');out<<source;return out?0:1;

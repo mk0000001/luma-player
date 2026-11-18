@@ -4,6 +4,10 @@
 
 ## 한국어
 
+### 영상 재생 전 전체 자막 생성
+
+**AI 자막 → 재생 전 전체 자막 만들기**에서 파일 또는 연결된 Blu-ray 타이틀 전체를 준비할 수 있습니다. 전체 원문 인식을 끝낸 뒤 원문 문맥으로 한국어를 번역하고, SRT와 다시 열 수 있는 프로젝트를 저장합니다. 완성 프로젝트는 탐색할 때 실시간 자막 버퍼를 기다리지 않습니다. [사용·취소·이어하기 안내](PREPARE-CAPTIONS.md)를 참고하세요.
+
 ### AI 자막 준비와 재생
 
 **AI 자동자막 켜기**를 선택하고 **음성 언어**를 맞추세요. 재생 시작 또는 탐색 후에는 현재 위치부터 **10초의 음성 구간**에 대한 인식을 완료한 뒤 재생합니다. 끝까지 10초보다 적게 남았다면 남은 구간을 준비합니다. 이 숫자는 준비된 미디어 분량이며, 인식 작업이 10초 안에 끝난다는 뜻은 아닙니다.
@@ -74,6 +78,10 @@ CP949와 Shift-JIS도 변환할 수 있습니다. SMI에 문자 인코딩이 명
 | AI·번역 | 준비 정책과 독립 표시 구현. 모든 언어·모델·장치에서의 인식 정확도, 번역 완전성, 60초 선행의 실제 지속 달성을 확인한 것은 아님 |
 
 ## English
+
+### Full captions before playback
+
+Use **AI 자막 → 재생 전 전체 자막 만들기** to prepare an entire file or connected Blu-ray title. Recognition finishes before original-context Korean translation. Save SRT exports and a reusable project; completed projects bypass live ASR buffering after seeks. See the [preparation/resume guide](PREPARE-CAPTIONS.md).
 
 ### AI caption preparation
 

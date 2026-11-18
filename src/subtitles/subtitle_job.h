@@ -9,7 +9,7 @@
 #include "ai_backend.h"
 namespace luma {
 class PcmBuffer;
-struct RecognitionRequest { QString source,language="ja",playlist; qint64 startMs=0,durationMs=30000; bool disc=false; int title=1,audioIndex=0,audioTrackId=-1; };
+struct RecognitionRequest { QString source,language="ja",playlist; qint64 startMs=0,durationMs=30000; bool disc=false; int title=1,audioIndex=0,audioTrackId=-1; bool readAtFullSpeed=false; };
 struct ProcessInvocation { QString program; QStringList arguments; };
 ProcessInvocation extractionCommand(const QString &runtime,const RecognitionRequest &request,const QString &output);
 ProcessInvocation recognitionCommand(const QString &runtime,const QString &model,const QString &language,const QString &wav,const QString &prefix);
